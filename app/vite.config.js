@@ -10,7 +10,7 @@ export default defineConfig(() => ({
 
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "../scripts/**/*.test.mjs"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -29,6 +29,8 @@ export default defineConfig(() => ({
           port: 1421,
         }
       : undefined,
+    // allow the test runner to load ../scripts (icon generator)
+    fs: { allow: [".."] },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],

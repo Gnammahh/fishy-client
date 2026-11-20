@@ -1,7 +1,3 @@
-<script lang="ts">
-  import "$lib/theme.css";
-</script>
-
 <main>
   <h1>Fishy Client</h1>
 </main>

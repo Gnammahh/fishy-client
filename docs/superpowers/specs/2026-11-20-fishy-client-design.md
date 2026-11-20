@@ -264,6 +264,48 @@ We follow the protocol that the open-source **Legendary** project already worked
 
 ---
 
+## 6b. Library (milestone 3), started 2026-11-20 on branch `feat/library`
+
+### What the user sees
+- **Library page:** a grid of game cards, each with tall cover art (3:4) and the title underneath. Sorted A–Z, with a **search box** and "N games" above the grid.
+- **Opening the app:** the last saved library shows instantly from the cache, then refreshes quietly in the background. A small "Updating…" note shows while that runs.
+- **First load (no cache yet):** the medium FishLoader with "Fetching your library…".
+- **Empty library:** "No fish in this pond yet. Games you own on Epic show up here."
+- **Error:** "Couldn't load your library from Epic." with **Try again**. If a cache exists, the cached games stay visible and the message appears as a small banner instead.
+- **Missing cover:** a dark tile with the pixel fish, so the grid never shows a broken image.
+- Badges such as Installed or Update come with the Install milestone; the Library milestone doesn't show any.
+
+### Epic endpoints (verified against Legendary `egs.py`, 2026-11-20)
+All calls send `Authorization: bearer <access_token>` and the launcher User-Agent.
+- **Library:** `GET https://library-service.live.use1a.on.epicgames.com/library/api/public/items?includeMetadata=true`
+  - Records are in `records`. For the next page, repeat with `cursor=<responseMetadata.nextCursor>` until there's none.
+  - Fields: `namespace`, `catalogItemId`, `appName`, `sandboxType`.
+- **Game info:** `GET https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace/{namespace}/bulk/items?id={catalogItemId}&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en`
+  - Response: `{ "<catalogItemId>": { title, keyImages:[{type,url}], categories:[{path}], mainGameItem? } }`.
+  - Up to 8 requests run at once.
+- **Cover image:** the first `keyImages` entry with type `DieselGameBoxTall`, else `OfferImageTall`, else `Thumbnail`.
+
+### Which items count as games (same rules as Legendary)
+- **Skip:**
+  - `sandboxType == "PRIVATE"`
+  - `namespace == "ue"` (Unreal Engine assets)
+  - no `appName`, or `appName == "1"`
+  - items with `mainGameItem` (DLC; it'll be shown under its game later)
+  - items with a category `path == "mods"`
+- Remove duplicates by `catalogItemId`.
+- If the catalog lookup for an item fails, keep it with `appName` as its title and no cover, rather than hiding a game the user owns.
+
+### Cache and privacy
+- **Location:** `%APPDATA%\FishyClient\library.json`. It holds the game list only (titles, ids, image URLs), never tokens.
+- **Log out deletes it,** which closes the privacy item from §12.
+- An access token that's about to expire is refreshed (one operation at a time, as in §6a) before the library calls.
+
+### Tests
+- **Rust (fake Epic server):** pagination, bearer header, filtering rules, cover choice, catalog-failure fallback, cache round-trip, and log out deleting the cache.
+- **UI:** grid with titles, search, empty state, error with Try again, and a cached grid kept on error.
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

@@ -537,6 +537,22 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - uninstall deletes only the game's own files
   - **Safety:** a manifest file name like `..\..\Windows\x` is refused, so nothing is ever written outside the game folder.
   - Rust tests: 122 (67 new).
+- **App and screens built (2026-11-21):**
+  - **Library:** an Install button on each game, an **Installed** badge, **All / Installed (N)** tabs, a "⋯" menu with **Uninstall** (asks first), and "Downloading… / Queued / Paused" on cards.
+  - **Install box:** folder, download size, space needed and free space, plus **Change folder** (Windows' own folder picker). Install is greyed out with the reason when the disk is too full.
+  - **Downloads page:** the fish bar, **Pause / Resume / Cancel** (Cancel asks "Stop and delete the downloaded files?"), an "Up next" queue with ×, paused downloads with Resume, and a "Finished: …" note.
+  - One game downloads at a time. Closing the app keeps downloads; they come back as Paused.
+  - **Log out** pauses downloads and keeps installed games.
+  - Checked in the browser preview with fake data: every screen and state looks right, with no console errors.
+  - Tests: Rust 124 (core 122 + app 2), UI 85.
+
+### Still to check by hand (milestone 4)
+- [ ] Install a small free game from the Library (default folder)
+- [ ] Pause, then Resume
+- [ ] Close the app mid-download, reopen, Resume finishes it
+- [ ] The game's files are in `C:\Users\<you>\Games\<game>` and it shows as Installed
+- [ ] Uninstall removes the folder and the badge
+- [ ] Cancel a download deletes its files
 
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.

@@ -2,6 +2,7 @@
 mod error;
 pub(crate) mod reader;
 pub mod manifest;
+pub mod chunk;
 
 pub use error::{format_bytes, InstallError};
 

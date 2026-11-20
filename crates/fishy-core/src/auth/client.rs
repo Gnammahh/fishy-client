@@ -8,6 +8,15 @@ pub const CLIENT_ID: &str = "34a02cf8f4414e29b15921876da36f9a";
 const CLIENT_SECRET: &str = "daafbccc737745039dffe53d94fc76cf";
 const USER_AGENT: &str = "UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
 
+/// HTTP client with the launcher User-Agent and a 20 s timeout, shared by all Epic calls.
+pub(crate) fn http_client() -> Client {
+    Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .expect("http client")
+}
+
 /// Talks to Epic's account service. All requests carry the launcher User-Agent.
 #[derive(Clone)]
 pub struct EpicClient {
@@ -28,12 +37,7 @@ impl EpicClient {
 
     /// For tests: point the client at a fake Epic server.
     pub fn with_base_url(base: &str) -> Self {
-        let http = Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .expect("http client");
-        Self { http, base: base.trim_end_matches('/').to_string() }
+        Self { http: http_client(), base: base.trim_end_matches('/').to_string() }
     }
 
     pub async fn exchange_code(&self, code: &str) -> Result<Session, AuthError> {
@@ -77,12 +81,12 @@ impl EpicClient {
 }
 
 /// Never keep the URL: the kill endpoint has the access token in its path.
-fn network(e: reqwest::Error) -> AuthError {
+pub(crate) fn network(e: reqwest::Error) -> AuthError {
     AuthError::Network(e.without_url().to_string())
 }
 
 /// Turns any non-2xx or `errorCode` body into `Rejected`. Empty 2xx bodies become `Value::Null`.
-async fn read_json(res: Response) -> Result<Value, AuthError> {
+pub(crate) async fn read_json(res: Response) -> Result<Value, AuthError> {
     let status = res.status();
     let text = res.text().await.map_err(network)?;
     let json: Value = if text.trim().is_empty() {

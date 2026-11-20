@@ -75,6 +75,22 @@ impl<S: SessionStore> AuthManager<S> {
         }
     }
 
+    /// A usable access token for Epic API calls, refreshed first if it expires within
+    /// 5 minutes. Not signed in → `Rejected { code: "signed_out" }`.
+    pub async fn access_token(&self) -> Result<super::Secret, AuthError> {
+        let _turn = self.one_at_a_time.lock().await;
+        let session = match self.store.load() {
+            Ok(Some(s)) => s,
+            _ => return Err(AuthError::Rejected { code: "signed_out".into() }),
+        };
+        if session.expires_at - (self.now)() > Duration::minutes(REFRESH_MARGIN_MINUTES) {
+            return Ok(session.access_token);
+        }
+        let fresh = self.client.refresh(&session.refresh_token).await?;
+        let _ = self.store.save(&fresh);
+        Ok(fresh.access_token)
+    }
+
     /// Trade the authorization code from the login window for a saved session.
     pub async fn complete_login(&self, code: &str) -> Result<AuthState, AuthError> {
         let _turn = self.one_at_a_time.lock().await;
@@ -269,5 +285,33 @@ mod tests {
         let m = AuthManager::new(EpicClient::with_base_url(&server.uri()), BrokenStore(StoreError::Backend("denied".into())), now);
         let err = m.complete_login("abc").await.unwrap_err();
         assert_eq!(err.to_string(), "Couldn't save your sign-in to Windows Credential Manager.");
+    }
+
+    #[tokio::test]
+    async fn access_token_returns_the_saved_token_when_fresh() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(500)).expect(0).mount(&server).await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::hours(2), Duration::days(20))));
+        assert_eq!(m.access_token().await.unwrap().expose(), "eg1~A");
+    }
+
+    #[tokio::test]
+    async fn access_token_refreshes_when_expiring() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(fresh_token_json()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(2), Duration::days(20))));
+        assert_eq!(m.access_token().await.unwrap().expose(), "eg1~NEW");
+        assert_eq!(m.store().load().unwrap().unwrap().access_token.expose(), "eg1~NEW");
+    }
+
+    #[tokio::test]
+    async fn access_token_without_session_is_rejected() {
+        let m = manager("http://127.0.0.1:9", MemoryStore::default());
+        assert!(matches!(m.access_token().await, Err(AuthError::Rejected { .. })));
     }
 }

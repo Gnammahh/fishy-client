@@ -485,6 +485,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - `feat/ui-foundation`: milestones 0–1, the look of the app.
   - `feat/epic-login`: milestone 2, Epic login.
   - `feat/library`: milestone 3, the Library.
+  - `feat/install`: milestone 4, Install (started 2026-11-20).
 - **Approved visual reference:** `design/mockup.html`. It's also published as a private claude.ai artifact, "Fishy Client Mockup".
 - **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md` and `docs/superpowers/plans/2026-11-20-epic-login.md`.
 
@@ -520,6 +521,13 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Covers** load straight from Epic's image servers; a missing cover shows the pixel fish.
 - **Checked by hand (2026-11-20):** your real library loads after signing in.
 - **Sidebar:** pinned, so Library, Downloads, Settings and Account stay visible while you scroll. A faint school of gray pixel fish drifts diagonally up behind the menu; the fish hold still when Windows animations are off.
+**Milestone 4, Install (branch `feat/install`, started 2026-11-20)**
+- **Design approved** and written as §6c: Install box with a default folder of `C:\Users\<you>\Games\<game>`, a Downloads page with the fish bar, pause/resume/cancel and a queue, an Installed badge and tab, and Uninstall.
+- **Protocol** researched in Legendary (`egs.py`, `core.py`, `models/manifest.py`, `models/chunk.py`, `downloader/mp/*`). Our addition: every finished file is also checked against its fingerprint.
+- **Decisions:**
+  - Log out pauses downloads but keeps installed games.
+  - Encrypted newer games are refused with a clear message.
+
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.
 - Tokens are stored only in Credential Manager, never in files or the page code, and they print as `[redacted]` anywhere they could leak.

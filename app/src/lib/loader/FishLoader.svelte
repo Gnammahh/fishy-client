@@ -35,7 +35,9 @@
   });
 
   onMount(() => {
-    const ctx = canvas.getContext("2d")!;
+    // No 2D canvas (tests, very old webviews): show the empty tank instead of crashing.
+    const ctx = canvas.getContext("2d");
+    if (!ctx || typeof requestAnimationFrame === "undefined") return;
     let raf = 0;
     let last = 0;
     let start = performance.now();

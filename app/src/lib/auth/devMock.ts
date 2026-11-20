@@ -36,7 +36,7 @@ function devDownloads() {
     const d = items.find((i) => i.state === "downloading");
     if (!d) return;
     d.bytes_per_sec = 18.2 * 1024 * 1024 * (0.8 + Math.random() * 0.4);
-    d.downloaded = Math.min(d.total, d.downloaded + d.bytes_per_sec * 0.25 * 40);
+    d.downloaded = Math.min(d.total, d.downloaded + d.bytes_per_sec * 0.25 * 3);
     if (d.downloaded >= d.total) {
       items.splice(items.indexOf(d), 1);
       installed.push({ ...installed[0], app_name: d.app_name, title: d.title, install_path: "C:\\Users\\you\\Games\\" + d.title });

@@ -222,6 +222,7 @@ We follow the protocol that the open-source **Legendary** project already worked
 4. Epic lands the window on `https://www.epicgames.com/id/api/redirect?...`, which shows JSON containing `"authorizationCode": "<code>"`. A small script injected into that window only reads this JSON and navigates to `http://fishy-auth.localhost/done?code=<code>`. The app's navigation handler (Rust) catches that address, cancels the navigation, closes the window and keeps the code. `.localhost` never leaves the computer, even if it weren't caught.
 5. Rust exchanges the code for tokens, saves them, and tells the UI "signed in". The code and tokens never pass through the main window's JavaScript.
 6. If the user closes the login window, the app goes quietly back to the login screen.
+   The login window is **private (InPrivate)**, so Epic's website cookies are never stored. After **Log out**, nobody on the same PC can land in the previous account by clicking Sign in. The cost is that you type your Epic password each time you sign in, which is rare because the session itself is remembered.
 7. **Backup:** under the button, "Trouble signing in? Paste a code instead" opens Epic's login in the normal browser and shows a box to paste the `authorizationCode`. The box accepts the bare code or the whole JSON.
 
 ### Epic endpoints (verified against Legendary `egs.py`, 2026-11-20)

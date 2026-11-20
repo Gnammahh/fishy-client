@@ -46,6 +46,9 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         .inner_size(480.0, 720.0)
         .resizable(true)
         .initialization_script(CAPTURE_SCRIPT)
+        // Private (InPrivate) window: Epic's website cookies are never kept, so after
+        // Log out nobody on this PC lands in your Epic account by clicking Sign in.
+        .incognito(true)
         .on_navigation(move |url| {
             let Some(code) = code_from_capture_url(url.as_str()) else { return true };
             if nav_captured.swap(true, Ordering::SeqCst) {

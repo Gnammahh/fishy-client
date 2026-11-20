@@ -545,6 +545,25 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - **Log out** pauses downloads and keeps installed games.
   - Checked in the browser preview with fake data: every screen and state looks right, with no console errors.
   - Tests: Rust 124 (core 122 + app 2), UI 85.
+- **Independent code review (2026-11-21): "ready with fixes".** The parser, path safety, resume and uninstall were judged correct, and it confirmed **no token leaks**: the token goes only to Epic's manifest-info address, never to the download servers or into any file. All 8 serious findings were fixed test-first:
+  1. **Slow internet:** the 10 s limit applied to each whole piece, so slower lines could never finish. It now only trips when the server goes silent for 10 s.
+  2. **Bad file list from one server:** a garbage file list now falls through to Epic's backup servers instead of a wrong "can't install" message.
+  3. **Epic's "not available" answers** (not owned, no Windows build) no longer say "sign-in didn't work".
+  4. **Memory:** pieces shared by several files are kept in memory only up to 512 MB. Past that they're downloaded again when needed.
+  5. **Space** is checked on every start and Resume (for what's left), and a full disk shows "Not enough space".
+  6. **Cancel then Install again** can't clash anymore: the game stays busy until its files are deleted.
+  7. **A failed Cancel** (a file in use) now shows "Couldn't delete some files…" instead of vanishing.
+  8. **The queue's ×** asks "Stop and delete the downloaded files?" like Cancel.
+  - Deferred (minor), listed for later:
+    - Pause/Cancel in the last second of an install is ignored.
+    - Inflating pieces has no size cap before the check.
+    - All writing runs on one core.
+    - Startup reads every paused download's file list.
+    - The Install box keeps its file list in memory until restart.
+    - Two games could pick the same folder name.
+    - The space check doesn't count other queued games.
+    - The bar's "Installed" done state is replaced by a "Finished" note.
+  - Tests now: Rust 134 (core 129 + app 5), UI 86.
 
 ### Still to check by hand (milestone 4)
 - [ ] Install a small free game from the Library (default folder)

@@ -77,6 +77,7 @@ impl InstallClient {
             AuthError::Rejected { code } => match status {
                 // A server hiccup isn't a sign-in problem.
                 500.. => InstallError::Network(code),
+                _ if code.ends_with("download_info_not_found") => InstallError::NoDownload,
                 401 => InstallError::Rejected(code),
                 _ if code.contains("token") => InstallError::Rejected(code),
                 // Not owned, no Windows build, ...: signing in again won't help.
@@ -238,6 +239,9 @@ mod tests {
         // Not owned / no Windows build: retrying or signing in again won't help.
         assert!(matches!(status_of(ResponseTemplate::new(403)).await, Err(InstallError::BadManifest(_))));
         assert!(matches!(status_of(ResponseTemplate::new(404)).await, Err(InstallError::BadManifest(_))));
+        // Seen for real (Bendy and the Ink Machine, 2026-11-21): a library entry with no Windows build.
+        let none = serde_json::json!({"errorCode": "errors.com.epicgames.launcher.download_info_not_found"});
+        assert_eq!(status_of(ResponseTemplate::new(404).set_body_json(none)).await, Err(InstallError::NoDownload));
         let busy = serde_json::json!({"errorCode": "errors.com.epicgames.common.server_error"});
         assert!(matches!(status_of(ResponseTemplate::new(503).set_body_json(busy)).await, Err(InstallError::Network(_))));
     }

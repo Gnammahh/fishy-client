@@ -26,6 +26,9 @@ pub enum InstallError {
     Stopped,
     #[error("not installed")]
     NotInstalled,
+    /// Epic has no Windows download for this library entry.
+    #[error("no download")]
+    NoDownload,
 }
 
 impl InstallError {
@@ -42,6 +45,9 @@ impl InstallError {
             Self::InUse => "Couldn't delete some files. Close the game and try again.".into(),
             Self::Stopped => "Download paused.".into(),
             Self::NotInstalled => "That game isn't installed.".into(),
+            Self::NoDownload => {
+                "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one.".into()
+            }
         }
     }
 }
@@ -94,6 +100,10 @@ mod tests {
         assert_eq!(InstallError::BadChunk("a".into()).user_message(), "A downloaded file was damaged. Press Retry to download it again.");
         assert_eq!(InstallError::InUse.user_message(), "Couldn't delete some files. Close the game and try again.");
         assert_eq!(InstallError::Rejected("x".into()).user_message(), "That sign-in didn't work. Please try again.");
+        assert_eq!(
+            InstallError::NoDownload.user_message(),
+            "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one."
+        );
     }
 
     #[test]

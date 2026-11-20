@@ -92,9 +92,9 @@ async fn read_json(res: Response) -> Result<Value, AuthError> {
     };
     let error_code = json.get("errorCode").and_then(Value::as_str);
     if error_code.is_some() || !status.is_success() {
+        // errorMessage is deliberately not kept: Epic sometimes quotes the token in it.
         return Err(AuthError::Rejected {
             code: error_code.map(str::to_string).unwrap_or_else(|| format!("http_{}", status.as_u16())),
-            message: json.get("errorMessage").and_then(Value::as_str).unwrap_or_default().to_string(),
         });
     }
     Ok(json)
@@ -167,11 +167,23 @@ mod tests {
         let err = EpicClient::with_base_url(&server.uri()).exchange_code("abc").await.unwrap_err();
         assert_eq!(
             err,
-            AuthError::Rejected {
-                code: "errors.com.epicgames.account.oauth.authorization_code_not_found".into(),
-                message: "Sorry the authorization code you supplied was not found.".into(),
-            }
+            AuthError::Rejected { code: "errors.com.epicgames.account.oauth.authorization_code_not_found".into() }
         );
+    }
+
+    #[tokio::test]
+    async fn rejected_error_never_keeps_epics_message() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+                "errorCode": "errors.com.epicgames.account.auth_token.invalid_refresh_token",
+                "errorMessage": "Sorry the refresh token 'eg1~SECRET-REFRESH' is invalid"
+            })))
+            .mount(&server)
+            .await;
+        let err = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~SECRET-REFRESH")).await.unwrap_err();
+        assert!(!format!("{err:?}").contains("SECRET-REFRESH"));
+        assert!(!err.to_string().contains("SECRET-REFRESH"));
     }
 
     #[tokio::test]

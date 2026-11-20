@@ -1,6 +1,7 @@
-use super::{AuthError, EpicClient, Session, SessionStore};
+use super::{AuthError, EpicClient, Session, SessionStore, StoreError};
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
+use tokio::sync::Mutex;
 
 /// What the UI needs to know about the login. Tagged by `kind` for the frontend.
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -16,10 +17,13 @@ pub enum AuthState {
 const REFRESH_MARGIN_MINUTES: i64 = 5;
 
 /// Owns the login rules: when to refresh, when to sign out, what to keep.
+/// Every operation that can change the saved session runs one at a time, so a slow
+/// refresh can never write a session back after the user has logged out.
 pub struct AuthManager<S: SessionStore> {
     client: EpicClient,
     store: S,
     now: fn() -> DateTime<Utc>,
+    one_at_a_time: Mutex<()>,
 }
 
 fn signed_in(s: &Session) -> AuthState {
@@ -28,22 +32,25 @@ fn signed_in(s: &Session) -> AuthState {
 
 impl<S: SessionStore> AuthManager<S> {
     pub fn new(client: EpicClient, store: S, now: fn() -> DateTime<Utc>) -> Self {
-        Self { client, store, now }
+        Self { client, store, now, one_at_a_time: Mutex::new(()) }
     }
 
     pub fn store(&self) -> &S {
         &self.store
     }
 
-    /// Run once when the app starts.
+    /// Run when the app starts (and on "Try again").
     pub async fn startup(&self) -> AuthState {
+        let _turn = self.one_at_a_time.lock().await;
         let session = match self.store.load() {
             Ok(Some(s)) => s,
             Ok(None) => return AuthState::SignedOut,
-            Err(_) => {
-                let _ = self.store.clear(); // damaged entry: start fresh
+            Err(StoreError::Damaged(_)) => {
+                let _ = self.store.clear(); // unreadable leftovers: start fresh
                 return AuthState::SignedOut;
             }
+            // Credential Manager hiccup: don't destroy a session that may be fine.
+            Err(StoreError::Backend(_)) => return AuthState::SignedOut,
         };
         let now = (self.now)();
         if session.refresh_expires_at <= now {
@@ -55,6 +62,8 @@ impl<S: SessionStore> AuthManager<S> {
         }
         match self.client.refresh(&session.refresh_token).await {
             Ok(fresh) => {
+                // If saving fails the old refresh token may already be used up; the user
+                // stays signed in for this run and simply signs in again next time.
                 let _ = self.store.save(&fresh);
                 signed_in(&fresh)
             }
@@ -68,15 +77,15 @@ impl<S: SessionStore> AuthManager<S> {
 
     /// Trade the authorization code from the login window for a saved session.
     pub async fn complete_login(&self, code: &str) -> Result<AuthState, AuthError> {
+        let _turn = self.one_at_a_time.lock().await;
         let session = self.client.exchange_code(code).await?;
-        self.store
-            .save(&session)
-            .map_err(|_| AuthError::Unexpected("Couldn't save the sign-in to Windows Credential Manager.".into()))?;
+        self.store.save(&session).map_err(|e| AuthError::Storage(format!("{e:?}")))?;
         Ok(signed_in(&session))
     }
 
     /// End the session at Epic (best effort) and always forget it locally.
     pub async fn logout(&self) -> AuthState {
+        let _turn = self.one_at_a_time.lock().await;
         if let Ok(Some(session)) = self.store.load() {
             let _ = self.client.kill_session(&session.access_token).await;
         }
@@ -206,5 +215,59 @@ mod tests {
         let m = manager(&server.uri(), store);
         assert_eq!(m.logout().await, AuthState::SignedOut);
         assert!(m.store().load().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn logout_waits_for_inflight_refresh_and_wins() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(fresh_token_json())
+                    .set_delay(std::time::Duration::from_millis(400)),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE")).respond_with(ResponseTemplate::new(204)).mount(&server).await;
+        let store = MemoryStore::with(session(Duration::minutes(1), Duration::days(20)));
+        let m = std::sync::Arc::new(manager(&server.uri(), store));
+        let m2 = m.clone();
+        let refreshing = tokio::spawn(async move { m2.startup().await });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await; // refresh is in flight
+        assert_eq!(m.logout().await, AuthState::SignedOut);
+        refreshing.await.unwrap();
+        assert!(m.store().load().unwrap().is_none(), "a late refresh must not bring the session back");
+    }
+
+    /// A store whose backend always fails (e.g. Credential Manager temporarily unavailable).
+    struct BrokenStore(StoreError);
+    impl SessionStore for BrokenStore {
+        fn load(&self) -> Result<Option<Session>, StoreError> {
+            Err(self.0.clone())
+        }
+        fn save(&self, _: &Session) -> Result<(), StoreError> {
+            Err(self.0.clone())
+        }
+        fn clear(&self) -> Result<(), StoreError> {
+            panic!("must not clear")
+        }
+    }
+
+    #[tokio::test]
+    async fn backend_read_error_signs_out_without_clearing() {
+        let m = AuthManager::new(EpicClient::with_base_url("http://127.0.0.1:9"), BrokenStore(StoreError::Backend("busy".into())), now);
+        assert_eq!(m.startup().await, AuthState::SignedOut); // BrokenStore::clear would panic
+    }
+
+    #[tokio::test]
+    async fn complete_login_save_failure_is_storage_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(fresh_token_json()))
+            .mount(&server)
+            .await;
+        let m = AuthManager::new(EpicClient::with_base_url(&server.uri()), BrokenStore(StoreError::Backend("denied".into())), now);
+        let err = m.complete_login("abc").await.unwrap_err();
+        assert_eq!(err.to_string(), "Couldn't save your sign-in to Windows Credential Manager.");
     }
 }

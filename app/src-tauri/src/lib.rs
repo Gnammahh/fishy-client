@@ -72,6 +72,12 @@ pub fn run() {
             });
             Ok(())
         })
+        // Closing the main window quits the app, even if the sign-in window is still open.
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             auth_state,
             retry_auth,

@@ -8,11 +8,20 @@ pub const ACCOUNT: &str = "epic-session";
 /// Windows caps one credential at 2560 bytes; stay well under it.
 pub(crate) const CHUNK_BYTES: usize = 2000;
 
+/// Why the saved session couldn't be read or written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreError {
+    /// The saved data is unreadable (crash mid-save, edited by hand). Safe to delete.
+    Damaged(String),
+    /// Credential Manager itself failed (locked, busy, access denied). The data may be fine.
+    Backend(String),
+}
+
 /// Where the signed-in session is kept between app starts.
 pub trait SessionStore: Send + Sync {
-    fn load(&self) -> Result<Option<Session>, String>;
-    fn save(&self, session: &Session) -> Result<(), String>;
-    fn clear(&self) -> Result<(), String>;
+    fn load(&self) -> Result<Option<Session>, StoreError>;
+    fn save(&self, session: &Session) -> Result<(), StoreError>;
+    fn clear(&self) -> Result<(), StoreError>;
 }
 
 /// A tiny key -> bytes secret store (Windows Credential Manager in the app, memory in tests).
@@ -39,49 +48,69 @@ impl<B: CredentialBackend> ChunkedStore<B> {
     fn chunk_key(i: usize) -> String {
         format!("{ACCOUNT}.{i}")
     }
-    fn count(&self) -> Result<Option<usize>, String> {
-        match self.backend.get(ACCOUNT)? {
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        self.backend.get(key).map_err(StoreError::Backend)
+    }
+    fn set(&self, key: &str, value: &[u8]) -> Result<(), StoreError> {
+        self.backend.set(key, value).map_err(StoreError::Backend)
+    }
+    fn delete(&self, key: &str) -> Result<(), StoreError> {
+        self.backend.delete(key).map_err(StoreError::Backend)
+    }
+    fn count(&self) -> Result<Option<usize>, StoreError> {
+        match self.get(ACCOUNT)? {
             None => Ok(None),
             Some(bytes) => String::from_utf8(bytes)
                 .ok()
                 .and_then(|s| s.trim().parse().ok())
                 .map(Some)
-                .ok_or_else(|| "saved session header is damaged".to_string()),
+                .ok_or_else(|| StoreError::Damaged("saved session header is damaged".into())),
         }
     }
 }
 
 impl<B: CredentialBackend> SessionStore for ChunkedStore<B> {
-    fn load(&self) -> Result<Option<Session>, String> {
+    fn load(&self) -> Result<Option<Session>, StoreError> {
         let Some(count) = self.count()? else { return Ok(None) };
         let mut json = Vec::new();
         for i in 0..count {
-            let part = self.backend.get(&Self::chunk_key(i))?.ok_or("saved session is incomplete")?;
+            let part = self
+                .get(&Self::chunk_key(i))?
+                .ok_or_else(|| StoreError::Damaged("saved session is incomplete".into()))?;
             json.extend(part);
         }
-        serde_json::from_slice(&json).map(Some).map_err(|_| "saved session is damaged".to_string())
+        serde_json::from_slice(&json)
+            .map(Some)
+            .map_err(|_| StoreError::Damaged("saved session is damaged".into()))
     }
 
-    fn save(&self, session: &Session) -> Result<(), String> {
-        let json = serde_json::to_vec(session).map_err(|e| e.to_string())?;
+    fn save(&self, session: &Session) -> Result<(), StoreError> {
+        let json = serde_json::to_vec(session).map_err(|e| StoreError::Damaged(e.to_string()))?;
         let old = self.count().unwrap_or(None).unwrap_or(0);
         let chunks: Vec<&[u8]> = json.chunks(CHUNK_BYTES).collect();
         for (i, chunk) in chunks.iter().enumerate() {
-            self.backend.set(&Self::chunk_key(i), chunk)?;
+            self.set(&Self::chunk_key(i), chunk)?;
         }
-        self.backend.set(ACCOUNT, chunks.len().to_string().as_bytes())?;
+        self.set(ACCOUNT, chunks.len().to_string().as_bytes())?;
         for i in chunks.len()..old {
-            self.backend.delete(&Self::chunk_key(i))?;
+            self.delete(&Self::chunk_key(i))?;
         }
         Ok(())
     }
 
-    fn clear(&self) -> Result<(), String> {
-        let count = self.count().unwrap_or(None).unwrap_or(0);
-        for i in 0..count {
-            self.backend.delete(&Self::chunk_key(i))?;
+    /// Deletes every chunk, even ones a damaged or missing header no longer points to.
+    fn clear(&self) -> Result<(), StoreError> {
+        let known = self.count().unwrap_or(None).unwrap_or(0);
+        let mut i = 0;
+        loop {
+            let key = Self::chunk_key(i);
+            if i >= known && self.get(&key)?.is_none() {
+                break;
+            }
+            self.delete(&key)?;
+            i += 1;
         }
-        self.backend.delete(ACCOUNT)
+        self.delete(ACCOUNT)
     }
 }
 
@@ -162,14 +191,14 @@ impl MemoryStore {
 }
 
 impl SessionStore for MemoryStore {
-    fn load(&self) -> Result<Option<Session>, String> {
+    fn load(&self) -> Result<Option<Session>, StoreError> {
         Ok(self.0.lock().unwrap().clone())
     }
-    fn save(&self, session: &Session) -> Result<(), String> {
+    fn save(&self, session: &Session) -> Result<(), StoreError> {
         *self.0.lock().unwrap() = Some(session.clone());
         Ok(())
     }
-    fn clear(&self) -> Result<(), String> {
+    fn clear(&self) -> Result<(), StoreError> {
         *self.0.lock().unwrap() = None;
         Ok(())
     }
@@ -239,6 +268,26 @@ mod tests {
         assert_eq!(store.load().unwrap(), Some(big_session()));
         store.clear().unwrap();
         assert_eq!(store.load().unwrap(), None);
+    }
+
+    #[test]
+    fn clear_removes_orphan_chunks_without_header() {
+        let store = ChunkedStore::new(MemoryBackend::default());
+        // a save that crashed before writing the header
+        store.backend().set("epic-session.0", b"{\"access_token\":").unwrap();
+        store.backend().set("epic-session.1", b"\"eg1~SECRET\"").unwrap();
+        store.clear().unwrap();
+        assert!(store.backend().entries().is_empty());
+    }
+
+    #[test]
+    fn clear_removes_chunks_when_header_damaged() {
+        let store = ChunkedStore::new(MemoryBackend::default());
+        store.save(&big_session()).unwrap();
+        store.backend().set("epic-session", b"garbage").unwrap();
+        assert!(matches!(store.load(), Err(StoreError::Damaged(_))));
+        store.clear().unwrap();
+        assert!(store.backend().entries().is_empty());
     }
 
     #[test]

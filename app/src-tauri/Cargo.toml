@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2.12", features = [] }
 fishy-core = { path = "../../crates/fishy-core" }
 tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }

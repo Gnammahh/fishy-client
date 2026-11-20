@@ -2,10 +2,14 @@
 //! one-time authorization code without ever handing it to the main window's JavaScript.
 
 use crate::AppAuth;
-use fishy_core::auth::{code_from_capture_url, AuthState};
+use fishy_core::auth::{AuthState, CaptureGuard, Navigation};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+
+/// Login events only go to the main window (the login window can't listen anyway).
+const MAIN: &str = "main";
 
 pub const LABEL: &str = "epic-login";
 
@@ -40,6 +44,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
     let captured = Arc::new(AtomicBool::new(false));
     let nav_app = app.clone();
     let nav_captured = captured.clone();
+    let guard = Mutex::new(CaptureGuard::default());
 
     let window = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::External(LOGIN_URL.parse().expect("login url")))
         .title("Sign in with Epic")
@@ -49,8 +54,15 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         // Private (InPrivate) window: Epic's website cookies are never kept, so after
         // Log out nobody on this PC lands in your Epic account by clicking Sign in.
         .incognito(true)
+        // Social-login pop-ups would escape the capture; keep everything in this one window.
+        .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_navigation(move |url| {
-            let Some(code) = code_from_capture_url(url.as_str()) else { return true };
+            let decision = guard.lock().map(|mut g| g.on_navigate(url.as_str())).unwrap_or(Navigation::Block);
+            let code = match decision {
+                Navigation::Allow => return true,
+                Navigation::Block => return false,
+                Navigation::Capture(code) => code,
+            };
             if nav_captured.swap(true, Ordering::SeqCst) {
                 return false; // already handling a code
             }
@@ -68,7 +80,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
     let closed_app = app.clone();
     window.on_window_event(move |event| {
         if matches!(event, WindowEvent::Destroyed) && !captured.load(Ordering::SeqCst) {
-            let _ = closed_app.emit("login-window-closed", ());
+            let _ = closed_app.emit_to(MAIN, "login-window-closed", ());
         }
     });
     Ok(())
@@ -80,11 +92,11 @@ pub async fn finish_login(app: &AppHandle, code: &str) {
     match auth.manager.complete_login(code).await {
         Ok(state) => {
             auth.set(state.clone()).await;
-            let _ = app.emit("auth-changed", state);
+            let _ = app.emit_to(MAIN, "auth-changed", state);
         }
         Err(e) => {
-            let _ = app.emit("login-failed", e.to_string());
-            let _ = app.emit("auth-changed", AuthState::SignedOut);
+            let _ = app.emit_to(MAIN, "login-failed", e.to_string());
+            let _ = app.emit_to(MAIN, "auth-changed", AuthState::SignedOut);
         }
     }
 }

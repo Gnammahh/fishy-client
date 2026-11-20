@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { writable } from "svelte/store";
+import { resetLibrary } from "$lib/library/library";
 
 /** Mirrors the Rust `AuthState` enum (tagged by `kind`). */
 export type AuthState =
@@ -86,6 +87,7 @@ export async function openBrowserLogin() {
 export async function signOut(): Promise<boolean> {
   try {
     authState.set(await invoke<AuthState>("logout"));
+    resetLibrary(); // the previous account's games must not stay in memory
     return true;
   } catch {
     return false;

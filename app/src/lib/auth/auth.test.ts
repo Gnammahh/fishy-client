@@ -5,6 +5,7 @@ import { emit } from "@tauri-apps/api/event";
 import LoginScreen from "./LoginScreen.svelte";
 import AppShell from "$lib/shell/AppShell.svelte";
 import { authState, init, signingIn, loginError } from "./auth";
+import { library, resetLibrary } from "$lib/library/library";
 
 const NOT_A_CODE = "That doesn't look like a sign-in code. Paste the authorizationCode value.";
 
@@ -28,6 +29,7 @@ afterEach(() => {
   signingIn.set(false);
   loginError.set("");
   authState.set({ kind: "Loading" });
+  resetLibrary();
 });
 
 describe("LoginScreen", () => {
@@ -97,6 +99,24 @@ describe("AppShell", () => {
     let current: unknown;
     authState.subscribe((v) => (current = v))();
     expect(current).toEqual({ kind: "SignedOut" });
+  });
+
+  it("log_out_forgets_the_previous_accounts_games", async () => {
+    mockCommands({ logout: () => ({ kind: "SignedOut" }) });
+    library.set({
+      status: "ready",
+      updating: false,
+      error: "",
+      games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null }],
+    });
+    render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => {
+      let games: unknown[] = [1];
+      library.subscribe((v) => (games = v.games))();
+      expect(games).toEqual([]);
+    });
   });
 
   it("try_again_is_disabled_while_checking", async () => {

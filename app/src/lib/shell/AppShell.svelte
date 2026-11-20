@@ -1,6 +1,7 @@
 <script lang="ts">
   import Sidebar, { type Page } from "./Sidebar.svelte";
   import PixelButton from "$lib/ui/PixelButton.svelte";
+  import LibraryPage from "$lib/library/LibraryPage.svelte";
   import { signOut, retry, type AuthState } from "$lib/auth/auth";
 
   // `state` is the prop name; renamed locally so it can't clash with the $state rune.
@@ -42,8 +43,7 @@
     {/if}
 
     {#if page === "library"}
-      <h2>Library</h2>
-      <p>Signed in as <strong>{auth.display_name}</strong>. Your games show up here in the next update.</p>
+      <LibraryPage name={auth.display_name} offline={auth.kind === "Offline"} />
     {:else if page === "downloads"}
       <h2>Downloads</h2>
       <p>No downloads yet.</p>
@@ -91,10 +91,6 @@
     margin: 0;
     max-width: 62ch;
     color: var(--text);
-  }
-  strong {
-    color: var(--aqua);
-    font-weight: 600;
   }
   .banner {
     display: flex;

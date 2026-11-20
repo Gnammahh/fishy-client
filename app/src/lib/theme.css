@@ -1,0 +1,32 @@
+@import "@fontsource/pixelify-sans/400.css";
+@import "@fontsource/pixelify-sans/500.css";
+@import "@fontsource/pixelify-sans/600.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+
+:root {
+  --bg: #000000;
+  --panel: #0b0f14;
+  --aqua: #4fe3d1;
+  --orange: #ff9f43;
+  --text: #e8f1f2;
+  --text-2: #7a8a99;
+  --error: #ff5c5c;
+  --success: #3ddc84;
+  --navy: #03122b;
+  --ocean: #0a3a7a;
+  --wave2: #0e5aa8;
+  --wave3: #1b7fd1;
+  --font-pixel: "Pixelify Sans", "Courier New", monospace;
+  --font-body: "Inter", system-ui, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+}

@@ -1,0 +1,250 @@
+# Fishy Client — Design Spec
+
+**Date:** 2026-11-20
+**Status:** Draft, waiting for review
+
+Fishy Client is a lightweight, open-source replacement for the Epic Games Launcher, written in Rust. It has a fish-themed pixel-art UI.
+
+---
+
+## 1. Goals
+
+| Goal | What it means in practice |
+|---|---|
+| **Daily use** | You can log in, see your library, install, launch and update your Epic games without opening Epic's launcher. |
+| **Learning** | You learn Rust and how launcher protocols work. The code is split into small parts you can follow. |
+| **Public release** | It's open source on GitHub, polished enough for other people to use. |
+
+### Version 1 is done when
+1. You can log in with your Epic account, and it stays logged in after a restart.
+2. Your owned games show up in a grid with their cover art.
+3. You can install a game to a folder you choose, with the fish download bar showing progress.
+4. Pressing **Play** launches the game logged in as you.
+5. The app shows when an update is available and downloads only the changed parts.
+6. All of the above works on Windows 11.
+
+### Not in version 1 (later)
+- Cloud saves
+- DLC management, beyond whatever installs with the base game
+- Store or shop pages, buying games, claiming free games
+- Friends list and the in-game overlay
+- Linux and Proton support. The design keeps this possible, but it isn't built yet.
+- Importing games already installed by Epic's launcher
+
+### Known limits, the same ones Heroic and Legendary have
+- **Fortnite** isn't supported.
+- **Some anti-cheat games** (Easy Anti-Cheat, BattlEye) may refuse to start or go online without the official launcher.
+- **Ubisoft, EA and Rockstar games** also need that company's own launcher installed.
+- No Epic overlay, so no in-game friends or achievement pop-ups.
+
+---
+
+## 2. Branding and visual identity
+
+### Name
+**Fishy Client.** App window title: `Fishy Client`. Executable: `fishy-client.exe`.
+
+### Colors
+| Role | Color | Hex |
+|---|---|---|
+| Background | Pure black | `#000000` |
+| Panels and cards | Near-black | `#0B0F14` |
+| Fish outline and main accent | Aqua | `#4FE3D1` |
+| Food pellets and highlights | Warm orange | `#FF9F43` |
+| Text | Off-white | `#E8F1F2` |
+| Secondary text | Gray-blue | `#7A8A99` |
+| Error | Coral red | `#FF5C5C` |
+| Success | Sea green | `#3DDC84` |
+
+### Fonts
+- **Headings and buttons:** a pixel font. Planned: *Pixelify Sans* (free OFL license, bundled with the app so it works offline).
+- **Body text, game titles, settings:** *Inter*, a clean sans-serif, so long text stays easy to read.
+
+### App icon
+- A **pixel-art fish, outline only**: aqua pixels on a pure black square, with the body hollow inside.
+- Drawn on a **16×16 pixel grid** and scaled up with hard pixel edges (no blurring) to 32, 64, 128 and 256 px, plus a `.ico` file.
+- It's our own design. It uses the chunky, blocky look of item icons in block-building games, but it isn't a copy of any existing game's sprite.
+- **Draft grid** (`#` = aqua pixel, `.` = black). To be refined in a visual mockup:
+
+```
+ 0 ................
+ 1 ................
+ 2 ................
+ 3 .......#####....
+ 4 .....##.....##..
+ 5 .#..#.........#.
+ 6 .##.#......#...#
+ 7 .#.#...........#
+ 8 .#.#...........#
+ 9 .##.#..........#
+10 .#..#.........#.
+11 .....##.....##..
+12 .......#####....
+13 ................
+14 ................
+15 ................
+```
+(The tail is on the left, the eye is at row 6 column 11, and the fish faces right.)
+
+### Rules for pixel art
+- Every fish and food sprite sits on a pixel grid and is scaled by whole numbers only (×2, ×3, ×4).
+- CSS uses `image-rendering: pixelated` so pixels stay sharp.
+- Animations step frame by frame (CSS `steps()` or a frame counter) rather than gliding smoothly, so they feel like pixel art.
+
+---
+
+## 3. Fish animations
+
+All of these are reusable UI components. Each one has a **reduced-motion** version that's used when Windows "Show animations" is turned off.
+
+### 3.1 Loading animation: `<FishLoader>`
+Used for: app startup, the library loading, any wait longer than about 300 ms.
+
+1. The fish idles in the middle of a small black "tank", bobbing slowly with an occasional bubble.
+2. An orange **food pellet** drops from the top at a random horizontal position.
+3. The fish turns to face it, swims over, and **eats it** with a 2-frame mouth open/close and a small pixel "crunch" puff.
+4. The fish swims back to the middle.
+5. This repeats until loading finishes. The fish then does a little happy flip and the loader fades out.
+
+Details:
+- Sprite frames: swim (2 frames), turn (1), mouth open (1), mouth closed (1), happy flip (3).
+- Only one pellet falls at a time, about 1.2 s per cycle.
+- Size options: `small` (inline, 32 px fish), `medium` (card, 64 px) and `large` (full screen, 128 px).
+- Reduced motion: a static fish with three pellets fading in and out.
+
+### 3.2 Download bar: `<FishProgressBar>`
+Used for: game installs and updates.
+
+- A long horizontal track **filled with small orange dots**.
+- The fish sits at the current progress point. **Dots to its left have been eaten** (gone). Dots to its right are still waiting.
+- As progress moves forward, the fish swims right and chomps each dot it reaches (2-frame mouth animation).
+- Text under the bar: `42% · 3.1 GB / 7.4 GB · 18.2 MB/s · ~4 min left`.
+- **States:**
+  - *Downloading:* the fish chomps and swims.
+  - *Paused:* the fish stops, faces the viewer and blows bubbles.
+  - *Verifying:* the fish swims back over the track slowly with a small "magnifier" bubble.
+  - *Error:* the fish turns gray with an "x" eye, and the bar turns coral red with a **Retry** button.
+  - *Done:* the fish jumps out of the bar with a splash, then the bar becomes a **Play** button.
+- Reduced motion: the fish moves along the bar without chomping or extra frames.
+
+### 3.3 Small touches (after version 1, nice to have)
+- Hovering a game card makes a small bubble rise from it.
+- Empty library: "No fish in this pond yet", with a sleeping fish.
+- Successful login: the fish waves its tail.
+
+---
+
+## 4. Screens
+
+| Screen | What's on it |
+|---|---|
+| **Login** | Large pixel fish logo, "Fishy Client" title, and a **Sign in with Epic** button that opens Epic's real login page inside the app. |
+| **Library** (home) | A grid of game cover art. Search box, filters (All / Installed / Updates), and a sort option. Each card shows the cover, title and a status badge (Installed, Update, Not installed). |
+| **Game details** | Large banner image, description, size, install folder, and an **Install / Play / Update** button. Uninstall and Verify are under a "⋯" menu. |
+| **Downloads** | The current download with the `FishProgressBar`, a queue, and pause/resume/cancel buttons. |
+| **Settings** | Default install folder, max download speed, language, start with Windows (off by default), reduced motion, log out. |
+
+Layout: a slim left sidebar with pixel icons (Library, Downloads, Settings, Account) and the main content on the right. The window can be resized, with a minimum size of 960×600.
+
+---
+
+## 5. Technology
+
+| Part | Choice | Why |
+|---|---|---|
+| Language (engine) | **Rust** | Fast and safe, and it's your goal to learn it. |
+| Desktop shell | **Tauri 2** | Small, fast apps with a web-based UI, which makes a polished design much easier than pure-Rust UI toolkits. |
+| UI framework | **Svelte 5 + TypeScript + Vite** | Simple to learn, very fast, and good for animations. |
+| HTTP | `reqwest` + `tokio` | Standard async Rust networking. |
+| JSON | `serde` / `serde_json` | Standard. |
+| Saving login tokens | `keyring` crate → Windows Credential Manager | Tokens are never stored in plain files. |
+| Decompression and checks | `flate2` (zlib), `sha1` | Needed for Epic's download chunks. |
+| Errors and logs | `thiserror`, `tracing` | Clear error messages and log files for debugging. |
+
+### Project layout
+```
+fishy-client/
+├─ crates/
+│  ├─ fishy-core/     ← all Epic logic, no UI (auth, library, download, install, launch, update)
+│  └─ fishy-cli/      ← small command-line tool for testing the core (`fishy login`, `fishy list`, ...)
+├─ app/
+│  ├─ src-tauri/      ← Tauri app: connects the core to the UI
+│  └─ src/            ← Svelte UI: screens + fish components
+├─ assets/
+│  └─ sprites/        ← fish/pellet pixel sprites, icon source
+└─ docs/
+```
+**Why split it up:** `fishy-core` can be tested without any UI, the CLI makes debugging easy, and a later Linux version or other front end can reuse the same core.
+
+---
+
+## 6. How it talks to Epic
+
+We follow the protocol that the open-source **Legendary** project already worked out, using its source code as the reference. **REA** is used only when something isn't covered there or has to be checked against the real launcher.
+
+| Step | What happens |
+|---|---|
+| **Login** | Epic's web login page opens in an in-app window. After you sign in, Epic returns an *authorization code*, which is exchanged for an **access token** and a **refresh token**. These are saved in Windows Credential Manager. Expired access tokens are renewed automatically with the refresh token. |
+| **Library** | Ask Epic's library service which games you own, then fetch each game's title, description and images from the catalog service. Cache the results on disk so the library opens instantly next time. |
+| **Install** | Get the game's *manifest*, which lists every file and the chunks it's built from. Download the chunks from Epic's CDN in parallel, check each one's hash, decompress them and assemble the files. Downloads are resumable, so closing the app mid-download is safe. |
+| **Launch** | Get a short-lived *exchange code* from Epic and start the game's `.exe` with the launch arguments Epic's launcher uses (auth type, exchange code, app name, user ID, locale and so on, exactly as in Legendary). |
+| **Update** | Compare the installed version with the latest one. Download a new manifest, work out which chunks changed, and fetch only those. |
+
+**Where data lives:** settings and the cache go in `%APPDATA%\FishyClient\`, and logs in `%LOCALAPPDATA%\FishyClient\logs\`. The installed-games list is a JSON file in the settings folder.
+
+**Note on licensing:** Legendary is licensed under GPL-3.0. Because we're porting its logic closely, Fishy Client will also be **GPL-3.0**. That's fine for an open-source project and avoids any licensing problems.
+
+**Note on branding:** we don't use Epic's logos anywhere. The app only says "Sign in with Epic" and "Epic Games library".
+
+---
+
+## 7. Error handling
+
+- Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".
+- Network calls retry automatically up to 3 times with growing delays before showing an error.
+- If the session has expired and can't be renewed, you're sent back to Login and no download progress is lost.
+- A download that fails partway can be resumed, because finished chunks are kept.
+- Settings has an **Open logs folder** button for bug reports.
+
+---
+
+## 8. Testing
+
+- **Core logic:** Rust unit tests for manifest parsing, chunk hashing and update comparison, using saved sample files.
+- **Network:** tests use a fake Epic server (the `wiremock` crate), so they never touch your real account.
+- **UI components:** the fish loader and progress bar have a preview page showing every state (downloading, paused, error, done, reduced motion).
+- **By hand on your PC:** log in, install a small free game, launch it, then test an update.
+
+---
+
+## 9. Build order (milestones)
+
+| # | Milestone | You can see |
+|---|---|---|
+| 0 | **Setup:** install Rust and the tools, create the project | An empty app window opens |
+| 1 | **Fish components:** app icon, `FishLoader`, `FishProgressBar` with a fake-data preview page | The fish animations working |
+| 2 | **Login** | You sign in and it remembers you |
+| 3 | **Library screen** | Your games in a grid with cover art |
+| 4 | **Install + downloads screen** | A real game downloading with the fish bar |
+| 5 | **Launch** | The Play button starts the game |
+| 6 | **Updates** | The update badge and a working patch download |
+| 7 | **Polish:** settings, search and filters, error screens, installer (`.msi`) | Ready to share on GitHub |
+
+The fish components come first, in milestone 1, because they don't depend on Epic at all. You get to see the look of the app early.
+
+---
+
+## 10. Setup needed on your PC (milestone 0)
+
+1. **Rust:** install from https://rustup.rs (choose the default options).
+2. **Microsoft C++ Build Tools:** Rust's installer asks for these on Windows. Install the "Desktop development with C++" workload.
+3. **WebView2:** already included in Windows 11.
+4. **Node.js:** already installed (v26).
+5. **Git:** already installed.
+
+---
+
+## 11. Open questions for later
+- The final icon pixel grid. It will be refined in a visual mockup before milestone 1 is finished.
+- Whether the sidebar uses pixel icons or simple line icons.
+- A GitHub repo name, e.g. `fishy-client`.

@@ -1,0 +1,541 @@
+<title>Fishy Client Mockup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Pixelify+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a mock app window floating in deep water, then a bench of every fish part below it. Single dark look by design. */
+:root{
+  --bg:#000000;
+  --panel:rgba(11,15,20,.86);
+  --line:rgba(79,227,209,.18);
+  --aqua:#4FE3D1;
+  --orange:#FF9F43;
+  --text:#E8F1F2;
+  --text-2:#7A8A99;
+  --red:#FF5C5C;
+  --green:#3DDC84;
+  --font-pixel:"Pixelify Sans","Courier New",monospace;
+  --font-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--text)}
+body{
+  font-family:var(--font-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:32px 72px;
+}
+#ocean{position:fixed;inset:0;width:100%;height:100%;z-index:-1;image-rendering:pixelated;display:block}
+canvas{image-rendering:pixelated;display:block}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+
+/* header */
+.top{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.top canvas{width:64px;height:64px;border:2px solid var(--line)}
+h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);line-height:1;margin:0;color:var(--aqua);letter-spacing:.01em}
+.lede{margin:6px 0 0;color:var(--text-2);max-width:60ch}
+
+/* pixel buttons */
+.btn{
+  font-family:var(--font-pixel);font-size:15px;font-weight:500;line-height:1;
+  color:#000;background:var(--aqua);border:0;padding:10px 16px;cursor:pointer;
+  clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px));
+}
+.btn:hover{filter:brightness(1.12)}
+.btn:focus-visible{background:var(--orange);outline:none}
+.btn.ghost{background:transparent;color:var(--aqua);box-shadow:inset 0 0 0 2px var(--aqua)}
+.btn.ghost:focus-visible{color:var(--orange);box-shadow:inset 0 0 0 2px var(--orange)}
+.btn.play{background:var(--green)}
+.btn:disabled{opacity:.4;cursor:default;filter:none}
+
+/* mock window */
+.window{border:2px solid var(--line);background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.titlebar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:2px solid var(--line);font-family:var(--font-pixel);font-size:14px;color:var(--text-2)}
+.titlebar canvas{width:16px;height:16px}
+.titlebar .dots{margin-left:auto;display:flex;gap:8px}
+.titlebar .dots i{width:10px;height:10px;box-shadow:inset 0 0 0 2px var(--text-2)}
+.app{display:grid;grid-template-columns:184px minmax(0,1fr);min-height:520px}
+.side{border-right:2px solid var(--line);padding:16px 0;display:flex;flex-direction:column;gap:2px}
+.side a{font-family:var(--font-pixel);font-size:16px;padding:10px 18px;color:var(--text-2);text-decoration:none;display:flex;align-items:center;gap:10px}
+.side a::before{content:"";width:6px;height:6px;background:currentColor;opacity:.5}
+.side a[aria-current="page"]{color:var(--aqua);background:rgba(79,227,209,.07)}
+.side a[aria-current="page"]::before{opacity:1}
+.side a:hover{color:var(--text)}
+.side a:focus-visible{outline:2px solid var(--orange);outline-offset:-2px}
+.main{padding:24px;display:flex;flex-direction:column;gap:28px;min-width:0}
+.main h2{font-family:var(--font-pixel);font-weight:600;font-size:22px;margin:0}
+
+.dl{display:grid;gap:14px;padding:18px;border:2px solid var(--line);background:rgba(0,0,0,.45)}
+.dl-head{display:flex;gap:14px;align-items:center;min-width:0}
+.dl-head canvas{width:42px;height:56px;flex:none}
+.dl-head h3{font-family:var(--font-pixel);font-weight:600;font-size:19px;margin:0}
+.dl-head p{margin:0;color:var(--text-2);font-size:13px;overflow-wrap:anywhere}
+.dl-actions{display:flex;flex-wrap:wrap;gap:10px}
+.toast{margin:0;color:var(--green);font-size:14px;min-height:1.5em}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px}
+.card{display:grid;gap:8px;min-width:0}
+.card canvas{width:100%;aspect-ratio:3/4;height:auto;max-width:100%;border:2px solid var(--line)}
+.card h4{margin:0;font-weight:600;font-size:14px;line-height:1.3}
+.chip{font-family:var(--font-pixel);font-size:13px;display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
+.chip::before{content:"";width:6px;height:6px;background:currentColor}
+.chip.ok{color:var(--green)}
+.chip.upd{color:var(--orange)}
+.chip.live{color:var(--aqua);font-variant-numeric:tabular-nums}
+
+/* fish bar */
+.fbar{display:grid;gap:6px;min-width:0}
+.fbar canvas{width:100%;height:56px}
+.fbar-meta{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;min-height:38px}
+.fbar-text{margin:0;color:var(--text-2);font-size:14px;font-variant-numeric:tabular-nums}
+.fbar.is-error .fbar-text{color:var(--red)}
+.fbar-act{display:flex;gap:8px}
+
+/* bench */
+.bench{display:grid;gap:48px}
+.part h2{font-family:var(--font-pixel);font-weight:600;font-size:26px;margin:0 0 6px}
+.part > p{margin:0 0 20px;color:var(--text-2);max-width:62ch}
+.icons{display:flex;flex-wrap:wrap;align-items:flex-end;gap:28px}
+.icons figure{margin:0;display:grid;gap:8px;justify-items:center}
+.icons canvas{max-width:100%;height:auto}
+.icons figcaption{color:var(--text-2);font-size:13px;font-variant-numeric:tabular-nums}
+.loaders{display:flex;flex-wrap:wrap;align-items:flex-end;gap:24px;margin-bottom:18px}
+.loader{display:grid;gap:8px;min-width:0;max-width:100%}
+.tank{position:relative;background:rgba(0,0,0,.5);border:2px solid var(--line);max-width:100%}
+.tank canvas{max-width:100%;height:auto;transition:opacity .3s}
+.tank canvas.gone{opacity:0}
+.tank-done{position:absolute;inset:0;display:grid;place-items:center;margin:0;font-family:var(--font-pixel);color:var(--green);font-size:18px}
+.loader-label{margin:0;color:var(--text-2);font-size:13px}
+.states{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px}
+.state{display:grid;gap:8px;padding:16px;border:2px solid var(--line);background:var(--panel);min-width:0}
+.state h3{font-family:var(--font-pixel);font-weight:500;font-size:17px;margin:0;color:var(--aqua)}
+.state > p{margin:0;color:var(--text-2);font-size:13px}
+.ask{border-top:2px solid var(--line);padding-top:24px;color:var(--text-2);max-width:62ch}
+.ask strong{color:var(--text);font-weight:600}
+
+@media (max-width:720px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:2px solid var(--line);padding:0}
+  .side a{white-space:nowrap}
+  .main{padding:16px}
+}
+@media (prefers-reduced-motion:reduce){ .tank canvas{transition:none} }
+</style>
+
+<canvas id="ocean" aria-hidden="true"></canvas>
+
+<div class="wrap">
+  <header class="top">
+    <canvas id="logo" width="16" height="16" aria-hidden="true"></canvas>
+    <div>
+      <h1>Fishy Client</h1>
+      <p class="lede">A design preview of how the launcher looks and moves. It uses fake data, so nothing on this page connects to Epic.</p>
+    </div>
+  </header>
+
+  <section class="window" aria-label="Mock Fishy Client window">
+    <div class="titlebar"><canvas id="tbicon" width="16" height="16" aria-hidden="true"></canvas><span>Fishy Client</span><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
+    <div class="app">
+      <nav class="side" aria-label="Sections">
+        <a href="#library" aria-current="page">Library</a>
+        <a href="#library">Downloads</a>
+        <a href="#library">Settings</a>
+        <a href="#library">Account</a>
+      </nav>
+      <div class="main">
+        <div class="dl">
+          <div class="dl-head">
+            <canvas id="cover-dl" aria-hidden="true"></canvas>
+            <div>
+              <h3>Tidepool Odyssey</h3>
+              <p>Installing to D:\Games\TidepoolOdyssey</p>
+            </div>
+          </div>
+          <div id="liveBar"></div>
+          <div class="dl-actions">
+            <button class="btn ghost" id="pauseBtn" type="button">Pause</button>
+            <button class="btn ghost" id="errBtn" type="button">Simulate an error</button>
+            <button class="btn ghost" id="restartBtn" type="button">Restart download</button>
+          </div>
+          <p class="toast" id="toast" aria-live="polite"></p>
+        </div>
+
+        <div id="library">
+          <h2>Library</h2>
+        </div>
+        <div class="grid">
+          <div class="card"><canvas id="cover1" aria-hidden="true"></canvas><h4>Tidepool Odyssey</h4><span class="chip live" id="chip-tide">Downloading 0%</span></div>
+          <div class="card"><canvas id="cover2" aria-hidden="true"></canvas><h4>Kelp Runner</h4><span class="chip ok">Installed</span></div>
+          <div class="card"><canvas id="cover3" aria-hidden="true"></canvas><h4>Abyssal Lanterns</h4><span class="chip upd">Update ready</span></div>
+          <div class="card"><canvas id="cover4" aria-hidden="true"></canvas><h4>Coral Kart</h4><span class="chip">Not installed</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="bench">
+    <section class="part">
+      <h2>App icon</h2>
+      <p>A pixel fish outline in aqua on a black square, drawn on a 16 by 16 grid and scaled up without smoothing.</p>
+      <div class="icons">
+        <figure><canvas id="ic256" width="256" height="256" aria-label="Icon at 256 pixels" role="img"></canvas><figcaption>256 px</figcaption></figure>
+        <figure><canvas id="ic64" width="64" height="64" aria-label="Icon at 64 pixels" role="img"></canvas><figcaption>64 px</figcaption></figure>
+        <figure><canvas id="ic32" width="32" height="32" aria-label="Icon at 32 pixels" role="img"></canvas><figcaption>32 px</figcaption></figure>
+        <figure><canvas id="ic16" width="16" height="16" aria-label="Icon at 16 pixels" role="img"></canvas><figcaption>16 px taskbar</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="part">
+      <h2>Loading fish</h2>
+      <p>Food drops in, the fish swims over and eats it, then swims back to the middle. It repeats until loading is done, then the fish flips and the tank fades out.</p>
+      <div class="loaders">
+        <div class="loader" id="ld1"></div>
+        <div class="loader" id="ld2"></div>
+        <div class="loader" id="ld3"></div>
+      </div>
+      <button class="btn" id="finishBtn" type="button">Finish loading</button>
+    </section>
+
+    <section class="part">
+      <h2>Download bar</h2>
+      <p>The fish eats the dots as the download moves forward. These are the five states it can be in.</p>
+      <div class="states">
+        <div class="state"><h3>Downloading</h3><p>Chomps a dot each time progress passes one.</p><div id="sb-dl"></div></div>
+        <div class="state"><h3>Paused</h3><p>Stops and blows bubbles.</p><div id="sb-pause"></div></div>
+        <div class="state"><h3>Checking files</h3><p>Swims back over the finished part to verify it.</p><div id="sb-verify"></div></div>
+        <div class="state"><h3>Error</h3><p>Turns gray and belly up, with a Retry button.</p><div id="sb-err"></div></div>
+        <div class="state"><h3>Done</h3><p>Jumps out with a splash, then the bar becomes Play.</p><div id="sb-done"></div></div>
+      </div>
+    </section>
+
+    <p class="ask"><strong>Want something different?</strong> Tell Claude what to change, for example the fish size, the wave colors, how fast the loading fish swims, or the shape of the fish itself.</p>
+  </div>
+</div>
+
+<script>
+(() => {
+  const GiB = 1024 ** 3, MiB = 1024 ** 2;
+  const mq = matchMedia('(prefers-reduced-motion: reduce)');
+  let RM = mq.matches;
+  mq.addEventListener('change', e => { RM = e.matches; oceanDrawn = false; });
+
+  /* ---------- sprites (16x16, facing right) ---------- */
+  const FISH_A = [
+    "................",
+    "........##......",
+    ".......#####....",
+    ".....##.....##..",
+    "#...#.........#.",
+    "##.#...........#",
+    "#.##........e..#",
+    ".#.#...........#",
+    "#.##...........#",
+    "##.#....##.....#",
+    "#...#.........#.",
+    ".....##.....##..",
+    ".......#####....",
+    "................",
+    "................",
+    "................"];
+  const FISH_B = FISH_A.slice();
+  FISH_B[4]  = ".#..#.........#.";
+  FISH_B[5]  = ".###...........#";
+  FISH_B[6]  = ".#.#........e..#";
+  FISH_B[7]  = "..##...........#";
+  FISH_B[8]  = ".#.#...........#";
+  FISH_B[9]  = ".###....##.....#";
+  FISH_B[10] = ".#..#.........#.";
+  const OPEN = FISH_A.slice();
+  OPEN[7] = ".#.#.........#..";
+  OPEN[8] = "#.##.........#..";
+  const DEAD = FISH_A.slice();
+  DEAD[5] = "##.#.......x.x.#";
+  DEAD[6] = "#.##........x..#";
+  DEAD[7] = ".#.#.......x.x.#";
+  const PELLET = [".oo.", "ohoo", "oooo", ".oo."];
+  const BUBBLE = [".bb.", "b..b", "b..b", ".bb."];
+  const PUFF = ["o....o", "..o...", "o...o.", ".o....", "...o.o", "o.o..."];
+  const PAL = { '#': '#4FE3D1', e: '#E8F1F2', x: '#E8F1F2', o: '#FF9F43', h: '#FFD3A1', b: '#9FF3EA' };
+  const GRAY = { '#': '#7A8A99' };
+  const ICON = { e: '#4FE3D1' };
+
+  function drawSprite(ctx, g, x, y, s, o = {}) {
+    const h = g.length, w = g[0].length;
+    for (let r = 0; r < h; r++) {
+      const row = g[r];
+      for (let c = 0; c < w; c++) {
+        const ch = row[c];
+        if (ch === '.') continue;
+        const col = (o.pal && o.pal[ch]) || PAL[ch];
+        if (!col) continue;
+        ctx.fillStyle = col;
+        const cc = o.flip ? w - 1 - c : c, rr = o.vflip ? h - 1 - r : r;
+        ctx.fillRect(Math.round(x + cc * s), Math.round(y + rr * s), s, s);
+      }
+    }
+  }
+  const clamp = p => (Number.isNaN(p) ? 0 : Math.min(1, Math.max(0, p)));
+  const ease = q => (q < .5 ? 2 * q * q : 1 - 2 * (1 - q) * (1 - q));
+
+  /* ---------- text formatting (same rules as the plan) ---------- */
+  function formatBytes(b) {
+    const u = ['B', 'KB', 'MB', 'GB']; let i = 0;
+    while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+    return b.toFixed(1) + ' ' + u[i];
+  }
+  function formatProgress(done, total, bps) {
+    const pct = total > 0 ? Math.round(clamp(done / total) * 100) : 0;
+    let left = '—';
+    if (bps > 0 && total > 0) {
+      const sec = Math.max(0, total - done) / bps;
+      left = sec < 60 ? `~${Math.round(sec)} s left` : `~${Math.round(sec / 60)} min left`;
+    }
+    return `${pct}% · ${formatBytes(done)} / ${formatBytes(total)} · ${formatBytes(bps)}/s · ${left}`;
+  }
+
+  /* ---------- static icons ---------- */
+  function paintIcon(id, size) {
+    const cv = document.getElementById(id); if (!cv) return;
+    const c = cv.getContext('2d');
+    c.fillStyle = '#000'; c.fillRect(0, 0, size, size);
+    drawSprite(c, FISH_A, 0, 0, size / 16, { pal: ICON });
+  }
+  ['ic256:256', 'ic64:64', 'ic32:32', 'ic16:16', 'logo:16', 'tbicon:16'].forEach(s => { const [id, n] = s.split(':'); paintIcon(id, +n); });
+
+  /* ---------- covers ---------- */
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function drawCover(id, seed, p) {
+    const cv = document.getElementById(id); cv.width = 24; cv.height = 32;
+    const x = cv.getContext('2d'), r = rng(seed);
+    x.fillStyle = p[0]; x.fillRect(0, 0, 24, 32);
+    x.fillStyle = p[1]; x.fillRect(0, 9, 24, 11);
+    const sx = 5 + Math.floor(r() * 13), sy = 6 + Math.floor(r() * 5);
+    x.fillStyle = p[3];
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) if (dx * dx + dy * dy <= 9) x.fillRect(sx + dx, sy + dy, 1, 1);
+    x.fillStyle = p[2]; x.fillRect(0, 20, 24, 12);
+    x.fillStyle = p[1]; for (let i = 0; i < 14; i++) x.fillRect(Math.floor(r() * 22), 21 + Math.floor(r() * 11), 2 + Math.floor(r() * 3), 1);
+    x.fillStyle = p[3]; for (let y = 21; y < 32; y += 2) x.fillRect(sx - 2 + Math.floor(r() * 2), y, 2 + Math.floor(r() * 3), 1);
+  }
+  const TIDE = ['#0A1F3D', '#14417A', '#0E5AA8', '#FF9F43'];
+  drawCover('cover-dl', 11, TIDE);
+  drawCover('cover1', 11, TIDE);
+  drawCover('cover2', 27, ['#06231C', '#0F4D3A', '#1F8A5B', '#E8F1F2']);
+  drawCover('cover3', 5, ['#05030F', '#1A0F3D', '#2B1E66', '#FFD166']);
+  drawCover('cover4', 42, ['#3D0F1F', '#7A1F3D', '#C2405E', '#FFE3A1']);
+
+  /* ---------- ocean background ---------- */
+  const ocean = document.getElementById('ocean'), oc = ocean.getContext('2d');
+  let OW = 0, OH = 0, oceanDrawn = false, oceanLast = 0;
+  function sizeOcean() { OW = Math.ceil(innerWidth / 2); OH = Math.ceil(innerHeight / 2); ocean.width = OW; ocean.height = OH; oceanDrawn = false; }
+  addEventListener('resize', sizeOcean); sizeOcean();
+  const WAVES = [
+    { rgb: '10,58,122', a: .45, l: 160, amp: 9, base: .70, sp: 4 },
+    { rgb: '14,90,168', a: .35, l: 120, amp: 7, base: .80, sp: 6 },
+    { rgb: '27,127,209', a: .25, l: 90, amp: 5, base: .90, sp: 9 }];
+  function drawOcean(now) {
+    if (RM && oceanDrawn) return;
+    if (!RM && now - oceanLast < 66) return;
+    oceanLast = now; oceanDrawn = true;
+    const t = RM ? 0 : now / 1000;
+    const g = oc.createLinearGradient(0, 0, 0, OH);
+    g.addColorStop(0, '#000000'); g.addColorStop(.5, '#000000'); g.addColorStop(.8, '#03122B'); g.addColorStop(1, '#0A3A7A');
+    oc.fillStyle = g; oc.fillRect(0, 0, OW, OH);
+    for (const w of WAVES) {
+      const off = Math.round(t * w.sp / 2) * 2;
+      oc.fillStyle = `rgba(${w.rgb},${w.a})`;
+      for (let x = 0; x < OW; x += 2) {
+        const y = w.base * OH + w.amp * Math.sin(2 * Math.PI * (x + off) / w.l);
+        const yq = Math.round(y / 2) * 2;
+        oc.fillRect(x, yq, 2, OH - yq);
+      }
+    }
+  }
+
+  /* ---------- fish download bar ---------- */
+  class FishBar {
+    constructor(root, o) {
+      Object.assign(this, { p: 0, state: 'downloading', total: 7.4 * GiB, speed: 18.2 * MiB, onRetry: null, onPlay: null, autoLoop: false }, o);
+      this.root = root; root.classList.add('fbar');
+      root.innerHTML = '<canvas height="56" aria-hidden="true"></canvas><div class="fbar-meta"><p class="fbar-text" aria-live="polite"></p><div class="fbar-act"></div></div>';
+      this.cv = root.querySelector('canvas'); this.ctx = this.cv.getContext('2d');
+      this.txt = root.querySelector('.fbar-text'); this.act = root.querySelector('.fbar-act');
+      this.eaten = -1; this.puffAt = -1e9; this.stateAt = performance.now(); this.last = 0; this.actKey = null;
+      const fit = () => { this.cv.width = Math.max(96, Math.floor(this.cv.clientWidth)); this.last = 0; };
+      new ResizeObserver(fit).observe(this.cv); fit();
+    }
+    set(state, p) { if (state !== this.state) { this.state = state; this.stateAt = performance.now(); } if (p != null) this.p = p; }
+    tick(now) {
+      if (now - this.last < 80) return; this.last = now;
+      const c = this.ctx, W = this.cv.width, H = 56, ty = 34, top = ty - 15;
+      c.clearRect(0, 0, W, H);
+      const p = clamp(this.p), fl = Math.round(p * (W - 32) / 2) * 2, mouth = fl + 30;
+      const st = this.state, err = st === 'error';
+      let eaten = 0;
+      for (let x = 38; x <= W - 6; x += 12) {
+        if (x < mouth) { eaten++; continue; }
+        c.fillStyle = err ? 'rgba(255,92,92,.75)' : '#FF9F43';
+        c.fillRect(x - 2, ty - 2, 4, 4);
+      }
+      if (eaten > this.eaten && this.eaten >= 0 && st === 'downloading') this.puffAt = now;
+      this.eaten = eaten;
+      if (err) { c.fillStyle = 'rgba(255,92,92,.5)'; c.fillRect(0, H - 2, W, 2); }
+
+      const t = now - this.stateAt;
+      if (st === 'downloading') {
+        const g = RM ? FISH_A : [FISH_A, OPEN, FISH_B, OPEN][Math.floor(now / 150) % 4];
+        drawSprite(c, g, fl, top, 2);
+        if (!RM && now - this.puffAt < 160) drawSprite(c, PUFF, mouth, ty - 6, 2);
+      } else if (st === 'paused') {
+        drawSprite(c, FISH_A, fl, top + (RM ? 0 : Math.round(Math.sin(now / 500)) * 2), 2);
+        if (!RM) for (let i = 0; i < 3; i++) {
+          const k = ((now / 45) + i * 9) % 26;
+          drawSprite(c, BUBBLE, mouth + 2 + (i % 2) * 4, ty - 6 - Math.round(k / 2) * 2, 1);
+        }
+      } else if (st === 'verifying') {
+        let x = fl, back = false;
+        if (!RM) { const per = 4000, ph = t % (per * 2); back = ph >= per; const f = (back ? per * 2 - ph : ph) / per; x = Math.round(f * fl / 2) * 2; }
+        drawSprite(c, Math.floor(now / 200) % 2 ? FISH_A : FISH_B, x, top, 2, { flip: back });
+        drawSprite(c, BUBBLE, back ? x - 10 : x + 34, ty - 10, 2);
+      } else if (err) {
+        drawSprite(c, DEAD, fl, top - 2, 2, { pal: GRAY, vflip: true });
+      } else if (st === 'done') {
+        if (this.autoLoop && t > 4500) this.stateAt = now;
+        if (!RM && t < 360) {
+          const f = Math.floor(t / 120);
+          drawSprite(c, FISH_A, fl, top + [-6, -12, -6][f], 2, { vflip: f === 1 });
+          drawSprite(c, PUFF, fl + 10, ty + 2, 2);
+        } else drawSprite(c, FISH_A, fl, top, 2);
+      }
+
+      let text;
+      const d = p * this.total;
+      if (st === 'downloading') text = formatProgress(d, this.total, this.speed);
+      else if (st === 'paused') text = `Paused at ${Math.round(p * 100)}%. ${formatBytes(d)} of ${formatBytes(this.total)} downloaded.`;
+      else if (st === 'verifying') text = `Checking installed files, ${Math.round(p * 100)}% done.`;
+      else if (err) text = 'Download stopped: the connection to the download server dropped.';
+      else text = `Installed. ${formatBytes(this.total)} on disk.`;
+      if (text !== this.txt.textContent) this.txt.textContent = text;
+      this.root.classList.toggle('is-error', err);
+
+      const key = err ? 'retry' : (st === 'done' && (RM || t >= 360)) ? 'play' : '';
+      if (key !== this.actKey) {
+        this.actKey = key; this.act.innerHTML = '';
+        if (key) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = key === 'play' ? 'btn play' : 'btn';
+          b.textContent = key === 'play' ? 'Play' : 'Retry';
+          b.onclick = () => (key === 'play' ? this.onPlay : this.onRetry)?.(this);
+          this.act.appendChild(b);
+        }
+      }
+    }
+  }
+
+  /* ---------- loading fish ---------- */
+  class Loader {
+    constructor(root, s, label) {
+      this.s = s; this.W = 48 * s; this.H = 32 * s;
+      root.innerHTML = `<div class="tank"><canvas width="${this.W}" height="${this.H}" style="width:${this.W}px" aria-hidden="true"></canvas><p class="tank-done" hidden>Loaded</p></div><p class="loader-label">${label}</p>`;
+      this.cv = root.querySelector('canvas'); this.ctx = this.cv.getContext('2d'); this.doneEl = root.querySelector('.tank-done');
+      const r = rng(s * 7); this.pebbles = Array.from({ length: 6 }, () => [r(), 1 + Math.floor(r() * 3)]);
+      this.last = 0; this.reset();
+    }
+    reset() { this.start = performance.now(); this.k = -1; this.finishing = false; this.doneAt = 0; this.faded = false; this.cv.classList.remove('gone'); this.doneEl.hidden = true; }
+    finish() { this.finishing = true; }
+    tick(now) {
+      if (now - this.last < 70) return; this.last = now;
+      const u = this.s, W = this.W, H = this.H, c = this.ctx;
+      c.clearRect(0, 0, W, H);
+      c.fillStyle = 'rgba(79,227,209,.2)';
+      for (const [px, w] of this.pebbles) c.fillRect(Math.round(px * (W - 3 * u) / u) * u, H - 2 * u, w * u, u);
+      const cx = W / 2, fy = Math.round((H / 2 - 7 * u) / u) * u, mouthY = fy + 7 * u;
+
+      if (this.doneAt) {
+        const t = now - this.doneAt;
+        if (!RM && t < 360) { const f = Math.floor(t / 120); drawSprite(c, FISH_A, cx - 8 * u, fy + [-1, -3, -1][f] * u, u, { vflip: f === 1 }); }
+        else { drawSprite(c, FISH_A, cx - 8 * u, fy, u); if (!this.faded) { this.faded = true; this.cv.classList.add('gone'); this.doneEl.hidden = false; } }
+        return;
+      }
+      if (RM) {
+        drawSprite(c, FISH_A, cx - 8 * u, fy, u);
+        for (let i = 0; i < 3; i++) { c.globalAlpha = (Math.sin(now / 700 + i * 2.1) + 1) / 2; drawSprite(c, PELLET, cx - 7 * u + i * 5 * u, fy - 4 * u, u); }
+        c.globalAlpha = 1;
+        if (this.finishing) this.doneAt = now;
+        return;
+      }
+      const CYC = 1800, el = now - this.start, k = Math.floor(el / CYC), f = (el % CYC) / CYC;
+      if (k !== this.k) {
+        this.k = k;
+        if (this.finishing && k > 0) { this.doneAt = now; return; }
+        const r = Math.random();
+        this.px = Math.random() < .5 ? .15 + r * .23 : .62 + r * .23;
+      }
+      const pxx = this.px * W, dir = pxx >= cx ? 1 : -1, target = pxx - dir * 7 * u;
+      let fcx = cx, facing = dir, sprite, bob = 0, pelletY = null;
+      const swim = ms => (Math.floor(now / ms) % 2 ? FISH_A : FISH_B);
+      if (f < .3) { pelletY = -4 * u + (mouthY - 2 * u + 4 * u) * (f / .3); bob = Math.round(Math.sin(now / 300)) * u; sprite = swim(220); }
+      else if (f < .55) { fcx = cx + (target - cx) * ease((f - .3) / .25); pelletY = mouthY - 2 * u; sprite = swim(120); }
+      else if (f < .7) { fcx = target; if (f < .625) { sprite = OPEN; pelletY = mouthY - 2 * u; } else sprite = FISH_A; }
+      else { fcx = target + (cx - target) * ease((f - .7) / .3); facing = cx > target ? 1 : -1; sprite = swim(200); }
+      drawSprite(c, sprite, Math.round((fcx - 8 * u) / u) * u, fy + bob, u, { flip: facing < 0 });
+      if (pelletY != null) drawSprite(c, PELLET, Math.round((pxx - 2 * u) / u) * u, Math.round(pelletY / u) * u, u);
+      if (f >= .625 && f < .7) drawSprite(c, PUFF, Math.round((pxx - 3 * u) / u) * u, mouthY - 3 * u, u);
+    }
+  }
+
+  /* ---------- wire up ---------- */
+  const tickers = [];
+  const loaders = [
+    new Loader(document.getElementById('ld1'), 2, 'Small, for rows and buttons'),
+    new Loader(document.getElementById('ld2'), 4, 'Medium, for cards'),
+    new Loader(document.getElementById('ld3'), 8, 'Large, for app startup')];
+  tickers.push(...loaders);
+  const finishBtn = document.getElementById('finishBtn');
+  finishBtn.onclick = () => {
+    if (finishBtn.dataset.mode === 'replay') { loaders.forEach(l => l.reset()); finishBtn.dataset.mode = ''; finishBtn.textContent = 'Finish loading'; }
+    else { loaders.forEach(l => l.finish()); finishBtn.dataset.mode = 'replay'; finishBtn.textContent = 'Start again'; }
+  };
+
+  const sbDl = new FishBar(document.getElementById('sb-dl'), { p: .2 });
+  const sbErr = new FishBar(document.getElementById('sb-err'), { p: .42, state: 'error', onRetry: b => { b.set('downloading'); setTimeout(() => b.set('error'), 2500); } });
+  tickers.push(
+    sbDl,
+    new FishBar(document.getElementById('sb-pause'), { p: .42, state: 'paused' }),
+    new FishBar(document.getElementById('sb-verify'), { p: .7, state: 'verifying' }),
+    sbErr,
+    new FishBar(document.getElementById('sb-done'), { p: 1, state: 'done', autoLoop: true, onPlay: () => {} }));
+
+  const toast = document.getElementById('toast'), chip = document.getElementById('chip-tide');
+  const pauseBtn = document.getElementById('pauseBtn'), errBtn = document.getElementById('errBtn');
+  const live = new FishBar(document.getElementById('liveBar'), {
+    p: 0,
+    onRetry: b => { b.set('downloading'); toast.textContent = ''; },
+    onPlay: () => { toast.textContent = 'Tidepool Odyssey is starting. In the real app, this launches the game.'; }
+  });
+  tickers.push(live);
+  pauseBtn.onclick = () => { live.set(live.state === 'paused' ? 'downloading' : 'paused'); };
+  errBtn.onclick = () => { live.set('error'); };
+  document.getElementById('restartBtn').onclick = () => { live.set('downloading', 0); toast.textContent = ''; };
+
+  let prev = performance.now();
+  function frame(now) {
+    const dt = Math.min(250, now - prev); prev = now;
+    if (live.state === 'downloading') {
+      live.p = Math.min(1, live.p + dt / 20000);
+      if (live.p >= 1) live.set('done');
+    }
+    live.speed = MiB * (18.2 + Math.sin(now / 900) * 1.1);
+    sbDl.p = .15 + ((now / 30000) % 1) * .7;
+    const ps = live.state;
+    pauseBtn.textContent = ps === 'paused' ? 'Resume' : 'Pause';
+    pauseBtn.disabled = errBtn.disabled = ps === 'done' || ps === 'error';
+    const label = ps === 'done' ? 'Installed' : ps === 'error' ? 'Download failed' : ps === 'paused' ? `Paused ${Math.round(live.p * 100)}%` : `Downloading ${Math.round(live.p * 100)}%`;
+    if (chip.textContent !== label) { chip.textContent = label; chip.className = 'chip ' + (ps === 'done' ? 'ok' : ps === 'error' ? 'upd' : 'live'); }
+    drawOcean(now);
+    for (const t of tickers) t.tick(now);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>

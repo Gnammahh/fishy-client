@@ -5,6 +5,8 @@ pub mod manifest;
 pub mod chunk;
 pub mod client;
 pub mod plan;
+pub mod space;
+pub mod store;
 
 pub use error::{format_bytes, InstallError};
 

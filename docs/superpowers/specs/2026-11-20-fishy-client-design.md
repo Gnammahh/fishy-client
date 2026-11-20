@@ -311,6 +311,95 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ---
 
 ## 11. Open questions for later
-- The final icon pixel grid. It will be refined in a visual mockup before milestone 1 is finished.
-- Whether the sidebar uses pixel icons or simple line icons.
-- A GitHub repo name, e.g. `fishy-client`.
+- ~~The final icon pixel grid.~~ Done: the rounded tile with the 14×10 fish (see §2).
+- ~~Whether the sidebar uses pixel icons or simple line icons.~~ Done: small square bullets, as in the mockup.
+- A GitHub repo name, e.g. `fishy-client` (no repository yet; see §12).
+
+---
+
+## 12. Progress log (updated 2026-11-20)
+
+### Where everything is
+- **Project folder:** `Desktop\fishy-client`. Git only, on this PC, with **no online backup yet**.
+- **Branches.** Both are kept separate from `master` on purpose; nothing is merged yet.
+  - `feat/ui-foundation`: milestones 0–1, the look of the app.
+  - `feat/epic-login`: milestone 2, Epic login. Built on top of the UI branch.
+- **Approved visual reference:** `design/mockup.html`. It's also published as a private claude.ai artifact, "Fishy Client Mockup".
+- **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md` and `docs/superpowers/plans/2026-11-20-epic-login.md`.
+
+### What's done
+
+**Milestone 0, setup**
+- Rust, the Microsoft C++ Build Tools and the Tauri + Svelte app skeleton are installed.
+- Window "Fishy Client": 1200×760, min 960×600. License GPL-3.0-or-later.
+
+**Milestone 1, the look (branch `feat/ui-foundation`)**
+- **App icon:** a pixel fish outline on a black tile with rounded corners, centered, sharp from 16 px to 256 px. It's generated from `assets/sprites/fish-icon.txt` with `npm run icon`.
+- **Ocean background:** black fading into blue, with three layers of pixel-stepped waves drifting slowly.
+- **Loading fish:** in 3 sizes. Food drops, the fish eats it and swims back, then flips and shows "Loaded" when done.
+- **Download bar:** the fish eats the dots. It has five states: downloading, paused, checking files, error with Retry, and done with Play.
+- **Honest numbers:** it never shows "NaN", "Infinity" or "100%" before the last byte, and it shows the real downloaded size even when the total is unknown.
+- **Screen readers:** the bar is a real progress bar that only announces state changes.
+- The **component preview** lives at `/preview`. It's development only; the shipped app returns "Not found".
+
+**Milestone 2, Epic login (branch `feat/epic-login`)**
+- **Sign in with Epic** opens Epic's real login page in a private window. Email/password, 2FA and Google sign-in all work. The Google sign-in was tested live with a real account.
+- **Backup:** "Trouble signing in? Paste a code instead" opens Epic in your normal browser.
+- **The login is remembered** in Windows Credential Manager, split into pieces because Epic's tokens are too big for one entry. It refreshes by itself 5 minutes before it expires.
+- **App shell:** sidebar with Library, Downloads, Settings and Account, plus an offline banner with **Try again**. The Account page has **Log out**.
+- **Log out** ends the session at Epic and deletes every saved piece.
+
+### Privacy and security decisions
+- Your password goes to Epic's page only; Fishy Client never sees it.
+- Tokens are stored only in Credential Manager, never in files or the page code, and they print as `[redacted]` anywhere they could leak.
+- **No tracking or analytics.** The app talks only to Epic.
+- The sign-in window is **private**, so Epic's website never remembers you after Log out (this matters on shared PCs). It also has **no access** to the app's internals.
+- A sign-in code is accepted **only right after Epic's own final page**, so no other page can sign you into a different account.
+- **Pop-ups** (Google/Apple/Steam sign-in) are allowed; they also have no access to the app.
+- Session changes happen **one at a time**, so a late refresh can't undo a logout.
+- Epic's error messages, which can quote tokens, are never stored.
+- **Security policy (CSP) is on.** The unused "open links" plugin was removed, and the Tauri version is pinned to 2.12.
+- **Dependency check:** 0 known problems in what ships. The warnings come from a development-only tool and are left as is.
+
+### Bugs found while testing for real, and fixed
+- **The sign-in window stayed white.** It was created from a command that blocks the main thread on Windows. That command is now async.
+- **"Sign in with Google" did nothing.** A review fix had blocked pop-ups, so they're allowed again (see above).
+- **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
+
+### Tests
+- **Rust core:** 40 tests, plus 1 that writes to the real Credential Manager (run on purpose only).
+- **UI:** 52 tests.
+- **Two independent code reviews:** every important finding was fixed test-first.
+
+### Still to check by hand (milestone 2)
+- [x] Sign in (with Google)
+- [ ] Still signed in after restarting the app
+- [ ] Closing the sign-in window midway goes back to the login screen
+- [ ] Log out leads to the login screen; `cmdkey /list | findstr /i fishy` prints nothing, and Sign in asks for the password again
+
+### Known limits and risks
+- **Ban risk: low, not zero.** Epic doesn't officially allow third-party launchers. Legendary and Heroic use the same method and have been used for years without known bans for normal use.
+  - Avoid online anti-cheat games (Fortnite etc.).
+  - Use only your own library.
+  - A secondary account is the zero-risk option.
+- Fortnite and some anti-cheat games won't work, the same as with Heroic.
+- **PowerShell on this PC blocks npm's script shortcut,** so use `npm.cmd` (for example `npm.cmd run tauri dev`).
+
+### Small things deferred
+- "~600 min left" should say hours.
+- Pixels may look slightly uneven at 125%/150% Windows display scaling.
+- Animations keep redrawing when nothing moves.
+- Check the 24/48 px icon sizes for blur.
+- Two rare race/storage edge cases, noted in `crates/fishy-core/src/auth/manager.rs`.
+
+### Next steps
+1. Finish the three hand checks above.
+2. **Back up to a private GitHub repository** (needs your GitHub account; the GitHub tool, `gh`, isn't installed yet).
+3. **Milestone 3, Library:** your owned games in a grid with cover art.
+   - Also: a library cache on disk, deleted on Log out.
+   - Also: log files with secrets filtered out, and a "delete all my data" button.
+4. Later milestones:
+   - Install
+   - Launch (note: Epic's launch code is visible to other programs on the PC while a game starts)
+   - Updates
+   - Polish, signed updates and a code-signed installer

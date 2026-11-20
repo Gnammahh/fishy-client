@@ -36,6 +36,17 @@ pub struct CatalogItem {
     /// Present on DLC: points at the game it belongs to.
     #[serde(rename = "mainGameItem", default)]
     pub main_game_item: Option<serde_json::Value>,
+    /// Holds `FolderName`, the install folder Epic suggests.
+    #[serde(rename = "customAttributes", default)]
+    pub custom_attributes: Option<serde_json::Value>,
+}
+
+impl CatalogItem {
+    /// Epic's suggested install folder name (`customAttributes.FolderName.value`), if any.
+    pub fn folder_name(&self) -> Option<String> {
+        let value = self.custom_attributes.as_ref()?.pointer("/FolderName/value")?.as_str()?.trim();
+        (!value.is_empty()).then(|| value.to_string())
+    }
 }
 
 /// A game shown in the Library (also what the cache stores).
@@ -108,7 +119,21 @@ mod tests {
             key_images: images.iter().map(|(k, u)| KeyImage { kind: (*k).into(), url: (*u).into() }).collect(),
             categories: categories.iter().map(|p| Category { path: (*p).into() }).collect(),
             main_game_item: dlc.then(|| serde_json::json!({"id": "main"})),
+            custom_attributes: None,
         }
+    }
+
+    #[test]
+    fn folder_name_from_custom_attributes() {
+        let item: CatalogItem = serde_json::from_value(serde_json::json!({
+            "title": "Tidepool Odyssey",
+            "customAttributes": {"FolderName": {"type": "STRING", "value": " TidepoolOdyssey "}}
+        }))
+        .unwrap();
+        assert_eq!(item.folder_name().as_deref(), Some("TidepoolOdyssey"));
+        let blank: CatalogItem = serde_json::from_value(serde_json::json!({"title": "X", "customAttributes": {"FolderName": {"value": "  "}}})).unwrap();
+        assert_eq!(blank.folder_name(), None);
+        assert_eq!(info("X", &[], &[], false).folder_name(), None);
     }
 
     #[test]

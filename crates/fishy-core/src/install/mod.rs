@@ -3,6 +3,7 @@ mod error;
 pub(crate) mod reader;
 pub mod manifest;
 pub mod chunk;
+pub mod client;
 
 pub use error::{format_bytes, InstallError};
 

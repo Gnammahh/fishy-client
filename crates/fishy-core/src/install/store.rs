@@ -149,8 +149,7 @@ impl InstallStore {
         let dir = self.job_dir(app)?;
         std::fs::create_dir_all(&dir)?;
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("resume.txt"))?;
-        writeln!(f, "{sha1_hex}:{filename}")?;
-        f.sync_data()
+        writeln!(f, "{sha1_hex}:{filename}")
     }
 
     pub fn remove_job(&self, app: &str) -> io::Result<()> {

@@ -4,8 +4,10 @@ pub(crate) mod reader;
 pub mod manifest;
 pub mod chunk;
 pub mod client;
+pub mod engine;
 pub mod plan;
 pub mod space;
+pub mod speed;
 pub mod store;
 
 pub use error::{format_bytes, InstallError};

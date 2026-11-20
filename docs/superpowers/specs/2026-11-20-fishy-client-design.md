@@ -313,7 +313,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ## 11. Open questions for later
 - ~~The final icon pixel grid.~~ Done: the rounded tile with the 14×10 fish (see §2).
 - ~~Whether the sidebar uses pixel icons or simple line icons.~~ Done: small square bullets, as in the mockup.
-- A GitHub repo name, e.g. `fishy-client` (no repository yet; see §12).
+- ~~A GitHub repo name.~~ Done: `Gnammahh/fishy-client` (private).
 
 ---
 
@@ -394,7 +394,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
-2. **Back up to a private GitHub repository** (needs your GitHub account; the GitHub tool, `gh`, isn't installed yet).
+2. ~~Back up to a private GitHub repository.~~ Done on 2026-11-20 (`gh` installed and signed in as Gnammahh). To back up new work: `git push`.
 3. **Milestone 3, Library:** your owned games in a grid with cover art.
    - Also: a library cache on disk, deleted on Log out.
    - Also: log files with secrets filtered out, and a "delete all my data" button.

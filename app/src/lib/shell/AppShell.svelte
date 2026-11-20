@@ -8,13 +8,25 @@
 
   let page = $state<Page>("library");
   let busy = $state(false);
+  let checking = $state(false);
+  let logoutError = $state("");
 
   async function logOut() {
     busy = true;
+    logoutError = "";
     try {
-      await signOut();
+      if (!(await signOut())) logoutError = "Couldn't log out. Please try again.";
     } finally {
       busy = false;
+    }
+  }
+
+  async function tryAgain() {
+    checking = true;
+    try {
+      await retry();
+    } finally {
+      checking = false;
     }
   }
 </script>
@@ -25,7 +37,7 @@
     {#if auth.kind === "Offline"}
       <div class="banner" role="status">
         <span>Couldn't reach Epic. Check your internet connection.</span>
-        <PixelButton variant="ghost" onclick={retry}>Try again</PixelButton>
+        <PixelButton variant="ghost" disabled={checking} onclick={tryAgain}>Try again</PixelButton>
       </div>
     {/if}
 
@@ -50,6 +62,7 @@
       </dl>
       <p class="note">Logging out ends this session at Epic and removes it from this PC.</p>
       <PixelButton variant="ghost" disabled={busy} onclick={logOut}>Log out</PixelButton>
+      {#if logoutError}<p class="error" role="alert">{logoutError}</p>{/if}
     {/if}
   </main>
 </div>
@@ -109,6 +122,9 @@
   .mono {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 13px;
+  }
+  .error {
+    color: var(--error);
   }
   .note {
     color: var(--text-2);

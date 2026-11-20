@@ -57,16 +57,20 @@ export async function signIn() {
   }
 }
 
+/** True while a pasted code is being checked (separate from the login window's state). */
+export const submitting = writable(false);
+
 /** Backup flow: exchange a pasted code (or Epic's whole JSON). */
 export async function submitCode(text: string) {
   loginError.set("");
-  signingIn.set(true);
+  submitting.set(true);
   try {
     authState.set(await invoke<AuthState>("submit_code", { input: text }));
+    signingIn.set(false);
   } catch (e) {
     loginError.set(message(e));
   } finally {
-    signingIn.set(false);
+    submitting.set(false);
   }
 }
 
@@ -78,10 +82,21 @@ export async function openBrowserLogin() {
   }
 }
 
-export async function signOut() {
-  authState.set(await invoke<AuthState>("logout"));
+/** Logs out. Resolves to false (and leaves the state alone) if it couldn't. */
+export async function signOut(): Promise<boolean> {
+  try {
+    authState.set(await invoke<AuthState>("logout"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
+/** "Try again" when offline. Keeps the current state if the check itself fails. */
 export async function retry() {
-  authState.set(await invoke<AuthState>("retry_auth"));
+  try {
+    authState.set(await invoke<AuthState>("retry_auth"));
+  } catch {
+    /* still offline: the banner stays */
+  }
 }

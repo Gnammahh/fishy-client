@@ -2,7 +2,7 @@
   import FishLoader from "$lib/loader/FishLoader.svelte";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import icon from "../../../src-tauri/icons/128x128.png";
-  import { signIn, submitCode, openBrowserLogin, signingIn, loginError } from "./auth";
+  import { signIn, submitCode, openBrowserLogin, signingIn, submitting, loginError } from "./auth";
 
   let showPaste = $state(false);
   let pasted = $state("");
@@ -47,7 +47,7 @@
       </ol>
       <label for="sign-in-code">Sign-in code</label>
       <textarea id="sign-in-code" rows="3" bind:value={pasted} spellcheck="false" autocomplete="off"></textarea>
-      <PixelButton type="submit" disabled={$signingIn || !pasted.trim()}>Sign in with code</PixelButton>
+      <PixelButton type="submit" disabled={$submitting || !pasted.trim()}>Sign in with code</PixelButton>
     </form>
   {/if}
 </section>

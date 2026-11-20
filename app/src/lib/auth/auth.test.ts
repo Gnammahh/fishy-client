@@ -98,4 +98,53 @@ describe("AppShell", () => {
     authState.subscribe((v) => (current = v))();
     expect(current).toEqual({ kind: "SignedOut" });
   });
+
+  it("try_again_is_disabled_while_checking", async () => {
+    mockCommands({ retry_auth: () => new Promise(() => {}) }); // never answers
+    render(AppShell, { state: { kind: "Offline", display_name: "FishFan" } });
+    const button = screen.getByRole("button", { name: "Try again" }) as HTMLButtonElement;
+    await fireEvent.click(button);
+    await waitFor(() => expect(button.disabled).toBe(true));
+  });
+
+  it("failed_log_out_says_so_and_stays_signed_in", async () => {
+    mockCommands({
+      logout: () => {
+        throw "ipc down";
+      },
+    });
+    authState.set({ kind: "SignedIn", display_name: "FishFan", account_id: "acc123" });
+    render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't log out. Please try again.");
+    let current: unknown;
+    authState.subscribe((v) => (current = v))();
+    expect(current).toEqual({ kind: "SignedIn", display_name: "FishFan", account_id: "acc123" });
+  });
+});
+
+describe("paste flow", () => {
+  it("a_failed_paste_does_not_hide_the_open_login_window_state", async () => {
+    mockCommands({
+      start_login: () => null,
+      submit_code: () => {
+        throw NOT_A_CODE;
+      },
+    });
+    render(LoginScreen);
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with Epic" }));
+    await waitFor(() => {
+      let v = false;
+      signingIn.subscribe((x) => (v = x))();
+      expect(v).toBe(true);
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Trouble signing in? Paste a code instead" }));
+    await fireEvent.input(screen.getByLabelText("Sign-in code"), { target: { value: "hello" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Sign in with code" }));
+    await screen.findByRole("alert");
+    let still = false;
+    signingIn.subscribe((x) => (still = x))();
+    expect(still).toBe(true); // the Epic window is still open
+  });
 });

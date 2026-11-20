@@ -566,12 +566,20 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - Tests now: Rust 134 (core 129 + app 5), UI 86.
 
 ### Still to check by hand (milestone 4)
-- [ ] Install a small free game from the Library (default folder)
-- [ ] Pause, then Resume
-- [ ] Close the app mid-download, reopen, Resume finishes it
-- [ ] The game's files are in `C:\Users\<you>\Games\<game>` and it shows as Installed
-- [ ] Uninstall removes the folder and the badge
-- [ ] Cancel a download deletes its files
+Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
+- [x] Install from the Library (default folder)
+- [x] Pause, then Resume
+- [x] App closed mid-download (it restarted while code changed), Resume finished it
+- [x] Shows as Installed when done
+- [x] Uninstall removes it and the badge
+- [ ] Cancel a download deletes its files (not tried by hand yet; covered by tests)
+
+**Found during the hand check:**
+- **Bendy and the Ink Machine** is in the library **twice** (same game, two Epic entries). One has no Windows download, so Epic answers `download_info_not_found`. The message used to say "format Fishy Client can't install yet"; it now says Epic offers no Windows download for that item and suggests trying the other entry.
+  - Planned next: during Library refresh, ask Epic which games have a Windows download (`/launcher/api/public/assets/Windows?label=Live`, as Legendary does), hide duplicates without one, and show "Not on Windows" instead of Install for the rest.
+- **Resume goes back a little** (about 10% for Bad Cheese). The file that was half-written when you paused starts again from its beginning; every finished file is kept. Legendary does the same.
+  - Possible later improvement: continue inside big half-written files.
+- **Speed in the test build** looks lower because `tauri dev` builds without optimizations, so unzipping and checking pieces is slower than in the real app.
 
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.

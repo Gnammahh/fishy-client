@@ -373,7 +373,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ### Still to check by hand (milestone 2)
 - [x] Sign in (with Google)
-- [ ] Still signed in after restarting the app
+- [x] Still signed in after restarting the app
 - [ ] Closing the sign-in window midway goes back to the login screen
 - [ ] Log out leads to the login screen; `cmdkey /list | findstr /i fishy` prints nothing, and Sign in asks for the password again
 

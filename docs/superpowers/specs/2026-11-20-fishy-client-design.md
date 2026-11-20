@@ -320,7 +320,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ## 12. Progress log (updated 2026-11-20)
 
 ### Where everything is
-- **Project folder:** `Desktop\fishy-client`. Git only, on this PC, with **no online backup yet**.
+- **Project folder:** `Desktop\fishy-client`.
+- **Backup:** private GitHub repository **https://github.com/Gnammahh/fishy-client**. All three branches are pushed; only you can see it. GitHub shows `feat/epic-login` first. To back up new work, run `git push`.
 - **Branches.** Both are kept separate from `master` on purpose; nothing is merged yet.
   - `feat/ui-foundation`: milestones 0–1, the look of the app.
   - `feat/epic-login`: milestone 2, Epic login. Built on top of the UI branch.

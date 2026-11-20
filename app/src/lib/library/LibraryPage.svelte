@@ -3,11 +3,37 @@
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import PixelSprite from "$lib/pixel/PixelSprite.svelte";
   import { FISH_MOUTH_CLOSED, FISH_PALETTE } from "$lib/pixel/sprites";
-  import { library, loadLibrary, refreshLibrary, filterGames } from "./library";
+  import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
+  import InstallDialog from "$lib/install/InstallDialog.svelte";
+  import { downloads, installed, statusFor, uninstall, type GameStatus } from "$lib/install/installs";
+  import { library, loadLibrary, refreshLibrary, filterGames, type Game } from "./library";
 
   let { name, offline = false }: { name: string; offline?: boolean } = $props();
   let query = $state("");
-  const shown = $derived(filterGames($library.games, query));
+  let tab = $state<"all" | "installed">("all");
+  let installing = $state<Game | null>(null);
+  let menuFor = $state<string | null>(null);
+  let confirmUninstall = $state<Game | null>(null);
+  let cardError = $state<{ app: string; message: string } | null>(null);
+
+  const status = (g: Game): GameStatus => statusFor(g.app_name, $downloads, $installed);
+  const installedCount = $derived($library.games.filter((g) => $installed.some((i) => i.app_name === g.app_name)).length);
+  const shown = $derived(
+    filterGames($library.games, query).filter((g) => tab === "all" || $installed.some((i) => i.app_name === g.app_name)),
+  );
+  const LABELS: Partial<Record<GameStatus, string>> = {
+    downloading: "Downloading…",
+    queued: "Queued",
+    paused: "Paused",
+    error: "Download stopped",
+  };
+
+  async function doUninstall(game: Game) {
+    confirmUninstall = null;
+    cardError = null;
+    const err = await uninstall(game.app_name);
+    if (err) cardError = { app: game.app_name, message: err };
+  }
 
   // Load on open, and again whenever we come back online (offline → online).
   let loadedOffline: boolean | undefined;
@@ -62,25 +88,79 @@
       <PixelSprite grid={FISH_MOUTH_CLOSED} palette={FISH_PALETTE} scale={4} vflip />
       <p>No fish in this pond yet. Games you own on Epic show up here.</p>
     </div>
-  {:else if shown.length === 0}
-    <p class="none">No games match "{query.trim()}".</p>
   {:else}
-    <ul class="grid">
-      {#each shown as game (game.catalog_item_id)}
-        <li class="card">
-          {#if game.cover_url}
-            <img src={game.cover_url} alt="{game.title} cover art" loading="lazy" referrerpolicy="no-referrer" />
-          {:else}
-            <div class="placeholder" role="img" aria-label="No cover art for {game.title}">
-              <PixelSprite grid={FISH_MOUTH_CLOSED} palette={FISH_PALETTE} scale={3} />
+    <div class="tabs" role="tablist" aria-label="Which games">
+      <button role="tab" aria-selected={tab === "all"} class:active={tab === "all"} onclick={() => (tab = "all")}>All</button>
+      <button role="tab" aria-selected={tab === "installed"} class:active={tab === "installed"} onclick={() => (tab = "installed")}>
+        Installed ({installedCount})
+      </button>
+    </div>
+    {#if shown.length === 0}
+      <p class="none">{query.trim() ? `No games match "${query.trim()}".` : "No games installed yet."}</p>
+    {:else}
+      <ul class="grid">
+        {#each shown as game (game.catalog_item_id)}
+          {@const s = status(game)}
+          <li class="card">
+            <div class="cover">
+              {#if game.cover_url}
+                <img src={game.cover_url} alt="{game.title} cover art" loading="lazy" referrerpolicy="no-referrer" />
+              {:else}
+                <div class="placeholder" role="img" aria-label="No cover art for {game.title}">
+                  <PixelSprite grid={FISH_MOUTH_CLOSED} palette={FISH_PALETTE} scale={3} />
+                </div>
+              {/if}
+              {#if s === "installed"}<span class="badge">Installed</span>{/if}
             </div>
-          {/if}
-          <span class="title">{game.title}</span>
-        </li>
-      {/each}
-    </ul>
+            <span class="title">{game.title}</span>
+            <div class="row">
+              {#if s === "none"}
+                <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
+              {:else if s === "installed"}
+                <div class="more">
+                  <button
+                    class="dots"
+                    aria-label="More options for {game.title}"
+                    aria-haspopup="menu"
+                    aria-expanded={menuFor === game.app_name}
+                    onclick={() => (menuFor = menuFor === game.app_name ? null : game.app_name)}>⋯</button
+                  >
+                  {#if menuFor === game.app_name}
+                    <div class="menu" role="menu">
+                      <button
+                        role="menuitem"
+                        onclick={() => {
+                          menuFor = null;
+                          confirmUninstall = game;
+                        }}>Uninstall</button
+                      >
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <span class="state" class:bad={s === "error"}>{LABELS[s]}</span>
+              {/if}
+            </div>
+            {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </section>
+
+{#if installing}
+  <InstallDialog game={installing} onclose={() => (installing = null)} />
+{/if}
+{#if confirmUninstall}
+  {@const g = confirmUninstall}
+  <ConfirmDialog
+    message="Uninstall {g.title}? Its game files will be deleted."
+    confirmLabel="Uninstall"
+    onconfirm={() => doUninstall(g)}
+    oncancel={() => (confirmUninstall = null)}
+  />
+{/if}
 
 <style>
   .library {
@@ -176,6 +256,100 @@
     display: grid;
     gap: 8px;
     min-width: 0;
+  }
+  .tabs {
+    display: flex;
+    gap: 6px;
+  }
+  .tabs button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--text-2);
+    background: transparent;
+    border: 2px solid rgba(79, 227, 209, 0.25);
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .tabs button.active {
+    color: #000;
+    background: var(--aqua);
+    border-color: var(--aqua);
+  }
+  .tabs button:focus-visible,
+  .row button:focus-visible {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+  }
+  .cover {
+    position: relative;
+  }
+  .badge {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    background: var(--aqua);
+    color: #000;
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    padding: 3px 6px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    min-height: 30px;
+  }
+  .install,
+  .dots {
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    color: var(--aqua);
+    background: transparent;
+    border: 2px solid var(--aqua);
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .install:hover,
+  .dots:hover {
+    background: rgba(79, 227, 209, 0.15);
+  }
+  .more {
+    position: relative;
+  }
+  .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 5;
+    background: #0b0f14;
+    border: 2px solid rgba(79, 227, 209, 0.5);
+    display: grid;
+    min-width: 130px;
+  }
+  .menu button {
+    font: inherit;
+    font-size: 14px;
+    color: var(--text);
+    background: transparent;
+    border: 0;
+    padding: 8px 12px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: rgba(79, 227, 209, 0.15);
+    outline: none;
+  }
+  .state {
+    font-size: 13px;
+    color: var(--orange);
+  }
+  .state.bad {
+    color: var(--error);
+  }
+  .small {
+    font-size: 13px;
+    margin: 0;
   }
   .card img,
   .placeholder {

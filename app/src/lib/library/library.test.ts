@@ -3,6 +3,27 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/sv
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
 import { filterGames, resetLibrary, type Game } from "./library";
+import { downloads, installed, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
+
+const installedGame = (app_name: string): InstalledGame => ({
+  app_name,
+  title: app_name,
+  version: "1",
+  install_path: "C:\\Games\\" + app_name,
+  executable: "x.exe",
+  launch_parameters: "",
+  install_size: 1,
+  installed_at: "2026-11-21T00:00:00Z",
+});
+const downloadItem = (app_name: string, state: DownloadItem["state"]): DownloadItem => ({
+  app_name,
+  title: app_name,
+  state,
+  downloaded: 1,
+  total: 2,
+  bytes_per_sec: 0,
+  error: null,
+});
 
 const game = (title: string, cover: string | null = null): Game => ({
   app_name: title.replace(/\W/g, ""),
@@ -25,6 +46,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   resetLibrary();
+  resetInstalls();
 });
 
 describe("filterGames", () => {
@@ -109,6 +131,76 @@ describe("LibraryPage", () => {
     await fireEvent.input(screen.getByLabelText("Search your library"), { target: { value: "tide" } });
     await waitFor(() => expect(screen.queryByText("Kelp Runner")).toBeNull());
     expect(screen.getByText("Tidepool Odyssey")).toBeTruthy();
+  });
+
+  it("installed_games_get_a_badge_and_their_own_tab", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey"), game("Kelp Runner")] }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    expect(screen.getByText("Installed", { selector: ".badge" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Install Tidepool Odyssey" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Install Kelp Runner" })).toBeNull();
+    await fireEvent.click(screen.getByRole("tab", { name: "Installed (1)" }));
+    await waitFor(() => expect(screen.queryByText("Tidepool Odyssey")).toBeNull());
+    expect(screen.getByText("Kelp Runner")).toBeTruthy();
+    installed.set([]);
+    expect(await screen.findByText("No games installed yet.")).toBeTruthy();
+  });
+
+  it("install_button_opens_the_install_box", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey")] }),
+      install_options: () => new Promise(() => {}),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Install Tidepool Odyssey" }));
+    expect(screen.getByRole("dialog", { name: "Install Tidepool Odyssey" })).toBeTruthy();
+    expect(screen.getByText("Getting download info…")).toBeTruthy();
+  });
+
+  it("downloading_and_queued_games_show_their_state_instead_of_install", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey"), game("Kelp Runner")] }) });
+    downloads.set([downloadItem("TidepoolOdyssey", "downloading"), downloadItem("KelpRunner", "queued")]);
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    expect(screen.getByText("Downloading…")).toBeTruthy();
+    expect(screen.getByText("Queued")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Install / })).toBeNull();
+  });
+
+  it("uninstall_asks_first_then_calls_the_backend", async () => {
+    const calls = mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      uninstall_game: () => [],
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Uninstall" }));
+    expect(screen.getByText("Uninstall Kelp Runner? Its game files will be deleted.")).toBeTruthy();
+    expect(calls).not.toContain("uninstall_game");
+    await fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    await waitFor(() => expect(calls).toContain("uninstall_game"));
+    expect(await screen.findByRole("button", { name: "Install Kelp Runner" })).toBeTruthy();
+  });
+
+  it("a_failed_uninstall_shows_the_reason", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      uninstall_game: () => {
+        throw "Couldn't delete some files. Close the game and try again.";
+      },
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Uninstall" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    expect(await screen.findByText("Couldn't delete some files. Close the game and try again.")).toBeTruthy();
   });
 
   it("covers_use_the_image_url_or_a_fish_placeholder", async () => {

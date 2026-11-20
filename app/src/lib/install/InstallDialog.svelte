@@ -1,0 +1,163 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import type { Game } from "$lib/library/library";
+  import FishLoader from "$lib/loader/FishLoader.svelte";
+  import PixelButton from "$lib/ui/PixelButton.svelte";
+  import { formatBytes } from "$lib/progress/progress";
+  import { getInstallOptions, pickFolder, startInstall, type InstallOptions } from "./installs";
+
+  let { game, onclose }: { game: Game; onclose: () => void } = $props();
+
+  let parent = $state<string | null>(null);
+  let options = $state<InstallOptions | null>(null);
+  let loadError = $state("");
+  let startError = $state("");
+  let busy = $state(false);
+  let dialog: HTMLDivElement;
+
+  const message = (e: unknown) => (typeof e === "string" ? e : "Couldn't reach Epic. Check your internet connection.");
+
+  async function load() {
+    loadError = "";
+    try {
+      options = await getInstallOptions(game, parent);
+    } catch (e) {
+      options = null;
+      loadError = message(e);
+    }
+  }
+
+  async function changeFolder() {
+    const picked = await pickFolder().catch(() => null);
+    if (!picked) return;
+    parent = picked;
+    await load();
+  }
+
+  async function install() {
+    busy = true;
+    startError = "";
+    const err = await startInstall(game, parent);
+    busy = false;
+    if (err) startError = err;
+    else onclose();
+  }
+
+  onMount(() => {
+    dialog?.focus();
+    load();
+  });
+</script>
+
+<div class="overlay">
+  <div
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Install {game.title}"
+    tabindex="-1"
+    bind:this={dialog}
+    onkeydown={(e) => e.key === "Escape" && onclose()}
+  >
+    <h3>Install {game.title}</h3>
+
+    {#if loadError}
+      <p class="error" role="alert">{loadError}</p>
+      <div class="actions">
+        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+      </div>
+    {:else if !options}
+      <div class="loading" role="status">
+        <FishLoader size="small" />
+        <span>Getting download info…</span>
+      </div>
+      <div class="actions">
+        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+      </div>
+    {:else}
+      <dl>
+        <dt>Folder</dt>
+        <dd class="path">{options.install_path}</dd>
+        <dt>Download</dt>
+        <dd>{formatBytes(options.download_size)}</dd>
+        <dt>Space needed</dt>
+        <dd>{formatBytes(options.install_size)}</dd>
+        <dt>Free space</dt>
+        <dd>{formatBytes(options.free_space)}</dd>
+      </dl>
+      {#if options.error}<p class="error" role="alert">{options.error}</p>{/if}
+      {#if startError}<p class="error" role="alert">{startError}</p>{/if}
+      <div class="actions">
+        <PixelButton variant="ghost" onclick={changeFolder}>Change folder</PixelButton>
+        <span class="spacer"></span>
+        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+        <PixelButton disabled={!options.enough_space || busy} onclick={install}>Install</PixelButton>
+      </div>
+    {/if}
+  </div>
+</div>
+
+<style>
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: grid;
+    place-items: center;
+    z-index: 10;
+  }
+  .dialog {
+    background: #0b0f14;
+    border: 2px solid var(--aqua);
+    padding: 22px 24px;
+    display: grid;
+    gap: 16px;
+    width: min(520px, calc(100vw - 32px));
+  }
+  .dialog:focus {
+    outline: none;
+  }
+  h3 {
+    font-family: var(--font-pixel);
+    font-weight: 600;
+    font-size: 20px;
+    margin: 0;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 18px;
+    margin: 0;
+  }
+  dt {
+    color: var(--text-2);
+  }
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .path {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .loading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-2);
+  }
+  .error {
+    color: var(--error);
+    margin: 0;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  .spacer {
+    flex: 1;
+  }
+</style>

@@ -9,6 +9,7 @@ use futures::stream::{self, Stream, StreamExt};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -25,6 +26,55 @@ pub struct Progress {
     pub total: u64,
 }
 
+/// Limits for a run. The defaults are what the app uses; tests shrink them.
+#[derive(Clone, Copy)]
+pub struct RunOptions {
+    /// Most bytes of shared chunks kept in memory; past this a chunk is fetched again when needed.
+    pub cache_limit: usize,
+    /// Free bytes on the drive of a path (swappable for tests).
+    pub free_space: fn(&Path) -> std::io::Result<u64>,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self { cache_limit: 512 * 1024 * 1024, free_space: super::space::free_space }
+    }
+}
+
+/// A write error; a full disk becomes the "Not enough space" message.
+pub fn write_error(install_path: &Path, e: std::io::Error, needed: u64, free: u64) -> InstallError {
+    if e.kind() == std::io::ErrorKind::StorageFull {
+        return InstallError::NoSpace { drive: super::space::drive_label(install_path), needed, free };
+    }
+    InstallError::Io { folder: install_path.display().to_string(), detail: e.to_string() }
+}
+
+/// Shared chunks waiting for a later file, within a byte budget.
+struct ChunkCache {
+    chunks: HashMap<Guid, Arc<Vec<u8>>>,
+    bytes: usize,
+    limit: usize,
+}
+
+impl ChunkCache {
+    /// Keeps `data` for later if it fits, making room by dropping others. Dropped chunks are
+    /// fetched again when needed.
+    fn keep(&mut self, guid: Guid, data: Arc<Vec<u8>>) {
+        while self.bytes + data.len() > self.limit {
+            let Some(victim) = self.chunks.keys().next().copied() else { return };
+            self.forget(&victim);
+        }
+        self.bytes += data.len();
+        self.chunks.insert(guid, data);
+    }
+
+    fn forget(&mut self, guid: &Guid) {
+        if let Some(d) = self.chunks.remove(guid) {
+            self.bytes -= d.len();
+        }
+    }
+}
+
 pub async fn run_download(
     client: &InstallClient,
     store: &InstallStore,
@@ -33,9 +83,27 @@ pub async fn run_download(
     stop: CancellationToken,
     on_progress: impl Fn(Progress) + Send + Sync,
 ) -> Result<(), InstallError> {
+    run_download_with(client, store, job, manifest, stop, on_progress, RunOptions::default()).await
+}
+
+pub async fn run_download_with(
+    client: &InstallClient,
+    store: &InstallStore,
+    job: &JobInfo,
+    manifest: &Manifest,
+    stop: CancellationToken,
+    on_progress: impl Fn(Progress) + Send + Sync,
+    opts: RunOptions,
+) -> Result<(), InstallError> {
     let plan = build_plan(manifest, &store.finished_files(job))?;
     let base = job.base_urls.first().ok_or_else(|| InstallError::BadManifest("no CDN".into()))?.clone();
     let dir = manifest.chunk_dir();
+
+    // Space for what's left, checked on every start and resume (spec §6c).
+    let needed = manifest.install_size().saturating_sub(plan.done_size);
+    let free = (opts.free_space)(&job.install_path).unwrap_or(u64::MAX);
+    super::space::check_space(&job.install_path, needed, free)?;
+
     let mut downloaded = job.download_size.saturating_sub(plan.download_size);
     let total = job.download_size.max(downloaded);
     on_progress(Progress { downloaded, total });
@@ -52,9 +120,11 @@ pub async fn run_download(
             })
             .buffered(IN_FLIGHT),
     );
-    let mut cache: HashMap<Guid, Arc<Vec<u8>>> = HashMap::new();
+    let mut cache = ChunkCache { chunks: HashMap::new(), bytes: 0, limit: opts.cache_limit };
     let mut uses = plan.uses.clone();
-    let io_err = |e: std::io::Error| InstallError::Io { folder: job.install_path.display().to_string(), detail: e.to_string() };
+    // Chunks already taken from the stream; if one isn't cached any more it's fetched again.
+    let mut seen: std::collections::HashSet<Guid> = std::collections::HashSet::new();
+    let io_err = |e: std::io::Error| write_error(&job.install_path, e, needed, (opts.free_space)(&job.install_path).unwrap_or(0));
 
     for &index in &plan.files {
         if stop.is_cancelled() {
@@ -69,18 +139,35 @@ pub async fn run_download(
         let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&path).map_err(io_err)?);
         let mut hasher = Sha1::new();
         for part in &entry.parts {
-            while !cache.contains_key(&part.guid) {
-                let next = tokio::select! {
-                    biased;
-                    _ = stop.cancelled() => return Err(InstallError::Stopped),
-                    next = chunks.next() => next,
-                };
-                let (guid, size, data) = next.ok_or_else(|| InstallError::BadManifest("chunk stream ended".into()))?;
-                cache.insert(guid, Arc::new(data?));
-                downloaded += size;
-                on_progress(Progress { downloaded, total });
-            }
-            let data = cache[&part.guid].clone();
+            let data = match cache.chunks.get(&part.guid) {
+                Some(d) => d.clone(),
+                None => {
+                    let (size, data) = if seen.contains(&part.guid) {
+                        // Dropped to stay under the memory limit: fetch it again.
+                        let info = manifest.chunk(&part.guid).expect("plan checked every chunk");
+                        let data = tokio::select! {
+                            biased;
+                            _ = stop.cancelled() => return Err(InstallError::Stopped),
+                            d = client.download_chunk(&base, dir, info) => d?,
+                        };
+                        (info.file_size, data)
+                    } else {
+                        // The stream is in first-use order, so its next chunk is this one.
+                        let next = tokio::select! {
+                            biased;
+                            _ = stop.cancelled() => return Err(InstallError::Stopped),
+                            next = chunks.next() => next,
+                        };
+                        let (guid, size, data) = next.ok_or_else(|| InstallError::BadManifest("chunk stream ended".into()))?;
+                        debug_assert_eq!(guid, part.guid);
+                        seen.insert(guid);
+                        (size, data?)
+                    };
+                    downloaded += size;
+                    on_progress(Progress { downloaded: downloaded.min(total), total });
+                    Arc::new(data)
+                }
+            };
             let (start, end) = (part.offset as usize, part.offset as usize + part.size as usize);
             let slice = data.get(start..end).ok_or_else(|| InstallError::DamagedFile(entry.filename.clone()))?;
             out.write_all(slice).map_err(io_err)?;
@@ -88,7 +175,9 @@ pub async fn run_download(
             let left = uses.get_mut(&part.guid).expect("plan counted every part");
             *left -= 1;
             if *left == 0 {
-                cache.remove(&part.guid);
+                cache.forget(&part.guid);
+            } else if !cache.chunks.contains_key(&part.guid) {
+                cache.keep(part.guid, data);
             }
         }
         out.flush().map_err(io_err)?;
@@ -294,6 +383,66 @@ mod tests {
         assert_eq!(seen.first().unwrap().downloaded, 0);
         assert_eq!(*seen.last().unwrap(), Progress { downloaded: 201, total: 201 });
         assert!(seen.windows(2).all(|w| w[0].downloaded <= w[1].downloaded));
+    }
+
+    fn opts(cache_limit: usize, free_space: fn(&Path) -> std::io::Result<u64>) -> RunOptions {
+        RunOptions { cache_limit, free_space }
+    }
+    fn plenty(_: &Path) -> std::io::Result<u64> {
+        Ok(u64::MAX)
+    }
+
+    #[tokio::test]
+    async fn over_the_cache_limit_a_shared_chunk_is_fetched_again_instead_of_kept() {
+        let server = MockServer::start().await;
+        let shared: Vec<u8> = b"shared".repeat(50);
+        let other: Vec<u8> = b"other".repeat(50);
+        let f = fixture(&[&shared, &other], &[("a.txt", &[(0, 0, 100)]), ("m.txt", &[(1, 0, 250)]), ("z.txt", &[(0, 100, 200)])]);
+        serve(&server, &f, None, Some((0, 2))).await; // kept nowhere, so fetched twice
+        let e = env(&server, &f);
+        run_download_with(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}, opts(1, plenty)).await.unwrap();
+        for (name, content) in &f.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn not_enough_space_stops_before_downloading() {
+        let server = MockServer::start().await;
+        let f = basic();
+        serve(&server, &f, None, Some((0, 0))).await;
+        let e = env(&server, &f);
+        fn tiny(_: &Path) -> std::io::Result<u64> {
+            Ok(10)
+        }
+        let r = run_download_with(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}, opts(1 << 20, tiny)).await;
+        assert_eq!(r, Err(InstallError::NoSpace { drive: crate::install::space::drive_label(&e.job.install_path), needed: 3900, free: 10 }));
+    }
+
+    #[tokio::test]
+    async fn resume_needs_space_only_for_unfinished_files() {
+        let server = MockServer::start().await;
+        let ca: Vec<u8> = b"aaaa".repeat(10);
+        let cb: Vec<u8> = b"bbbb".repeat(10);
+        let f = fixture(&[&ca, &cb], &[("a.txt", &[(0, 0, 40)]), ("b.txt", &[(1, 0, 40)])]);
+        serve(&server, &f, None, None).await;
+        let e = env(&server, &f);
+        std::fs::create_dir_all(&e.job.install_path).unwrap();
+        std::fs::write(e.job.install_path.join("a.txt"), &f.expected[0].1).unwrap();
+        e.store.mark_finished("Tide", "x", "a.txt").unwrap();
+        fn exactly_b(_: &Path) -> std::io::Result<u64> {
+            Ok(40)
+        }
+        run_download_with(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}, opts(1 << 20, exactly_b)).await.unwrap();
+    }
+
+    #[test]
+    fn a_full_disk_is_reported_as_no_space() {
+        let p = Path::new(r"C:\Games\Tide");
+        let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        assert_eq!(write_error(p, full, 500, 3), InstallError::NoSpace { drive: "C:".into(), needed: 500, free: 3 });
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert!(matches!(write_error(p, denied, 500, 3), InstallError::Io { .. }));
     }
 
     #[tokio::test]

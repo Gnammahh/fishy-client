@@ -210,6 +210,59 @@ We follow the protocol that the open-source **Legendary** project already worked
 
 ---
 
+## 6a. Login (milestone 2), approved 2026-11-20
+
+**Honesty note for users (goes in the README):** Epic offers no official login for third-party launchers. Fishy Client signs in the way Legendary and Heroic do, by identifying itself as the Epic Games Launcher. Epic could change this at any time and break login until an update.
+
+### Flow
+1. **Login screen:** the pixel fish logo, "Fishy Client", and a **Sign in with Epic** button.
+2. The button opens a second app window, `epic-login` (about 480×720, titled "Sign in with Epic"), loading Epic's real page:
+   `https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fwww.epicgames.com%2Fid%2Fapi%2Fredirect%3FclientId%3D34a02cf8f4414e29b15921876da36f9a%26responseType%3Dcode`
+3. The user signs in there, including 2FA and captchas. Fishy Client never sees the password.
+4. Epic lands the window on `https://www.epicgames.com/id/api/redirect?...`, which shows JSON containing `"authorizationCode": "<code>"`. A small script injected into that window only reads this JSON and navigates to `http://fishy-auth.localhost/done?code=<code>`. The app's navigation handler (Rust) catches that address, cancels the navigation, closes the window and keeps the code. `.localhost` never leaves the computer, even if it weren't caught.
+5. Rust exchanges the code for tokens, saves them, and tells the UI "signed in". The code and tokens never pass through the main window's JavaScript.
+6. If the user closes the login window, the app goes quietly back to the login screen.
+7. **Backup:** under the button, "Trouble signing in? Paste a code instead" opens Epic's login in the normal browser and shows a box to paste the `authorizationCode`. The box accepts the bare code or the whole JSON.
+
+### Epic endpoints (verified against Legendary `egs.py`, 2026-11-20)
+- **Host:** `https://account-public-service-prod03.ol.epicgames.com`
+- **Client** (the Epic launcher's public id and secret): `34a02cf8f4414e29b15921876da36f9a` / `daafbccc737745039dffe53d94fc76cf`, sent as HTTP Basic auth.
+- **Token:** `POST /account/api/oauth/token` (form-encoded):
+  - code login: `grant_type=authorization_code&code=…&token_type=eg1`
+  - refresh: `grant_type=refresh_token&refresh_token=…&token_type=eg1`
+- **Log out:** `DELETE /account/api/oauth/sessions/kill/{access_token}` with `Authorization: bearer <access_token>`.
+- **User-Agent:** `UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit`.
+- **Token response fields used:** `access_token`, `expires_at`, `refresh_token`, `refresh_expires_at`, `account_id`, `displayName`. Errors come back as `errorCode` and `errorMessage`.
+
+### Session rules
+- **Storage:** tokens are stored as one JSON entry in **Windows Credential Manager** (service `FishyClient`, account `epic-session`). Nothing goes on disk in plain text.
+- **On app start:** if a session is saved and the access token expires in under 5 minutes, refresh it. If the refresh token has also expired or the refresh is rejected, delete the session and show the login screen. A network error while refreshing keeps the session and shows "Couldn't reach Epic" with **Try again**.
+- **Log out:** call the kill endpoint (best effort; ignore network errors), then always delete the stored session.
+
+### Screens added in this milestone
+- **Login screen** as above, with the FishLoader (medium) shown while finishing sign-in.
+- **App shell:** the slim left sidebar (Library, Downloads, Settings, Account) on the ocean background, as in the mockup.
+  - **Library** shows "Signed in as *Name*. Your games show up here in the next update." (placeholder until milestone 3).
+  - **Account** shows the display name and a **Log out** button.
+  - Downloads and Settings are placeholders.
+- The component preview from milestone 1 moves to a dev-only `/preview` route.
+
+### Security and privacy (also closes the review's CSP item)
+- **CSP** on the main window: `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost`. Images may come from Epic's CDN later. All Epic API calls happen in Rust, not the webview.
+- The unused `opener` plugin and its permission are removed. Opening the browser for the backup flow uses a single Rust command that only ever opens the Epic login URL.
+- **Capabilities** apply to the `main` window only, so the `epic-login` window has no IPC access at all.
+- **No telemetry.** The only network traffic is to Epic.
+- Token values never appear in logs or `Debug` output: secret fields print as `[redacted]`.
+
+### Errors shown to the user
+| Situation | Message |
+|---|---|
+| No internet | "Couldn't reach Epic. Check your internet connection." + **Try again** |
+| Code rejected or expired | "That sign-in didn't work. Please try again." |
+| Pasted text without a code | "That doesn't look like a sign-in code. Paste the authorizationCode value." |
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

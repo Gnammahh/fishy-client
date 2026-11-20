@@ -180,12 +180,8 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   <div class="bench">
     <section class="part">
       <h2>App icon</h2>
-      <p>A pixel fish outline in aqua on black, drawn on a 16 by 16 grid and scaled up without smoothing. Three versions to choose from, shown on a gray desktop so you can see the corners.</p>
-      <div class="icon-opts">
-        <div class="icon-opt"><h3>1. Square</h3><div class="icons" data-icon="square"></div></div>
-        <div class="icon-opt"><h3>2. Rounded corners</h3><div class="icons" data-icon="round"></div></div>
-        <div class="icon-opt"><h3>3. Rounded corners, rounder fish</h3><div class="icons" data-icon="roundfish"></div></div>
-      </div>
+      <p>A pixel fish outline in aqua on a black tile with rounded corners. The fish takes up about three quarters of the tile, so it never touches the edges. The 16 and 32 px sizes use a simpler 12 by 12 fish so they stay sharp. Shown on a gray desktop so you can see the corners.</p>
+      <div class="icons" data-icon="round"></div>
     </section>
 
     <section class="part">
@@ -297,43 +293,47 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   }
 
   /* ---------- static icons ---------- */
-  const FISH_ROUND = [
-    "................",
-    "........##......",
-    "......#######...",
-    "....##.......##.",
-    "#..#...........#",
-    "##.#...........#",
-    "#.##........e..#",
-    ".#.#...........#",
-    ".#.#...........#",
-    "#.##...........#",
-    "##.#....##.....#",
-    "#..#...........#",
-    "....##.......##.",
-    "......#######...",
-    "................",
-    "................"];
+  // 12x12 fish for the 16 and 32 px icons, where the full fish can't shrink cleanly
+  const FISH_MINI = [
+    "............",
+    "............",
+    ".....####...",
+    "#..##....#..",
+    "##.#.....##.",
+    ".#.#......#.",
+    "##.#......#.",
+    "#..##....#..",
+    ".....####...",
+    "............",
+    "............",
+    "............"];
   const CUT = [3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3];
-  function paintIcon(cv, size, kind) {
-    const c = cv.getContext('2d'), u = size / 16, round = kind !== 'square';
+  function paintIcon(cv, size) {
+    const c = cv.getContext('2d'), cell = size / 16;
     c.clearRect(0, 0, size, size);
     c.fillStyle = '#000';
-    for (let r = 0; r < 16; r++) { const k = round ? CUT[r] : 0; c.fillRect(k * u, r * u, (16 - 2 * k) * u, u); }
-    drawSprite(c, kind === 'roundfish' ? FISH_ROUND : FISH_A, 0, 0, u, { pal: ICON });
+    for (let r = 0; r < 16; r++) { const k = CUT[r]; c.fillRect(k * cell, r * cell, (16 - 2 * k) * cell, cell); }
+    const big = (size * 3) / 64;
+    if (Number.isInteger(big) && big >= 3) {
+      // full fish at 75%: content spans rows 1-12, centered on row 7
+      drawSprite(c, FISH_A, (size - 16 * big) / 2, size / 2 - 7 * big, big, { pal: ICON });
+    } else {
+      const u = Math.max(1, Math.round((size * 3) / 48));
+      // mini fish content spans cols 0-10 and rows 2-8; center it in the tile
+      drawSprite(c, FISH_MINI, Math.round(size / 2 - 5.5 * u), Math.round(size / 2 - 5.5 * u), u, { pal: ICON });
+    }
   }
   document.querySelectorAll('[data-icon]').forEach(box => {
-    const kind = box.dataset.icon;
-    [[128, '128 px'], [32, '32 px'], [16, '16 px taskbar']].forEach(([n, cap]) => {
+    [[256, '256 px'], [128, '128 px'], [64, '64 px'], [32, '32 px'], [16, '16 px taskbar']].forEach(([n, cap]) => {
       const fig = document.createElement('figure');
       const cv = document.createElement('canvas'); cv.width = cv.height = n;
       cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', `Icon option at ${n} pixels`);
       const fc = document.createElement('figcaption'); fc.textContent = cap;
       fig.append(cv, fc); box.appendChild(fig);
-      paintIcon(cv, n, kind);
+      paintIcon(cv, n);
     });
   });
-  ['logo', 'tbicon'].forEach(id => paintIcon(document.getElementById(id), 16, 'round'));
+  ['logo', 'tbicon'].forEach(id => paintIcon(document.getElementById(id), 16));
 
   /* ---------- covers ---------- */
   function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

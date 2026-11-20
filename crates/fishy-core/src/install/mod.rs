@@ -1,6 +1,7 @@
 //! Installing games: manifests, chunk downloads, resume, installed list, uninstall (spec §6c).
 mod error;
 pub(crate) mod reader;
+pub mod manifest;
 
 pub use error::{format_bytes, InstallError};
 

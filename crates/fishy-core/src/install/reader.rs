@@ -16,6 +16,10 @@ impl<'a> Reader<'a> {
     pub fn seek(&mut self, pos: usize) {
         self.pos = pos;
     }
+    /// Bytes left after the current position (0 if we've seeked past the end).
+    pub fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
+    }
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8], InstallError> {
         let end = self.pos.checked_add(n).filter(|&e| e <= self.data.len()).ok_or_else(truncated)?;
         let out = &self.data[self.pos..end];

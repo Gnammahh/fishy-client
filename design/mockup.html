@@ -96,10 +96,13 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
 .bench{display:grid;gap:48px}
 .part h2{font-family:var(--font-pixel);font-weight:600;font-size:26px;margin:0 0 6px}
 .part > p{margin:0 0 20px;color:var(--text-2);max-width:62ch}
-.icons{display:flex;flex-wrap:wrap;align-items:flex-end;gap:28px}
+.icon-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:18px}
+.icon-opt{display:grid;gap:12px;min-width:0}
+.icon-opt h3{font-family:var(--font-pixel);font-weight:500;font-size:17px;margin:0;color:var(--aqua)}
+.icons{display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px;padding:20px;background:#3A4652}
 .icons figure{margin:0;display:grid;gap:8px;justify-items:center}
 .icons canvas{max-width:100%;height:auto}
-.icons figcaption{color:var(--text-2);font-size:13px;font-variant-numeric:tabular-nums}
+.icons figcaption{color:#C9D3DC;font-size:13px;font-variant-numeric:tabular-nums}
 .loaders{display:flex;flex-wrap:wrap;align-items:flex-end;gap:24px;margin-bottom:18px}
 .loader{display:grid;gap:8px;min-width:0;max-width:100%}
 .tank{position:relative;background:rgba(0,0,0,.5);border:2px solid var(--line);max-width:100%}
@@ -177,12 +180,11 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   <div class="bench">
     <section class="part">
       <h2>App icon</h2>
-      <p>A pixel fish outline in aqua on a black square, drawn on a 16 by 16 grid and scaled up without smoothing.</p>
-      <div class="icons">
-        <figure><canvas id="ic256" width="256" height="256" aria-label="Icon at 256 pixels" role="img"></canvas><figcaption>256 px</figcaption></figure>
-        <figure><canvas id="ic64" width="64" height="64" aria-label="Icon at 64 pixels" role="img"></canvas><figcaption>64 px</figcaption></figure>
-        <figure><canvas id="ic32" width="32" height="32" aria-label="Icon at 32 pixels" role="img"></canvas><figcaption>32 px</figcaption></figure>
-        <figure><canvas id="ic16" width="16" height="16" aria-label="Icon at 16 pixels" role="img"></canvas><figcaption>16 px taskbar</figcaption></figure>
+      <p>A pixel fish outline in aqua on black, drawn on a 16 by 16 grid and scaled up without smoothing. Three versions to choose from, shown on a gray desktop so you can see the corners.</p>
+      <div class="icon-opts">
+        <div class="icon-opt"><h3>1. Square</h3><div class="icons" data-icon="square"></div></div>
+        <div class="icon-opt"><h3>2. Rounded corners</h3><div class="icons" data-icon="round"></div></div>
+        <div class="icon-opt"><h3>3. Rounded corners, rounder fish</h3><div class="icons" data-icon="roundfish"></div></div>
       </div>
     </section>
 
@@ -295,13 +297,43 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   }
 
   /* ---------- static icons ---------- */
-  function paintIcon(id, size) {
-    const cv = document.getElementById(id); if (!cv) return;
-    const c = cv.getContext('2d');
-    c.fillStyle = '#000'; c.fillRect(0, 0, size, size);
-    drawSprite(c, FISH_A, 0, 0, size / 16, { pal: ICON });
+  const FISH_ROUND = [
+    "................",
+    "........##......",
+    "......#######...",
+    "....##.......##.",
+    "#..#...........#",
+    "##.#...........#",
+    "#.##........e..#",
+    ".#.#...........#",
+    ".#.#...........#",
+    "#.##...........#",
+    "##.#....##.....#",
+    "#..#...........#",
+    "....##.......##.",
+    "......#######...",
+    "................",
+    "................"];
+  const CUT = [3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3];
+  function paintIcon(cv, size, kind) {
+    const c = cv.getContext('2d'), u = size / 16, round = kind !== 'square';
+    c.clearRect(0, 0, size, size);
+    c.fillStyle = '#000';
+    for (let r = 0; r < 16; r++) { const k = round ? CUT[r] : 0; c.fillRect(k * u, r * u, (16 - 2 * k) * u, u); }
+    drawSprite(c, kind === 'roundfish' ? FISH_ROUND : FISH_A, 0, 0, u, { pal: ICON });
   }
-  ['ic256:256', 'ic64:64', 'ic32:32', 'ic16:16', 'logo:16', 'tbicon:16'].forEach(s => { const [id, n] = s.split(':'); paintIcon(id, +n); });
+  document.querySelectorAll('[data-icon]').forEach(box => {
+    const kind = box.dataset.icon;
+    [[128, '128 px'], [32, '32 px'], [16, '16 px taskbar']].forEach(([n, cap]) => {
+      const fig = document.createElement('figure');
+      const cv = document.createElement('canvas'); cv.width = cv.height = n;
+      cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', `Icon option at ${n} pixels`);
+      const fc = document.createElement('figcaption'); fc.textContent = cap;
+      fig.append(cv, fc); box.appendChild(fig);
+      paintIcon(cv, n, kind);
+    });
+  });
+  ['logo', 'tbicon'].forEach(id => paintIcon(document.getElementById(id), 16, 'round'));
 
   /* ---------- covers ---------- */
   function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

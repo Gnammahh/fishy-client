@@ -527,6 +527,16 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Decisions:**
   - Log out pauses downloads but keeps installed games.
   - Encrypted newer games are refused with a clear message.
+- **Download engine built (2026-11-21), in `crates/fishy-core/src/install/`:**
+  - reads both of Epic's manifest formats (binary and JSON)
+  - downloads chunks from Epic's CDN, 16 at a time, retrying a bad or failed chunk up to 7 times
+  - checks every chunk and every finished file against its SHA-1
+  - resumes from `resume.txt`
+  - keeps the installed list in `installed.json`
+  - does the space check and default folder (`C:\Users\<you>\Games\<game>`)
+  - uninstall deletes only the game's own files
+  - **Safety:** a manifest file name like `..\..\Windows\x` is refused, so nothing is ever written outside the game folder.
+  - Rust tests: 122 (67 new).
 
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.

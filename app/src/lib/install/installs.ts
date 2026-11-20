@@ -108,7 +108,15 @@ export async function startInstall(game: Game, parent?: string | null): Promise<
 
 export const pause = (appName: string) => invoke("download_pause", { appName });
 export const resume = (appName: string) => invoke("download_resume", { appName });
-export const cancel = (appName: string) => invoke("download_cancel", { appName });
+/** Stops and deletes the files. Returns an error message, or null when it worked. */
+export async function cancel(appName: string): Promise<string | null> {
+  try {
+    await invoke("download_cancel", { appName });
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
 
 /** Returns an error message, or null when it worked. */
 export async function uninstall(appName: string): Promise<string | null> {

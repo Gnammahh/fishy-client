@@ -75,7 +75,23 @@ describe("DownloadsPage", () => {
     expect(screen.getByText("Title B")).toBeTruthy();
     expect(screen.getByText("Title C")).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Remove Title B from the queue" }));
-    expect(calls).toContainEqual(["download_cancel", { appName: "B" }]);
+    // A queued game may already have files on disk (a resumed download), so it asks too.
+    expect(screen.getByText("Stop and delete the downloaded files?")).toBeTruthy();
+    expect(calls.map(([c]) => c)).not.toContain("download_cancel");
+    await fireEvent.click(screen.getByRole("button", { name: "Delete files" }));
+    await waitFor(() => expect(calls).toContainEqual(["download_cancel", { appName: "B" }]));
+  });
+
+  it("a_failed_cancel_shows_the_reason", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "download_cancel") throw "Couldn't delete some files. Close the game and try again.";
+      return null;
+    });
+    downloads.set([item("A", "paused")]);
+    render(DownloadsPage);
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Delete files" }));
+    expect(await screen.findByText("Couldn't delete some files. Close the game and try again.")).toBeTruthy();
   });
 
   it("error_shows_the_message_and_retry_resumes", async () => {

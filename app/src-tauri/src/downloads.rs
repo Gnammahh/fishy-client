@@ -22,6 +22,8 @@ pub enum JobState {
     Queued,
     Paused,
     Error,
+    /// Cancelled; its files are being deleted. Hidden, but the game stays busy until done.
+    Removing,
 }
 
 impl JobState {
@@ -31,6 +33,7 @@ impl JobState {
             Self::Queued => "queued",
             Self::Paused => "paused",
             Self::Error => "error",
+            Self::Removing => "removing",
         }
     }
 }
@@ -79,9 +82,9 @@ impl Inner {
         let rank = |s: JobState| match s {
             JobState::Downloading => 0,
             JobState::Queued => 1,
-            JobState::Paused | JobState::Error => 2,
+            JobState::Paused | JobState::Error | JobState::Removing => 2,
         };
-        let mut jobs: Vec<&Job> = self.jobs.iter().collect();
+        let mut jobs: Vec<&Job> = self.jobs.iter().filter(|j| j.state != JobState::Removing).collect();
         jobs.sort_by_key(|j| rank(j.state)); // stable: keeps queue order
         DownloadsView {
             items: jobs
@@ -109,6 +112,42 @@ impl Inner {
 
     pub fn find(&self, app: &str) -> Option<usize> {
         self.jobs.iter().position(|j| j.info.app_name == app)
+    }
+
+    /// Cancel, step 1. A running job is asked to stop (its task deletes the files); any other
+    /// job is marked Removing and returned so the caller deletes its files.
+    pub fn begin_removal(&mut self, app: &str) -> Option<JobInfo> {
+        let i = self.find(app)?;
+        let job = &mut self.jobs[i];
+        match job.state {
+            JobState::Removing => None,
+            JobState::Downloading => {
+                job.cancel_requested = true;
+                job.stop.iter().for_each(CancellationToken::cancel);
+                None
+            }
+            _ => {
+                job.state = JobState::Removing;
+                Some(job.info.clone())
+            }
+        }
+    }
+
+    /// Cancel, step 2: gone when the files are deleted, or back as an error with the reason.
+    pub fn end_removal(&mut self, app: &str, result: Result<(), String>) {
+        let Some(i) = self.find(app) else { return };
+        match result {
+            Ok(()) => {
+                self.jobs.remove(i);
+            }
+            Err(message) => {
+                let job = &mut self.jobs[i];
+                job.state = JobState::Error;
+                job.error = Some(message);
+                job.stop = None;
+                job.cancel_requested = false;
+            }
+        }
     }
 }
 
@@ -199,22 +238,14 @@ impl Downloads {
 
     /// Stops the download and deletes what it wrote.
     pub async fn cancel(&self, app: &AppHandle, app_name: &str) -> Result<(), String> {
-        let removed = {
-            let mut inner = self.lock();
-            let Some(i) = inner.find(app_name) else { return Ok(()) };
-            if inner.jobs[i].state == JobState::Downloading {
-                // The running task deletes the files once it has stopped writing.
-                inner.jobs[i].cancel_requested = true;
-                inner.jobs[i].stop.iter().for_each(CancellationToken::cancel);
-                None
-            } else {
-                Some(inner.jobs.remove(i))
-            }
+        // A running job's own task deletes the files once it has stopped writing.
+        let Some(info) = self.lock().begin_removal(app_name) else {
+            self.emit(app);
+            return Ok(());
         };
-        let result = match removed {
-            Some(job) => self.discard(job.info).await,
-            None => Ok(()),
-        };
+        self.emit(app);
+        let result = self.discard(info).await;
+        self.lock().end_removal(app_name, result.clone());
         self.emit(app);
         result
     }
@@ -300,8 +331,18 @@ impl Downloads {
             inner.find(&info.app_name).is_some_and(|i| inner.jobs[i].cancel_requested)
         };
         if cancel {
-            self.lock().jobs.retain(|j| j.info.app_name != info.app_name);
-            let _ = self.discard(info).await;
+            // Stay in the list (hidden, busy) until the files are gone, so Install can't race it.
+            {
+                let mut inner = self.lock();
+                if let Some(i) = inner.find(&info.app_name) {
+                    inner.jobs[i].state = JobState::Removing;
+                }
+            }
+            self.emit(app);
+            let app_name = info.app_name.clone();
+            let result = self.discard(info).await;
+            self.lock().end_removal(&app_name, result);
+            self.emit(app);
             return;
         }
         let outcome = match result {
@@ -366,6 +407,39 @@ mod tests {
         assert_eq!(order, vec![("d", "downloading"), ("q1", "queued"), ("q2", "queued"), ("p", "paused"), ("e", "error")]);
         assert_eq!(v.items[0].total, 1000);
         assert_eq!(v.items[0].title, "Title d");
+    }
+
+    #[test]
+    fn a_job_being_removed_is_hidden_but_still_blocks_a_reinstall() {
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued), job("r", JobState::Queued)] };
+        let info = inner.begin_removal("q").expect("not running, so the caller deletes the files");
+        assert_eq!(info.app_name, "q");
+        assert_eq!(inner.jobs[0].state, JobState::Removing);
+        assert!(inner.find("q").is_some(), "still busy: Install must not start it again yet");
+        assert_eq!(inner.view().items.iter().map(|i| i.app_name.as_str()).collect::<Vec<_>>(), vec!["r"]);
+        assert_eq!(inner.next_to_start(), Some(1));
+        inner.end_removal("q", Ok(()));
+        assert!(inner.find("q").is_none());
+    }
+
+    #[test]
+    fn removing_a_running_job_asks_it_to_stop_first() {
+        let mut inner = Inner { jobs: vec![job("d", JobState::Downloading)] };
+        let stop = CancellationToken::new();
+        inner.jobs[0].stop = Some(stop.clone());
+        assert!(inner.begin_removal("d").is_none(), "the running task deletes once it has stopped");
+        assert!(stop.is_cancelled());
+        assert!(inner.jobs[0].cancel_requested);
+    }
+
+    #[test]
+    fn a_failed_removal_comes_back_with_the_reason() {
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued)] };
+        inner.begin_removal("q");
+        inner.end_removal("q", Err("Couldn't delete some files. Close the game and try again.".into()));
+        assert_eq!(inner.jobs[0].state, JobState::Error);
+        let v = inner.view();
+        assert_eq!(v.items[0].error.as_deref(), Some("Couldn't delete some files. Close the game and try again."));
     }
 
     #[test]

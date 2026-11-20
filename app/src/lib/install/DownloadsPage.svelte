@@ -14,6 +14,14 @@
   /** app_name of the download waiting for "Delete files?" */
   let confirmCancel = $state<string | null>(null);
   let finished = $state<string[]>([]);
+  let cancelError = $state("");
+
+  async function confirmDelete() {
+    const appName = confirmCancel;
+    confirmCancel = null;
+    if (!appName) return;
+    cancelError = (await cancel(appName)) ?? "";
+  }
 
   // A game that leaves the list and shows up as installed has finished; say so for this session.
   let previous: DownloadItem[] = [];
@@ -39,6 +47,10 @@
   {#each finished as title (title)}
     <p class="note" role="status">Finished: {title}. It's in your Library.</p>
   {/each}
+
+  {#if cancelError}
+    <p class="error" role="alert">{cancelError}</p>
+  {/if}
 
   {#if !current && queued.length === 0}
     <p class="empty">Nothing downloading. Pick a game in your Library and press Install.</p>
@@ -75,7 +87,7 @@
         <li>
           <span class="name">{d.title}</span>
           <span class="state">Queued</span>
-          <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => cancel(d.app_name)}>×</button>
+          <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
         </li>
       {/each}
     </ul>
@@ -99,11 +111,7 @@
   <ConfirmDialog
     message="Stop and delete the downloaded files?"
     confirmLabel="Delete files"
-    onconfirm={() => {
-      const appName = confirmCancel;
-      confirmCancel = null;
-      if (appName) cancel(appName);
-    }}
+    onconfirm={confirmDelete}
     oncancel={() => (confirmCancel = null)}
   />
 {/if}

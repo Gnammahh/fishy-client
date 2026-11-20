@@ -54,8 +54,10 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         // Private (InPrivate) window: Epic's website cookies are never kept, so after
         // Log out nobody on this PC lands in your Epic account by clicking Sign in.
         .incognito(true)
-        // Social-login pop-ups would escape the capture; keep everything in this one window.
-        .on_new_window(|_, _| NewWindowResponse::Deny)
+        // "Sign in with Google/Apple/Steam/…" opens a pop-up. Allow it: pop-ups have no IPC
+        // access, share this window's private session, and the code is still only accepted
+        // here, right after Epic's redirect page (CaptureGuard).
+        .on_new_window(|_, _| NewWindowResponse::Allow)
         .on_navigation(move |url| {
             let decision = guard.lock().map(|mut g| g.on_navigate(url.as_str())).unwrap_or(Navigation::Block);
             let code = match decision {

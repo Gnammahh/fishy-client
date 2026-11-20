@@ -36,8 +36,10 @@ async fn retry_auth(auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String
     Ok(state)
 }
 
+/// Must be async: creating a window from a sync command blocks the main thread on
+/// Windows and leaves the new webview blank (tauri docs, "Create windows in async commands").
 #[tauri::command]
-fn start_login(app: tauri::AppHandle) -> Result<(), String> {
+async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
     login_window::open(&app).map_err(|_| "Couldn't open the sign-in window. Try the paste-a-code option.".to_string())
 }
 

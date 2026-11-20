@@ -401,7 +401,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Offline:** shows the saved games only, with no duplicate error next to the offline banner. It refreshes by itself once Epic is reachable again.
 - **Saved library:** at `%APPDATA%FishyClientlibrary.json` (game list only, never tokens). **Log out deletes it**, and the app also forgets the previous account's games in memory.
 - **Covers** load straight from Epic's image servers; a missing cover shows the pixel fish.
-- **Still to check by hand:** your real library loads with real covers.
+- **Checked by hand (2026-11-20):** your real library loads after signing in.
+- **Sidebar:** pinned, so Library, Downloads, Settings and Account stay visible while you scroll. A faint school of gray pixel fish drifts diagonally up behind the menu; the fish hold still when Windows animations are off.
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.
 - Tokens are stored only in Credential Manager, never in files or the page code, and they print as `[redacted]` anywhere they could leak.
@@ -421,7 +422,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ### Tests
 - **Rust core:** 55 tests, plus 1 that writes to the real Credential Manager (run on purpose only).
-- **UI:** 63 tests.
+- **UI:** 64 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -448,7 +449,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
 2. ~~Back up to a private GitHub repository.~~ Done on 2026-11-20 (`gh` installed and signed in as Gnammahh). To back up new work: `git push`.
-3. ~~Milestone 3, Library.~~ Built 2026-11-20 (the saved library is deleted on Log out). Still to do: check your real library by hand.
+3. ~~Milestone 3, Library.~~ Built and checked with your real library on 2026-11-20 (the saved library is deleted on Log out).
    - Still open from this list: log files with secrets filtered out, and a "delete all my data" button (they fit best with Settings).
 4. Later milestones:
    - Install

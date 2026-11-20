@@ -306,6 +306,123 @@ All calls send `Authorization: bearer <access_token>` and the launcher User-Agen
 
 ---
 
+## 6c. Install (milestone 4), approved 2026-11-20 on branch `feat/install`
+
+Launch and Updates are later milestones and are left out here.
+
+### What the user sees
+- **Install button** on every not-installed game card. It opens a small **Install box** showing:
+  - the install folder: `%USERPROFILE%\Games\<folder>` by default (no admin rights needed). `<folder>` is the catalog's `customAttributes.FolderName.value`, else the game title with characters Windows forbids removed.
+  - **Change folder**, which uses the system folder picker. The picked folder is the parent, and `<folder>` is added under it.
+  - **Download size**, **space needed** and **free space** on that drive.
+  - **Install**, disabled with the reason shown if there isn't enough space.
+- **Downloads page:**
+  - The current download with the real `FishProgressBar` and **Pause / Resume / Cancel**.
+  - Below it, a **queue** of waiting games, each with a remove (×) button. Only one game downloads at a time.
+  - Empty state: "Nothing downloading. Pick a game in your Library and press Install."
+- **Cancel** asks "Stop and delete the downloaded files?". On yes, every file written so far is deleted, along with the download's saved progress.
+- **App closed mid-download:** on the next start, the download appears **Paused** on the Downloads page. **Resume** continues.
+- **Done:** the bar's done state. The game moves to the installed list. The Play button arrives with Launch (milestone 5); until then the done state shows "Installed".
+- **Library:**
+  - an **Installed** badge on installed cards
+  - **All / Installed** tabs above the grid
+  - a "⋯" menu on installed cards with **Uninstall**, confirmed by "Uninstall *Title*? Its game files will be deleted." Files the user added themselves stay.
+  - A card that is downloading or queued shows "Downloading…" or "Queued" instead of Install.
+
+### Epic endpoints (verified against Legendary `egs.py` and `core.py`, 2026-11-20)
+- **Manifest info:** `GET https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/v2/platform/Windows/namespace/{namespace}/catalogItem/{catalogItemId}/app/{appName}/label/Live` with bearer token and launcher User-Agent.
+  - The response has `elements[0]` with `hash` (SHA-1 hex of the manifest file), `buildVersion` and `manifests: [{uri, queryParams?: [{name, value}]}]`. More than one element is an error.
+- **Manifest file:**
+  - Each manifest URL is `uri`, plus `?name=value&...` if it has `queryParams`.
+  - URLs are tried in order until one returns 200. They're sent **without** the Authorization header.
+  - The bytes' SHA-1 must equal `hash`.
+- **CDN base URL:** `uri` with its last `/segment` removed, deduplicated in order. The first one is used.
+- **Folder name:** the catalog item (§6b) `customAttributes.FolderName.value`.
+- **Chunk download:** `GET {base_url}/{chunk_dir}/{group:02}/{hash:016X}_{guid}.chunk`, no auth.
+  - `guid` is the four u32 words as `%08X`, joined with no separator.
+  - `chunk_dir` depends on the manifest's feature level: ≥15 `ChunksV4`, ≥6 `ChunksV3`, ≥3 `ChunksV2`, else `Chunks`.
+  - User-Agent `EpicGamesLauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit`. Timeout 10 s, up to 7 tries with waits of 1, 2, 4… s.
+
+### Manifest format (ported from Legendary `models/manifest.py`)
+- **Formats:** a manifest starting with `{` is the **JSON format**; anything else is **binary**. Both are read into the same `Manifest`:
+  - meta: app name, build version, launch exe, launch command, feature level
+  - chunk list: guid, hash, SHA-1, group, window size, file size
+  - file list: name, SHA-1, executable flag, chunk parts `(guid, offset, size)`
+- **Binary header** (little-endian):
+  - fields: magic `0x44BEC00C`, header size, uncompressed size, compressed size, SHA-1, stored-as flags (`1` zlib, `2` encrypted), version
+  - The body starts at the header size. A compressed body is zlib-inflated and SHA-1 checked.
+  - Sections follow, each starting with its own byte size: Meta, Chunk list, File list, Custom fields. The reader always skips to `start + size`, so unknown newer fields are ignored.
+  - The full field layout is in `crates/fishy-core/src/install/manifest/binary.rs` comments.
+- **JSON format:** numbers are "blobs" (each 3-digit decimal group is one byte, little-endian), and GUIDs are 32 hex characters read as four big-endian u32.
+- **Not supported:** encrypted manifests or chunks (feature level ≥ 22 with secrets). These show "This game uses a download format Fishy Client can't install yet."
+
+### Chunk files (ported from Legendary `models/chunk.py`)
+- Header: magic `0xB1FE3AA2`, header version, header size, compressed size, guid, rolling hash, stored-as; from v2, SHA-1 and hash type; from v3, uncompressed size.
+- The data runs from the header size to the end, zlib-inflated if stored-as has bit 1.
+- **Check:** SHA-1 of the inflated data must equal the manifest's chunk SHA-1, which every manifest has. A mismatch counts as a failed try and is downloaded again.
+
+### How a download runs
+1. **Prepare** (when the user presses Install):
+   - Fetch manifest info and the manifest, check its hash, and parse it.
+   - Save it to `%APPDATA%\FishyClient\downloads\<appName>\manifest`.
+   - Work out the sizes. Install size is the sum of file sizes. Download size is the sum of the compressed sizes of the chunks the remaining files need.
+2. **Plan:**
+   - Files are sorted by lowercase name, skipping files already in the resume list.
+   - Chunks are fetched in the order they're first needed.
+   - A chunk used by several files stays in memory until its last use (reference counting), so it's downloaded only once.
+3. **Download:**
+   - Up to 16 chunks are in flight at once, received in order.
+   - The writer goes file by file. It creates folders, writes each chunk part at its place in the file, and computes the file's SHA-1 while writing.
+   - A file whose SHA-1 doesn't match is an error.
+4. **Resume list:** `%APPDATA%\FishyClient\downloads\<appName>\resume.txt`.
+   - One line `<sha1 hex>:<file name>` is appended each time a file is finished and checked.
+   - On resume, listed files that still exist are skipped. Unfinished files are rewritten from the start, as in Legendary.
+5. **Pause** stops the workers and keeps the resume list. **Resume** builds a new plan from it.
+6. **Finish:**
+   - Write the installed-game record.
+   - Move the manifest to `%APPDATA%\FishyClient\manifests\<appName>.manifest` (kept for uninstall and updates).
+   - Delete the download folder.
+7. **Progress:**
+   - Sent to the UI about 4 times a second as `downloaded` / `total` bytes (compressed, so the numbers match the download size) and a speed averaged over the last ~3 s.
+   - State: `downloading`, `paused`, `error` (with message) or `done`.
+
+### Space check
+Before starting, the free space on the install folder's drive must be at least the install size, minus the bytes of files already finished when resuming. Otherwise: "Not enough space on C:. Needs 12.3 GB, 4.1 GB free."
+
+### Saved data (`%APPDATA%\FishyClient\`)
+- `installed.json`: `[{app_name, title, version, install_path, executable, launch_parameters, install_size, installed_at}]`.
+- `manifests\<appName>.manifest`.
+- `downloads\<appName>\` (manifest, resume list and `job.json` with title, install path and namespace/ids) for paused or unfinished downloads. On startup, each folder there shows up as a Paused download.
+- **No tokens** in any of these.
+- **Log out:** pauses the running download and keeps installed games and their records, because the game files are the user's own. The future "delete all my data" button (Settings) also removes these records.
+
+### Uninstall
+- Delete each file listed in the saved manifest, then remove folders that are left empty (deepest first), then the install folder itself if empty.
+- Remove the record and the saved manifest.
+- Files that can't be deleted (for example, the game is running) give "Couldn't delete some files. Close the game and try again." The record is kept so the user can retry.
+
+### Errors shown to the user
+| Situation | Message |
+|---|---|
+| No internet / CDN unreachable after retries | "Download stopped: the connection to the download server dropped." + **Retry** (resumes) |
+| Not enough space | "Not enough space on C:. Needs X, Y free." |
+| Encrypted or unknown format | "This game uses a download format Fishy Client can't install yet." |
+| Can't write to the folder | "Couldn't write to *folder*. Pick a different folder." |
+| A file fails its check | "A downloaded file was damaged. Press Retry to download it again." |
+| Session expired while preparing | Back to the login screen, as in §7. A paused download stays. |
+
+### Tests
+- **Rust:**
+  - binary and JSON manifests (built in tests with a small writer, plus a tiny hand-made sample file)
+  - chunk header parsing and inflating
+  - chunk path format
+  - plan building (order, reference counts, resume skipping)
+  - a full install against a fake CDN (wiremock): pause, resume, a bad chunk being retried, a damaged file being caught
+  - space check, installed.json round-trip, uninstall leaving the user's own files
+- **UI:** Install box (default folder, not-enough-space), Downloads page states (downloading, paused, error, queue), Installed badge and tab, uninstall confirm.
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

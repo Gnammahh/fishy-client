@@ -41,7 +41,7 @@ fishy-client/
 ├─ Cargo.toml                      workspace root (members: app/src-tauri)
 ├─ LICENSE                         GPL-3.0 text
 ├─ README.md                       name, one-paragraph description, dev commands
-├─ assets/sprites/fish-icon.txt    16×16 icon grid (source of truth for the icon)
+├─ assets/sprites/fish-icon.txt    14×10 icon fish grid (source of truth for the icon)
 ├─ scripts/gen-icon.mjs            grid → app/src-tauri/icons/app-icon.png (1024×1024)
 └─ app/
    ├─ package.json, vite.config.ts, vitest config (in vite.config.ts)
@@ -271,7 +271,7 @@ Tests sit next to the code as `*.test.ts`.
 - [ ] **Step 6: Build the preview page.** The main page shows `OceanBackground`, a "Fishy Client" heading in Pixelify Sans in aqua, and three sections:
   - **(a) Loader:** all three sizes, plus a "Finish" button that sets `done`
   - **(b) Download bar:** one bar per state with fixed fake numbers, plus one live bar that fakes a 7.4 GB download at 18.2 MB/s, sped up so it finishes in 20 s
-  - **(c) Icon:** `fish-icon.txt` shown with PixelSprite at scale 4 and 8 on a black square
+  - **(c) Icon:** the generated `app-icon.png` shown at 128 and 32 px on a `#3A4652` gray swatch, so the rounded corners are visible
 
 - [ ] **Step 7: Run** `npm test` (all pass) and `npm run tauri dev`. **Check by hand:**
   - The loader fish chases each pellet and returns

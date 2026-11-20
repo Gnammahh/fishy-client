@@ -11,6 +11,7 @@ use std::time::Duration;
 
 pub const LAUNCHER_HOST: &str = "https://launcher-public-service-prod06.ol.epicgames.com";
 const CDN_USER_AGENT: &str = "EpicGamesLauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
+/// Like Legendary's 10 s: how long the CDN may stay silent, not how long a whole download may take.
 const CDN_TIMEOUT: Duration = Duration::from_secs(10);
 const CHUNK_TRIES: u32 = 7;
 
@@ -22,6 +23,11 @@ pub struct ManifestInfo {
     pub urls: Vec<String>,
     pub base_urls: Vec<String>,
     pub build_version: String,
+}
+
+/// Connect and read timeouts only: a slow line that keeps sending data is never cut off.
+fn cdn_client(silence: Duration) -> Client {
+    Client::builder().user_agent(CDN_USER_AGENT).connect_timeout(silence).read_timeout(silence).build().expect("http client")
 }
 
 #[derive(Clone)]
@@ -45,13 +51,18 @@ impl InstallClient {
 
     /// For tests: a fake launcher service.
     pub fn with_base_url(launcher: &str) -> Self {
-        let cdn = Client::builder().user_agent(CDN_USER_AGENT).timeout(CDN_TIMEOUT).build().expect("http client");
-        Self { api: http_client(), cdn, launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1) }
+        Self { api: http_client(), cdn: cdn_client(CDN_TIMEOUT), launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1) }
     }
 
     /// For tests: shorter waits between chunk retries.
     pub fn with_retry_base(mut self, d: Duration) -> Self {
         self.retry_base = d;
+        self
+    }
+
+    /// For tests: a shorter CDN timeout.
+    pub fn with_cdn_timeout(mut self, d: Duration) -> Self {
+        self.cdn = cdn_client(d);
         self
     }
 
@@ -61,9 +72,16 @@ impl InstallClient {
             self.launcher_base
         );
         let res = self.api.get(url).header("Authorization", format!("bearer {}", token.expose())).send().await.map_err(network)?;
+        let status = res.status().as_u16();
         let json = read_json(res).await.map_err(|e| match e {
-            // A server hiccup isn't a sign-in problem.
-            AuthError::Rejected { code } if code.starts_with("http_5") => InstallError::Network(code),
+            AuthError::Rejected { code } => match status {
+                // A server hiccup isn't a sign-in problem.
+                500.. => InstallError::Network(code),
+                401 => InstallError::Rejected(code),
+                _ if code.contains("token") => InstallError::Rejected(code),
+                // Not owned, no Windows build, ...: signing in again won't help.
+                _ => InstallError::BadManifest(code),
+            },
             other => other.into(),
         })?;
         let elements = json.get("elements").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
@@ -102,10 +120,11 @@ impl InstallClient {
             match self.cdn.get(url).send().await {
                 Ok(res) if res.status().is_success() => match res.bytes().await {
                     Ok(bytes) => {
-                        if hex::encode(Sha1::digest(&bytes)) != info.hash {
-                            return Err(InstallError::BadManifest("hash".into()));
+                        // Not the real file (an HTML error page, a damaged copy): try the next server.
+                        if hex::encode(Sha1::digest(&bytes)) == info.hash {
+                            return Ok(bytes.to_vec());
                         }
-                        return Ok(bytes.to_vec());
+                        last = InstallError::Network("manifest hash mismatch".into());
                     }
                     Err(e) => last = InstallError::Network(e.without_url().to_string()),
                 },
@@ -152,6 +171,75 @@ mod tests {
 
     fn sha_hex(b: &[u8]) -> String {
         hex::encode(Sha1::digest(b))
+    }
+
+    /// A raw HTTP server that sends `body` in `pieces`, `gap` apart: slow but never silent for long.
+    async fn trickle_server(body: Vec<u8>, pieces: usize, gap: Duration) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = listener.accept().await {
+                let body = body.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = s.read(&mut buf).await;
+                    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    let _ = s.write_all(head.as_bytes()).await;
+                    for piece in body.chunks(body.len().div_ceil(pieces)) {
+                        let _ = s.write_all(piece).await;
+                        let _ = s.flush().await;
+                        tokio::time::sleep(gap).await;
+                    }
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn a_slow_but_steady_chunk_is_not_cut_off() {
+        let data = b"slow fish ".repeat(200);
+        let info = info_for([1, 2, 3, 4], &data, 10);
+        // 5 pieces 250 ms apart: about 1.25 s in total, never silent for 400 ms.
+        let base = trickle_server(build_chunk(info.guid, &data, false, None), 5, Duration::from_millis(250)).await;
+        let c = InstallClient::with_base_url(&base).with_retry_base(Duration::from_millis(1)).with_cdn_timeout(Duration::from_millis(400));
+        assert_eq!(c.download_chunk(&base, "ChunksV4", &info).await.unwrap(), data);
+    }
+
+    #[tokio::test]
+    async fn garbage_manifest_tries_the_next_url() {
+        let server = MockServer::start().await;
+        let body = b"real manifest".to_vec();
+        Mock::given(method("GET")).and(path("/a.manifest")).respond_with(ResponseTemplate::new(200).set_body_string("<html>portal</html>")).mount(&server).await;
+        Mock::given(method("GET")).and(path("/b.manifest")).respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone())).mount(&server).await;
+        let c = InstallClient::with_base_url(&server.uri());
+        let info = ManifestInfo {
+            hash: sha_hex(&body),
+            urls: vec![format!("{}/a.manifest", server.uri()), format!("{}/b.manifest", server.uri())],
+            base_urls: vec![],
+            build_version: "1".into(),
+        };
+        assert_eq!(c.download_manifest(&info).await.unwrap(), body);
+        let only_bad = ManifestInfo { urls: vec![format!("{}/a.manifest", server.uri())], ..info };
+        assert!(matches!(c.download_manifest(&only_bad).await, Err(InstallError::Network(_))));
+    }
+
+    #[tokio::test]
+    async fn epic_errors_are_mapped_by_meaning() {
+        async fn status_of(res: ResponseTemplate) -> Result<ManifestInfo, InstallError> {
+            let server = MockServer::start().await;
+            Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(res).mount(&server).await;
+            InstallClient::with_base_url(&server.uri()).manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await
+        }
+        assert!(matches!(status_of(ResponseTemplate::new(401)).await, Err(InstallError::Rejected(_))));
+        let invalid_token = serde_json::json!({"errorCode": "errors.com.epicgames.common.oauth.invalid_token"});
+        assert!(matches!(status_of(ResponseTemplate::new(400).set_body_json(invalid_token)).await, Err(InstallError::Rejected(_))));
+        // Not owned / no Windows build: retrying or signing in again won't help.
+        assert!(matches!(status_of(ResponseTemplate::new(403)).await, Err(InstallError::BadManifest(_))));
+        assert!(matches!(status_of(ResponseTemplate::new(404)).await, Err(InstallError::BadManifest(_))));
+        let busy = serde_json::json!({"errorCode": "errors.com.epicgames.common.server_error"});
+        assert!(matches!(status_of(ResponseTemplate::new(503).set_body_json(busy)).await, Err(InstallError::Network(_))));
     }
 
     #[tokio::test]
@@ -221,7 +309,7 @@ mod tests {
             assert!(req.headers.get("authorization").is_none(), "manifest requests must not carry the token");
         }
         let wrong = ManifestInfo { hash: "00".into(), ..info.clone() };
-        assert!(matches!(c.download_manifest(&wrong).await, Err(InstallError::BadManifest(_))));
+        assert!(matches!(c.download_manifest(&wrong).await, Err(InstallError::Network(_))));
         let none = ManifestInfo { urls: vec![format!("{}/a.manifest", server.uri())], ..info };
         assert!(matches!(c.download_manifest(&none).await, Err(InstallError::Network(_))));
     }

@@ -29,4 +29,6 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-body);
+  /* Pixelify Sans draws "fi" as one glyph that reads like "A" ("Loading Ash") */
+  font-variant-ligatures: none;
 }

@@ -1,5 +1,6 @@
 //! Epic's game manifest: which files a build has and which chunks they're made of.
 mod binary;
+mod json;
 #[cfg(test)]
 pub(crate) mod testbuild;
 
@@ -88,5 +89,9 @@ impl Manifest {
 
 /// Reads either format: JSON if it starts with `{`, otherwise binary.
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, InstallError> {
-    binary::parse(bytes)
+    if bytes.first() == Some(&b'{') {
+        json::parse(bytes)
+    } else {
+        binary::parse(bytes)
+    }
 }

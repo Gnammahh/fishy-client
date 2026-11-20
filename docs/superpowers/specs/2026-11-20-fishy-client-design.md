@@ -73,7 +73,7 @@ The background behind every screen is black that fades into blue waves, so the a
 
 ### App icon
 - A **pixel-art fish, outline only**: aqua pixels on a pure black tile with **pixel-stepped rounded corners** (corner cut of 3/2/1 cells on the 16-cell tile), with the body hollow inside.
-- The fish fills **about 75% of the tile** and never touches the edges. 64 px and larger use the full 16×16 fish scaled by a whole number (e.g. ×6 at 128 px). 16 and 32 px use a simplified **12×12 fish** so they stay sharp. The design reference is the App icon section of `design/mockup.html`.
+- The icon uses its own **14×10 fish** (`ICON_FISH` in `design/mockup.html`), placed at cell (1,3) on the 16×16 tile. That leaves exactly 1 cell of margin left/right and 3 top/bottom, so it's perfectly centered and fills ~87% of the width. Every size uses the same drawing scaled by a whole number (16 px = ×1, 32 = ×2, 64 = ×4, 128 = ×8, 256 = ×16). The design reference is the App icon section of `design/mockup.html`. The draft grid below is replaced by this one.
 - Drawn on a **16×16 pixel grid** and scaled up with hard pixel edges (no blurring) to 32, 64, 128 and 256 px, plus a `.ico` file.
 - It's our own design. It uses the chunky, blocky look of item icons in block-building games, but it isn't a copy of any existing game's sprite.
 - **Draft grid** (`#` = aqua pixel, `.` = black). To be refined in a visual mockup:

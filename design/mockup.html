@@ -180,7 +180,7 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   <div class="bench">
     <section class="part">
       <h2>App icon</h2>
-      <p>A pixel fish outline in aqua on a black tile with rounded corners. The fish takes up about three quarters of the tile, so it never touches the edges. The 16 and 32 px sizes use a simpler 12 by 12 fish so they stay sharp. Shown on a gray desktop so you can see the corners.</p>
+      <p>A pixel fish outline in aqua on a black tile with rounded corners. The fish fills most of the tile and sits exactly in the middle, with a one-pixel gap to the sides at the smallest size. It is the same drawing at every size. Shown on a gray desktop so you can see the corners.</p>
       <div class="icons" data-icon="round"></div>
     </section>
 
@@ -293,35 +293,25 @@ h1{font-family:var(--font-pixel);font-weight:600;font-size:clamp(34px,6vw,52px);
   }
 
   /* ---------- static icons ---------- */
-  // 12x12 fish for the 16 and 32 px icons, where the full fish can't shrink cleanly
-  const FISH_MINI = [
-    "............",
-    "............",
-    ".....####...",
-    "#..##....#..",
-    "##.#.....##.",
-    ".#.#......#.",
-    "##.#......#.",
-    "#..##....#..",
-    ".....####...",
-    "............",
-    "............",
-    "............"];
+  // Icon fish: 14x10, placed on the 16x16 tile at (1,3) -> 1 cell margin left/right, 3 top/bottom
+  const ICON_FISH = [
+    "......#####...",
+    "....##.....##.",
+    "#..#.........#",
+    "##.#......e..#",
+    ".###.........#",
+    ".###.........#",
+    "##.#.........#",
+    "#..#.........#",
+    "....##.....##.",
+    "......#####..."];
   const CUT = [3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3];
   function paintIcon(cv, size) {
-    const c = cv.getContext('2d'), cell = size / 16;
+    const c = cv.getContext('2d'), u = size / 16;
     c.clearRect(0, 0, size, size);
     c.fillStyle = '#000';
-    for (let r = 0; r < 16; r++) { const k = CUT[r]; c.fillRect(k * cell, r * cell, (16 - 2 * k) * cell, cell); }
-    const big = (size * 3) / 64;
-    if (Number.isInteger(big) && big >= 3) {
-      // full fish at 75%: content spans rows 1-12, centered on row 7
-      drawSprite(c, FISH_A, (size - 16 * big) / 2, size / 2 - 7 * big, big, { pal: ICON });
-    } else {
-      const u = Math.max(1, Math.round((size * 3) / 48));
-      // mini fish content spans cols 0-10 and rows 2-8; center it in the tile
-      drawSprite(c, FISH_MINI, Math.round(size / 2 - 5.5 * u), Math.round(size / 2 - 5.5 * u), u, { pal: ICON });
-    }
+    for (let r = 0; r < 16; r++) { const k = CUT[r]; c.fillRect(k * u, r * u, (16 - 2 * k) * u, u); }
+    drawSprite(c, ICON_FISH, 1 * u, 3 * u, u, { pal: ICON });
   }
   document.querySelectorAll('[data-icon]').forEach(box => {
     [[256, '256 px'], [128, '128 px'], [64, '64 px'], [32, '32 px'], [16, '16 px taskbar']].forEach(([n, cap]) => {

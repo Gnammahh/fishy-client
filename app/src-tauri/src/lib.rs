@@ -1,6 +1,7 @@
 mod login_window;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
+use fishy_core::library::{CachedLibrary, LibraryCache, LibraryClient};
 use tauri::Manager;
 use tokio::sync::Mutex;
 
@@ -53,10 +54,35 @@ async fn submit_code(input: String, auth: tauri::State<'_, AppAuth>) -> Result<A
 }
 
 #[tauri::command]
-async fn logout(auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String> {
+async fn logout(auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<AuthState, String> {
     let state = auth.manager.logout().await;
+    let _ = library.cache.clear(); // the saved game list goes too (spec §6b)
     auth.set(state.clone()).await;
     Ok(state)
+}
+
+/// Library access: Epic client plus the on-disk cache.
+pub struct AppLibrary {
+    client: LibraryClient,
+    cache: LibraryCache,
+}
+
+const LIBRARY_ERROR: &str = "Couldn't load your library from Epic.";
+
+/// The last saved library (instant, no network), if any.
+#[tauri::command]
+fn library_cached(library: tauri::State<'_, AppLibrary>) -> Option<CachedLibrary> {
+    library.cache.load()
+}
+
+/// Fetches the library from Epic, saves it, and returns it.
+#[tauri::command]
+async fn library_refresh(auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
+    let token = auth.manager.access_token().await.map_err(|_| LIBRARY_ERROR.to_string())?;
+    let games = library.client.fetch_library(&token).await.map_err(|_| LIBRARY_ERROR.to_string())?;
+    let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games };
+    let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
+    Ok(fresh)
 }
 
 #[tauri::command]
@@ -72,6 +98,7 @@ pub fn run() {
                 manager: AuthManager::new(EpicClient::new(), KeyringStore::windows(), chrono_now),
                 current: Mutex::new(None),
             });
+            app.manage(AppLibrary { client: LibraryClient::new(), cache: LibraryCache::default_location() });
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.
@@ -86,7 +113,9 @@ pub fn run() {
             start_login,
             submit_code,
             logout,
-            open_login_in_browser
+            open_login_in_browser,
+            library_cached,
+            library_refresh
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

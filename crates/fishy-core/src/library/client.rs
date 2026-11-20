@@ -90,16 +90,25 @@ impl LibraryClient {
     /// The whole Library: items, then game info (8 at a time). A failed lookup keeps the game.
     pub async fn fetch_library(&self, token: &Secret) -> Result<Vec<Game>, AuthError> {
         let items = self.items(token).await?;
-        let wanted: Vec<&LibraryItem> = items.iter().filter(|i| worth_fetching(i)).collect();
-        let catalog: HashMap<String, CatalogItem> = stream::iter(wanted)
-            .map(|i| async move {
-                let info = self.catalog_item(token, &i.namespace, &i.catalog_item_id).await.ok().flatten();
-                (i.catalog_item_id.clone(), info)
+        // Each lookup owns its data (client, token, ids) so the future is Send + 'static,
+        // which Tauri's async commands require.
+        let wanted: Vec<(String, String)> = items
+            .iter()
+            .filter(|i| worth_fetching(i))
+            .map(|i| (i.namespace.clone(), i.catalog_item_id.clone()))
+            .collect();
+        let lookups: Vec<_> = wanted
+            .into_iter()
+            .map(|(namespace, id)| {
+                let (client, token) = (self.clone(), token.clone());
+                async move {
+                    let info = client.catalog_item(&token, &namespace, &id).await.ok().flatten();
+                    (id, info)
+                }
             })
-            .buffer_unordered(PARALLEL_LOOKUPS)
-            .filter_map(|(id, info)| async move { info.map(|i| (id, i)) })
-            .collect()
-            .await;
+            .collect();
+        let results: Vec<(String, Option<CatalogItem>)> = stream::iter(lookups).buffer_unordered(PARALLEL_LOOKUPS).collect().await;
+        let catalog: HashMap<String, CatalogItem> = results.into_iter().filter_map(|(id, info)| info.map(|i| (id, i))).collect();
         Ok(build_library(&items, &catalog))
     }
 }

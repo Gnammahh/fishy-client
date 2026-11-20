@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-fishy-client-design.md` (sections 2, 3, 4-layout, 5, 9-milestones 0–1, 10)
 
+**Approved visual reference:** `design/mockup.html` (the user approved it on 2026-11-20). Copy its sprite grids verbatim (`FISH_A`, `FISH_B`, `OPEN`, `DEAD`, `PELLET`, `BUBBLE`, `PUFF`, `ICON_FISH`, `CUT`) and match its timings, colors and wave values. Where this plan and the mockup disagree on a visual detail, the mockup wins.
+
 ## Global Constraints
 
 - App/window title: `Fishy Client`. Executable/Cargo package name: `fishy-client`. Bundle identifier: `com.fishyclient.app`.
@@ -102,8 +104,8 @@ Tests sit next to the code as `*.test.ts`.
   - `type Rect = { x: number; y: number; color: string }`
   - `parseGrid(text: string): Grid`: splits on newlines, trims each line, drops empty lines, and strips any leading row-number prefix matching `/^\s*\d+\s+/`
   - `gridToRects(grid: Grid, palette: Palette): Rect[]`: one rect per non-`.` char found in the palette (unknown chars are skipped), in row-major order
-  - `sprites.ts` exports `FISH_SWIM: [Grid, Grid]`, `FISH_TURN: Grid`, `FISH_MOUTH_OPEN: Grid`, `FISH_MOUTH_CLOSED: Grid`, `FISH_FLIP: [Grid, Grid, Grid]`, `FISH_DEAD: Grid` (x eye, for the error state), `PELLET: Grid`, `PUFF: Grid`, `BUBBLE: Grid`, and `FISH_PALETTE`, `FISH_GRAY_PALETTE`, `PELLET_PALETTE`
-  - `<PixelSprite grid palette scale={4} flip={false} title?>`: an SVG with `viewBox="0 0 W H"`, width/height = W·scale, H·scale, `shape-rendering="crispEdges"` and a 1×1 `<rect>` per pixel. `flip` mirrors it horizontally (to face left).
+  - `sprites.ts` exports `FISH_SWIM: [Grid, Grid]` (mockup `FISH_A`, `FISH_B`), `FISH_MOUTH_OPEN: Grid` (mockup `OPEN`), `FISH_MOUTH_CLOSED: Grid` (= `FISH_A`), `FISH_DEAD: Grid` (x eye, for the error state), `PELLET: Grid`, `PUFF: Grid`, `BUBBLE: Grid`, `ICON_FISH: Grid` (14×10), and `FISH_PALETTE`, `FISH_GRAY_PALETTE`, `PELLET_PALETTE`. There are no separate turn or flip frames: the "happy flip" is `FISH_MOUTH_CLOSED` drawn with `vflip`, and the error fish is `FISH_DEAD` with `vflip` (belly up).
+  - `<PixelSprite grid palette scale={4} flip={false} vflip={false} title?>`: an SVG with `viewBox="0 0 W H"`, width/height = W·scale, H·scale, `shape-rendering="crispEdges"` and a 1×1 `<rect>` per pixel. `flip` mirrors it horizontally (to face left) and `vflip` mirrors it vertically.
 
 - [ ] **Step 1: Write tests in `grid.test.ts`**
   - `parseGrid strips row numbers and blank lines`: input `"\n 0 .#.\n 1 ##.\n"` → `[".#.", "##."]`
@@ -112,11 +114,11 @@ Tests sit next to the code as `*.test.ts`.
 - [ ] **Step 2: Write tests in `sprites.test.ts`**
   - `all fish frames are 16x16`: every row of every FISH_* grid has length 16, and each grid has 16 rows
   - `fish frames face right and have an eye`: each of FISH_SWIM[0], FISH_SWIM[1], FISH_MOUTH_OPEN and FISH_MOUTH_CLOSED contains exactly one `e` char (the eye pixel), and its column is ≥ 8
-  - `pellet is 4x4, bubble is 4x4, puff is 6x6`
+  - `pellet is 4x4, bubble is 4x4, puff is 6x6, icon fish is 14x10`
 
 - [ ] **Step 3: Run** `npm test`. Expected: FAIL (modules not found).
 
-- [ ] **Step 4: Implement `grid.ts`, then draw `sprites.ts`.** The fish is an **outline only** with a hollow body: `#` = aqua `#4FE3D1` outline, `e` = eye (`#E8F1F2`), `.` = transparent. Base it on the icon grid in spec §2, with the tail pixels connected to the body. Swim frame 2 moves the tail up or down by 1 px. MOUTH_OPEN cuts a 2-px notch at the nose. TURN is a narrow, front-facing body. The FLIP frames are rotated 0°, 90° and 180°. FISH_DEAD has an `x` in place of the eye and uses FISH_GRAY_PALETTE (`#7A8A99`). PELLET is a solid orange `o` (`#FF9F43`) blob. PUFF is a 6×6 ring of orange specks. BUBBLE is a 4×4 aqua ring.
+- [ ] **Step 4: Implement `grid.ts`, then fill `sprites.ts`** by copying the grids from `design/mockup.html` verbatim. Palettes are the mockup's `PAL`: `#` `#4FE3D1`, `e`/`x` `#E8F1F2`, `o` `#FF9F43`, `h` `#FFD3A1`, `b` `#9FF3EA`. FISH_GRAY_PALETTE maps `#` to `#7A8A99`.
 
 - [ ] **Step 5: Implement `PixelSprite.svelte`** as described in Interfaces.
 
@@ -133,18 +135,20 @@ Tests sit next to the code as `*.test.ts`.
 - Modify: `app/package.json` (add the script `"icon": "node ../scripts/gen-icon.mjs && tauri icon src-tauri/icons/app-icon.png"`), `app/src-tauri/icons/*` (generated)
 
 **Interfaces:**
-- Consumes: the same grid format as `parseGrid`. The script has its own small parser so it doesn't need a TS build. It accepts `#` and `e` as aqua and everything else as black.
-- Produces: `renderIcon(gridText: string, size: number): PNG` exported from `gen-icon.mjs` (a pngjs PNG object). Running the file directly writes `app/src-tauri/icons/app-icon.png` at 1024×1024.
+- Consumes: the same grid format as `parseGrid`. The script has its own small parser so it doesn't need a TS build. `#` and `e` are aqua and everything else is transparent.
+- Produces: `renderIcon(gridText: string, size: number): PNG` exported from `gen-icon.mjs` (a pngjs PNG object), drawn exactly like the mockup's `paintIcon`. On a 16-cell tile it draws a black tile with corners cut by `CUT = [3,2,1,0,0,0,0,0,0,0,0,0,0,1,2,3]` cells per row on each side (cut cells are fully transparent, alpha 0), then the 14×10 fish placed at cell (1, 3). Running the file directly writes `app/src-tauri/icons/app-icon.png` at 1024×1024.
 
-- [ ] **Step 1: Write `assets/sprites/fish-icon.txt`.** Copy the spec §2 draft grid without row numbers, using the corrected connected tail from Task 2's swim frame 1, with the eye as `#` (the icon is single-color).
+- [ ] **Step 1: Write `assets/sprites/fish-icon.txt`** containing the mockup's `ICON_FISH` grid (14 columns × 10 rows).
 
 - [ ] **Step 2: Write test `scripts/gen-icon.test.mjs`** (Vitest can run it: `npx vitest run ../scripts` from `app/`)
   - `renderIcon is square at requested size`: `renderIcon(text, 1024)` has width === height === 1024
-  - `background is pure black and outline is aqua`: pixel (0,0) is RGBA `0,0,0,255`. The pixel at the center of grid cell (row 3, col 7), i.e. `(7*64+32, 3*64+32)`, is `79,227,209,255`
+  - `corners are transparent`: pixel (0,0) has alpha 0, and pixel (3*64+32, 32) (row 0, col 3) is opaque black `0,0,0,255`
+  - `tile is black and fish is aqua`: pixel (32, 8*64+32) (row 8, col 0, empty margin) is `0,0,0,255`. The pixel at tile cell (row 3, col 7), which is fish cell (row 0, col 6), i.e. `(7*64+32, 3*64+32)`, is `79,227,209,255`
+  - `fish is centered`: the bounding box of aqua pixels at size 16 is x 1..14 and y 3..12
 
 - [ ] **Step 3: Run test.** Expected: FAIL.
 
-- [ ] **Step 4: Implement `renderIcon`.** `npm i -D pngjs` in `app/`. Each grid cell is a solid `size/16` block (size must be divisible by 16, otherwise throw `Error("size must be a multiple of 16")`), with no anti-aliasing.
+- [ ] **Step 4: Implement `renderIcon`.** `npm i -D pngjs` in `app/`. Each cell is a solid `size/16` block (size must be divisible by 16, otherwise throw `Error("size must be a multiple of 16")`), with no anti-aliasing.
 
 - [ ] **Step 5: Run test.** Expected: PASS.
 
@@ -162,7 +166,7 @@ Tests sit next to the code as `*.test.ts`.
 **Interfaces:**
 - Produces:
   - `steppedWavePath(opts: { width: number; height: number; baseY: number; amplitude: number; wavelength: number; step: number }): string`: an SVG path `d` that starts at `M0,{height}`, rises to the wave edge, follows a sine-shaped edge **quantized to `step`-px stairs** (every vertex x and y is a multiple of `step`, alternating horizontal and vertical segments), and closes along the bottom (`…L{width},{height} Z`). `width` must be a whole number of wavelengths, so tiles join seamlessly.
-  - `<OceanBackground />`: a fixed full-window layer (`position:fixed; inset:0; z-index:-1`). The background is `linear-gradient(to bottom, #000000 0%, #000000 50%, #03122B 80%, #0A3A7A 100%)`. 3 wave layers sit in the bottom 35%, using colors `#0A3A7A` @ 45%, `#0E5AA8` @ 35% and `#1B7FD1` @ 25% opacity, step 4 px, wavelengths 320/240/180 px, and loop durations 40 s/30 s/20 s. Each layer is an SVG 2 tiles wide (path width = 2 × tile width ≥ 3840 px) animated with `transform: translateX(0 → -tileWidth)` (linear, infinite). Under `prefers-reduced-motion: reduce` there's `animation: none`.
+  - `<OceanBackground />`: a fixed full-window layer (`position:fixed; inset:0; z-index:-1`). The background is `linear-gradient(to bottom, #000000 0%, #000000 50%, #03122B 80%, #0A3A7A 100%)`. 3 wave layers sit in the bottom 35%, using colors `#0A3A7A` @ 45%, `#0E5AA8` @ 35% and `#1B7FD1` @ 25% opacity, step 4 px, wavelengths 320/240/180 px, amplitudes 18/14/10 px, edges at 70%/80%/90% of the window height, and drift speeds 8/12/18 px per second (loop duration = tile width ÷ speed). These match the approved mockup. Each layer is an SVG 2 tiles wide (path width = 2 × tile width ≥ 3840 px) animated with `transform: translateX(0 → -tileWidth)` (linear, infinite). Under `prefers-reduced-motion: reduce` there's `animation: none`.
 
 - [ ] **Step 1: Write tests in `wave.test.ts`**
   - `path starts bottom-left and closes bottom-right`: for `{width:640,height:200,baseY:100,amplitude:20,wavelength:320,step:4}`, `d` starts with `"M0,200"` and ends with `"L640,200 Z"`
@@ -191,7 +195,7 @@ Tests sit next to the code as `*.test.ts`.
 - Create: `app/src/lib/progress/progress.ts`, `app/src/lib/progress/progress.test.ts`, `app/src/lib/progress/FishProgressBar.svelte`
 
 **Interfaces:**
-- Consumes: `PixelSprite`, `FISH_SWIM`, `FISH_MOUTH_OPEN`, `FISH_MOUTH_CLOSED`, `FISH_DEAD`, `BUBBLE`, `PELLET`, `FISH_GRAY_PALETTE` (Task 2), and `reducedMotion` (Task 1)
+- Consumes: `PixelSprite`, `FISH_SWIM`, `FISH_MOUTH_OPEN`, `FISH_MOUTH_CLOSED`, `FISH_DEAD`, `BUBBLE`, `PUFF`, `FISH_GRAY_PALETTE` (Task 2), and `reducedMotion` (Task 1)
 - Produces:
   - `type DownloadState = 'downloading' | 'paused' | 'verifying' | 'error' | 'done'`
   - `clampProgress(p: number): number`: returns 0 for NaN, otherwise clamps to [0, 1]
@@ -216,10 +220,11 @@ Tests sit next to the code as `*.test.ts`.
 
 - [ ] **Step 5: Implement `FishProgressBar.svelte`.** The track is a full-width row of `dotCount = 40` orange 2×2-px-scaled dots (scale 2). Dots at index < `dotsEaten` are hidden. The fish (scale 2, 32 px) is absolutely positioned at `left: progress·100%`, offset by half its width, and clamped inside the track. Per state:
   - **downloading:** alternates MOUTH_OPEN/MOUTH_CLOSED every 150 ms, and a crunch PUFF flashes for 150 ms whenever `dotsEaten` increases
-  - **paused:** shows FISH_TURN with BUBBLE sprites rising (CSS stepped animation)
-  - **verifying:** the fish swims back and forth along the eaten part (an 8 s stepped loop) with BUBBLE as the magnifier
-  - **error:** shows FISH_DEAD in gray, the track border turns `#FF5C5C`, and there's a "Retry" button (Pixelify font) that fires `retry`
-  - **done:** a FLIP sequence plays (3 frames × 120 ms) with a PUFF splash, then the component renders a "Play" button that fires `play`
+  - **paused:** FISH_MOUTH_CLOSED bobbing by 1 sprite pixel, with 3 small BUBBLE sprites (scale 1) rising from the mouth
+  - **verifying:** the fish swims back and forth along the eaten part (4 s each way), facing its direction of travel, with a scale-2 BUBBLE ahead of it as the magnifier
+  - **error:** FISH_DEAD in gray with `vflip` (belly up), the remaining dots and a bottom line turn `#FF5C5C`, and there's a "Retry" button (Pixelify font) that fires `retry`
+  - **done:** the flip plays (3 frames × 120 ms: up 6 px, up 12 px with `vflip`, up 6 px) with a PUFF splash, then the component renders a green "Play" button that fires `play`
+  - Status text per state, exactly as in the mockup: paused → `Paused at 42%. 3.1 GB of 7.4 GB downloaded.`, verifying → `Checking installed files, 70% done.`, error → `Download stopped: the connection to the download server dropped.`, done → `Installed. 7.4 GB on disk.`
 
   The `formatProgress` text sits under the bar in `--text-2`. With reduced motion there are no chomp/bubble/flip frames: the fish just sits at the progress position, and done shows the Play button immediately.
 
@@ -238,22 +243,22 @@ Tests sit next to the code as `*.test.ts`.
 - Produces:
   - `type LoaderPhase = 'fall' | 'swim' | 'eat' | 'return'`
   - `type LoaderFrame = { phase: LoaderPhase; fishX: number; facing: 'left' | 'right'; mouthOpen: boolean; pelletY: number; pelletVisible: boolean }` (x and y are 0–1 fractions of the tank)
-  - `CYCLE_MS = 1200`
-  - `fishLoaderFrame(elapsedMs: number, pelletX: number): LoaderFrame`, using `t = elapsedMs % 1200`:
-    - **fall** `[0,400)`: pelletY goes 0→1 linearly, the fish is at 0.5 facing the pellet
-    - **swim** `[400,700)`: fishX goes 0.5→pelletX, facing the pellet
-    - **eat** `[700,850)`: fishX = pelletX, mouthOpen = true for `[700,775)`, the pellet is hidden from 775
-    - **return** `[850,1200)`: fishX goes pelletX→0.5, facing the centre, pellet hidden
+  - `CYCLE_MS = 1800` (matches the approved mockup)
+  - `fishLoaderFrame(elapsedMs: number, pelletX: number): LoaderFrame`, using `t = elapsedMs % 1800`. fishX is the fish's **mouth-target position** (it reaches pelletX while eating); the component converts it to sprite coordinates the way the mockup does (`target = pellet − dir·7u`).
+    - **fall** `[0,540)`: pelletY goes 0→1 linearly, the fish is at 0.5 facing the pellet
+    - **swim** `[540,990)`: fishX goes 0.5→pelletX with ease-in-out, facing the pellet
+    - **eat** `[990,1260)`: fishX = pelletX, mouthOpen = true for `[990,1125)`, the pellet is hidden from 1125
+    - **return** `[1260,1800)`: fishX goes pelletX→0.5 with ease-in-out, facing the centre, pellet hidden
     - When pelletX === 0.5, facing stays `'right'`
-  - `<FishLoader size="small|medium|large" done={false} />`: fish scale 2/4/8 (32/64/128 px). It picks a new random `pelletX` in [0.15, 0.85] each cycle and draws with `requestAnimationFrame`. While `done` is false, the sprite is FISH_SWIM (alternating every 200 ms) or MOUTH_OPEN. When `done` turns true, it finishes the current cycle, plays FISH_FLIP, then fades out over 300 ms. With reduced motion it shows a static fish plus 3 pellets fading in and out (CSS opacity only).
+  - `<FishLoader size="small|medium|large" done={false} />`: fish scale 2/4/8 (32/64/128 px) in a tank of 48×32 sprite pixels. Each cycle it picks a random `pelletX` in [0.15, 0.38] ∪ [0.62, 0.85] (never right next to the centre, so the fish never swims backwards) and draws with `requestAnimationFrame`, redrawing every ~70 ms so it moves in pixel steps. While swimming, the sprite alternates FISH_SWIM frames (every 220 ms while falling, 120 ms while chasing, 200 ms while returning). There's a 1-pixel bob during the fall and a PUFF at the bite. When `done` turns true, it finishes the current cycle, plays the flip (3 frames × 120 ms: up 1, up 3 with vflip, up 1, in sprite pixels), then fades out over 300 ms and shows "Loaded". With reduced motion it shows a static fish plus 3 pellets fading in and out.
 
 - [ ] **Step 1: Write tests in `loaderFrame.test.ts`**
   - `starts with pellet at top and fish centred`: `fishLoaderFrame(0, 0.8)` → `{phase:'fall', fishX:0.5, pelletY:0, pelletVisible:true, facing:'right'}`
-  - `fish faces left for a pellet on the left`: `fishLoaderFrame(500, 0.2).facing === 'left'`
-  - `fish reaches pellet and eats`: `fishLoaderFrame(720, 0.3)` → `phase 'eat'`, `fishX 0.3`, `mouthOpen true`
-  - `pellet gone after bite`: `fishLoaderFrame(800, 0.3).pelletVisible === false`
-  - `returns to centre and faces it`: `fishLoaderFrame(1199, 0.3).fishX` is close to 0.5 (±0.01) and its `facing === 'right'`
-  - `cycle repeats`: `fishLoaderFrame(1200 + 100, 0.6)` deep-equals `fishLoaderFrame(100, 0.6)`
+  - `fish faces left for a pellet on the left`: `fishLoaderFrame(700, 0.2).facing === 'left'`
+  - `fish reaches pellet and eats`: `fishLoaderFrame(1000, 0.3)` → `phase 'eat'`, `fishX 0.3`, `mouthOpen true`
+  - `pellet gone after bite`: `fishLoaderFrame(1150, 0.3).pelletVisible === false`
+  - `returns to centre and faces it`: `fishLoaderFrame(1799, 0.3).fishX` is close to 0.5 (±0.01) and its `facing === 'right'`
+  - `cycle repeats`: `fishLoaderFrame(1800 + 100, 0.6)` deep-equals `fishLoaderFrame(100, 0.6)`
 
 - [ ] **Step 2: Run tests.** Expected: FAIL.
 

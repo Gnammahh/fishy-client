@@ -2,12 +2,26 @@
   import Sidebar, { type Page } from "./Sidebar.svelte";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import LibraryPage from "$lib/library/LibraryPage.svelte";
+  import DownloadsPage from "$lib/install/DownloadsPage.svelte";
+  import { initInstalls } from "$lib/install/installs";
+  import { onMount } from "svelte";
   import { signOut, retry, type AuthState } from "$lib/auth/auth";
 
   // `state` is the prop name; renamed locally so it can't clash with the $state rune.
   let { state: auth }: { state: Exclude<AuthState, { kind: "SignedOut" }> } = $props();
 
   let page = $state<Page>("library");
+
+  // Downloads and the installed list, kept up to date by the backend's events.
+  onMount(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    initInstalls().then((s) => (gone ? s() : (stop = s)));
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  });
   let busy = $state(false);
   let checking = $state(false);
   let logoutError = $state("");
@@ -45,8 +59,7 @@
     {#if page === "library"}
       <LibraryPage name={auth.display_name} offline={auth.kind === "Offline"} />
     {:else if page === "downloads"}
-      <h2>Downloads</h2>
-      <p>No downloads yet.</p>
+      <DownloadsPage />
     {:else if page === "settings"}
       <h2>Settings</h2>
       <p>Settings arrive together with installs and downloads.</p>

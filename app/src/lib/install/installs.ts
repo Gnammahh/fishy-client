@@ -57,8 +57,17 @@ async function refreshInstalled() {
 
 /** Loads the current state and follows the backend's change events. Returns a stop function. */
 export async function initInstalls(): Promise<() => void> {
-  const stopDownloads = await listen<DownloadsView>("downloads-changed", (e) => downloads.set(asItems(e.payload)));
-  const stopInstalled = await listen("installed-changed", () => void refreshInstalled());
+  const safeListen = async (event: string, handler: (payload: unknown) => void) => {
+    try {
+      const stop = await listen(event, (e) => handler(e.payload));
+      // Tauri's unlisten is async; if the backend is already gone (app closing) ignore it.
+      return () => void Promise.resolve(stop() as unknown).catch(() => {});
+    } catch {
+      return () => {};
+    }
+  };
+  const stopDownloads = await safeListen("downloads-changed", (p) => downloads.set(asItems(p as DownloadsView)));
+  const stopInstalled = await safeListen("installed-changed", () => void refreshInstalled());
   try {
     downloads.set(asItems(await invoke<DownloadsView>("downloads_state")));
   } catch {

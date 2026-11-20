@@ -153,11 +153,10 @@
   <InstallDialog game={installing} onclose={() => (installing = null)} />
 {/if}
 {#if confirmUninstall}
-  {@const g = confirmUninstall}
   <ConfirmDialog
-    message="Uninstall {g.title}? Its game files will be deleted."
+    message="Uninstall {confirmUninstall.title}? Its game files will be deleted."
     confirmLabel="Uninstall"
-    onconfirm={() => doUninstall(g)}
+    onconfirm={() => confirmUninstall && doUninstall(confirmUninstall)}
     oncancel={() => (confirmUninstall = null)}
   />
 {/if}

@@ -56,6 +56,17 @@ Fishy Client is a lightweight, open-source replacement for the Epic Games Launch
 | Error | Coral red | `#FF5C5C` |
 | Success | Sea green | `#3DDC84` |
 
+### App background: "deep water"
+The background behind every screen is black that fades into blue waves, so the app feels like looking into deep water.
+
+- **Gradient:** pure black `#000000` across the top half, fading through deep navy `#03122B` to ocean blue `#0A3A7A` at the bottom edge.
+- **Waves:** 3 layered wave bands along the bottom ~35% of the window, each a slightly lighter, semi-transparent blue (`#0A3A7A`, `#0E5AA8`, `#1B7FD1` at 25–45% opacity). Wave edges use the **pixel-stepped** style, so they match the pixel fish instead of smooth curves.
+- **Motion:** the layers drift sideways slowly at different speeds (parallax), with one loop every ~20–40 s. It's subtle enough not to distract and uses almost no CPU, because it's drawn with CSS transforms only.
+- **Readability:** cards and panels sit on top as near-black `#0B0F14` at ~85% opacity with a light blur, so text never sits directly on the waves.
+- **Reduced motion:** the waves stay still.
+- Implemented as one reusable component, `<OceanBackground>`, placed once behind the whole app.
+- The **app icon keeps its plain black background**. The waves are only for the app window.
+
 ### Fonts
 - **Headings and buttons:** a pixel font. Planned: *Pixelify Sans* (free OFL license, bundled with the app so it works offline).
 - **Body text, game titles, settings:** *Inter*, a clean sans-serif, so long text stays easy to read.

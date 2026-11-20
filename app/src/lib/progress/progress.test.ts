@@ -10,7 +10,29 @@ describe("progress", () => {
   });
 
   it("unknown total shows 0% and no infinity", () => {
-    expect(formatProgress(0, 0, 0)).toBe("0% · 0.0 B / 0.0 B · 0.0 B/s · —");
+    expect(formatProgress(0, 0, 0)).toBe("0% · 0.0 B / — · 0.0 B/s · —");
+  });
+
+  it("unknown total still shows the bytes already downloaded", () => {
+    expect(formatProgress(500 * MiB, 0, MiB)).toBe("0% · 500.0 MB / — · 1.0 MB/s · —");
+  });
+
+  it("NaN and Infinity never reach the text", () => {
+    for (const s of [
+      formatProgress(NaN, NaN, NaN),
+      formatProgress(MiB, Infinity, Infinity),
+      formatProgress(Infinity, GiB, MiB),
+      statusText("paused", NaN, NaN, NaN),
+      statusText("done", NaN, NaN, NaN),
+    ]) {
+      expect(s).not.toMatch(/NaN|Infinity|∞/);
+    }
+  });
+
+  it("never shows 100% before the download is complete", () => {
+    expect(formatProgress(0.995 * GiB, GiB, MiB).startsWith("99%")).toBe(true);
+    expect(formatProgress(GiB, GiB, MiB).startsWith("100%")).toBe(true);
+    expect(statusText("verifying", 0.999 * GiB, GiB, 0)).toBe("Checking installed files, 99% done.");
   });
 
   it("stalled speed shows dash", () => {
@@ -34,11 +56,16 @@ describe("progress", () => {
 
   it("status text matches the mockup wording for each state", () => {
     const total = 7.4 * GiB;
-    expect(statusText("paused", 0.42, total, 0)).toBe("Paused at 42%. 3.1 GB of 7.4 GB downloaded.");
-    expect(statusText("verifying", 0.7, total, 0)).toBe("Checking installed files, 70% done.");
-    expect(statusText("error", 0.42, total, 0)).toBe("Download stopped: the connection to the download server dropped.");
-    expect(statusText("done", 1, total, 0)).toBe("Installed. 7.4 GB on disk.");
-    expect(statusText("downloading", 0.5, 2 * GiB, 0)).toBe("50% · 1.0 GB / 2.0 GB · 0.0 B/s · —");
+    expect(statusText("paused", 3.1 * GiB, total, 0)).toBe("Paused at 42%. 3.1 GB of 7.4 GB downloaded.");
+    expect(statusText("verifying", 0.7 * total, total, 0)).toBe("Checking installed files, 70% done.");
+    expect(statusText("error", 0.42 * total, total, 0)).toBe("Download stopped: the connection to the download server dropped.");
+    expect(statusText("done", total, total, 0)).toBe("Installed. 7.4 GB on disk.");
+    expect(statusText("downloading", GiB, 2 * GiB, 0)).toBe("50% · 1.0 GB / 2.0 GB · 0.0 B/s · —");
+  });
+
+  it("status text uses the real downloaded bytes when the total is unknown", () => {
+    expect(statusText("paused", 500 * MiB, 0, 0)).toBe("Paused at 0%. 500.0 MB of — downloaded.");
+    expect(statusText("done", 500 * MiB, 0, 0)).toBe("Installed. 500.0 MB on disk.");
   });
 
   it("formatBytes uses binary units with one decimal", () => {

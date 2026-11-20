@@ -14,7 +14,7 @@
     BUBBLE_PALETTE,
     PUFF_PALETTE,
   } from "$lib/pixel/sprites";
-  import { clampProgress, statusText, type DownloadState } from "./progress";
+  import { clampProgress, percent, statusText, type DownloadState } from "./progress";
 
   let {
     downloaded,
@@ -51,7 +51,17 @@
   let jumpDone = $state(false);
 
   const progress = $derived(total > 0 ? clampProgress(downloaded / total) : 0);
-  const text = $derived(statusText(dlState, progress, total, bytesPerSec));
+  const text = $derived(statusText(dlState, downloaded, total, bytesPerSec));
+  const pct = $derived(percent(downloaded, total));
+  // Screen readers hear state changes only, not every byte/speed update.
+  const ANNOUNCE: Record<DownloadState, string> = {
+    downloading: "",
+    paused: "Download paused.",
+    verifying: "Checking installed files.",
+    error: "Download stopped: the connection to the download server dropped.",
+    done: "Download finished.",
+  };
+  const announcement = $derived(ANNOUNCE[dlState]);
   const showPlay = $derived(dlState === "done" && ($reducedMotion || jumpDone));
 
   $effect(() => {
@@ -63,7 +73,10 @@
   });
 
   onMount(() => {
-    const ctx = canvas.getContext("2d")!;
+    // No canvas/ResizeObserver (tests, very old webviews): keep the text, skip the drawing.
+    if (typeof ResizeObserver === "undefined") return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const ro = new ResizeObserver(() => {
       width = Math.max(96, Math.floor(canvas.clientWidth));
       canvas.width = width;
@@ -154,9 +167,19 @@
 </script>
 
 <div class="fbar" class:is-error={dlState === "error"}>
-  <canvas bind:this={canvas} height={H} aria-hidden="true"></canvas>
+  <div
+    role="progressbar"
+    aria-label="Download progress"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={pct}
+    aria-valuetext={text}
+  >
+    <canvas bind:this={canvas} height={H} aria-hidden="true"></canvas>
+  </div>
+  <span class="sr-only" role="status" aria-live="polite">{announcement}</span>
   <div class="meta">
-    <p class="text" aria-live="polite">{text}</p>
+    <p class="text">{text}</p>
     <div class="actions">
       {#if dlState === "error"}
         <button class="pixel-btn" type="button" onclick={() => onretry?.()}>Retry</button>
@@ -199,6 +222,14 @@
   .actions {
     display: flex;
     gap: 8px;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .pixel-btn {
     font-family: var(--font-pixel);

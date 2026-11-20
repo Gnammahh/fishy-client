@@ -12,6 +12,8 @@ export default defineConfig(() => ({
     environment: "jsdom",
     include: ["src/**/*.test.ts", "../scripts/**/*.test.mjs"],
   },
+  // component tests need Svelte's browser build (mount), not the server one
+  resolve: process.env.VITEST ? { conditions: ["browser"] } : undefined,
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

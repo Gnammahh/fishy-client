@@ -374,8 +374,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ### Still to check by hand (milestone 2)
 - [x] Sign in (with Google)
 - [x] Still signed in after restarting the app
-- [ ] Closing the sign-in window midway goes back to the login screen
-- [ ] Log out leads to the login screen; `cmdkey /list | findstr /i fishy` prints nothing, and Sign in asks for the password again
+- [x] Closing the sign-in window midway goes back to the login screen
+- [x] Log out leads to the login screen; `cmdkey /list | findstr /i fishy` prints nothing, and Sign in asks for the password again
 
 ### Known limits and risks
 - **Ban risk: low, not zero.** Epic doesn't officially allow third-party launchers. Legendary and Heroic use the same method and have been used for years without known bans for normal use.
@@ -393,7 +393,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - Two rare race/storage edge cases, noted in `crates/fishy-core/src/auth/manager.rs`.
 
 ### Next steps
-1. Finish the three hand checks above.
+1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
 2. **Back up to a private GitHub repository** (needs your GitHub account; the GitHub tool, `gh`, isn't installed yet).
 3. **Milestone 3, Library:** your owned games in a grid with cover art.
    - Also: a library cache on disk, deleted on Log out.

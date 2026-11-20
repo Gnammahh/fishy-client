@@ -9,6 +9,7 @@ pub mod plan;
 pub mod space;
 pub mod speed;
 pub mod store;
+pub mod uninstall;
 
 pub use error::{format_bytes, InstallError};
 

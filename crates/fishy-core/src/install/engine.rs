@@ -123,7 +123,10 @@ mod tests {
         expected: Vec<(String, Vec<u8>)>,
     }
 
-    fn fixture(chunks: &[&[u8]], files: &[(&str, &[(usize, u32, u32)])]) -> Fixture {
+    /// (chunk index, offset, size)
+    type Part = (usize, u32, u32);
+
+    fn fixture(chunks: &[&[u8]], files: &[(&str, &[Part])]) -> Fixture {
         let guid = |i: usize| -> Guid { [i as u32 + 1, 0xAA, 0xBB, 0xCC] };
         let infos: Vec<ChunkInfo> = chunks.iter().enumerate().map(|(i, d)| info_for(guid(i), d, 100 + i as u64)).collect();
         let mut entries = Vec::new();

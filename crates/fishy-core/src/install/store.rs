@@ -125,7 +125,7 @@ impl InstallStore {
             .filter_map(|bytes| serde_json::from_slice::<JobInfo>(&bytes).ok())
             .filter(|j| check_app(&j.app_name).is_ok())
             .collect();
-        jobs.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+        jobs.sort_by_key(|j| j.title.to_lowercase());
         jobs
     }
 

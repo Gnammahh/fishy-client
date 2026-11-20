@@ -74,7 +74,7 @@ fn lookup<'a>(m: &'a serde_json::Map<String, Value>, key: &str) -> Result<&'a st
 
 /// Each 3-digit decimal group is one byte.
 fn blob_to_bytes(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 3 != 0 || !s.bytes().all(|b| b.is_ascii_digit()) {
+    if !s.len().is_multiple_of(3) || !s.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     s.as_bytes().chunks(3).map(|g| std::str::from_utf8(g).ok()?.parse::<u16>().ok().and_then(|v| u8::try_from(v).ok())).collect()

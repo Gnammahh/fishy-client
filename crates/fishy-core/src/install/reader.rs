@@ -60,7 +60,7 @@ impl<'a> Reader<'a> {
         }
         let units = len.unsigned_abs() as usize;
         let raw = self.bytes(units.checked_mul(2).ok_or_else(truncated)?)?;
-        let mut words: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let mut words: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
         if words.last() == Some(&0) {
             words.pop();
         }

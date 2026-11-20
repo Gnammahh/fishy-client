@@ -364,9 +364,10 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ### Where everything is
 - **Project folder:** `Desktop\fishy-client`.
 - **Backup:** private GitHub repository **https://github.com/Gnammahh/fishy-client**. All three branches are pushed; only you can see it. GitHub shows `feat/epic-login` first. To back up new work, run `git push`.
-- **Branches.** Both are kept separate from `master` on purpose; nothing is merged yet.
+- **Branches.** All are kept separate from `master` on purpose; nothing is merged yet. Each one builds on the previous.
   - `feat/ui-foundation`: milestones 0–1, the look of the app.
-  - `feat/epic-login`: milestone 2, Epic login. Built on top of the UI branch.
+  - `feat/epic-login`: milestone 2, Epic login.
+  - `feat/library`: milestone 3, the Library.
 - **Approved visual reference:** `design/mockup.html`. It's also published as a private claude.ai artifact, "Fishy Client Mockup".
 - **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md` and `docs/superpowers/plans/2026-11-20-epic-login.md`.
 
@@ -392,6 +393,15 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **App shell:** sidebar with Library, Downloads, Settings and Account, plus an offline banner with **Try again**. The Account page has **Log out**.
 - **Log out** ends the session at Epic and deletes every saved piece.
 
+**Milestone 3, Library (branch `feat/library`, built 2026-11-20)**
+- **Library page:** your owned games in a grid with cover art (tall box art), sorted A–Z, with a search box and a game count.
+- **Filtering:** DLC, mods, Unreal Engine assets and private items are filtered out, using the same rules as Legendary. A game whose details Epic can't return is still shown, under its internal name.
+- **Fast start:** the last saved library shows instantly, then refreshes from Epic in the background ("Updating…").
+- **States:** first load shows the loading fish; there are an empty state, an error with **Try again**, and a banner that keeps your games visible if a refresh fails.
+- **Offline:** shows the saved games only, with no duplicate error next to the offline banner. It refreshes by itself once Epic is reachable again.
+- **Saved library:** at `%APPDATA%FishyClientlibrary.json` (game list only, never tokens). **Log out deletes it**, and the app also forgets the previous account's games in memory.
+- **Covers** load straight from Epic's image servers; a missing cover shows the pixel fish.
+- **Still to check by hand:** your real library loads with real covers.
 ### Privacy and security decisions
 - Your password goes to Epic's page only; Fishy Client never sees it.
 - Tokens are stored only in Credential Manager, never in files or the page code, and they print as `[redacted]` anywhere they could leak.
@@ -410,8 +420,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 40 tests, plus 1 that writes to the real Credential Manager (run on purpose only).
-- **UI:** 52 tests.
+- **Rust core:** 55 tests, plus 1 that writes to the real Credential Manager (run on purpose only).
+- **UI:** 63 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -438,9 +448,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
 2. ~~Back up to a private GitHub repository.~~ Done on 2026-11-20 (`gh` installed and signed in as Gnammahh). To back up new work: `git push`.
-3. **Milestone 3, Library:** your owned games in a grid with cover art.
-   - Also: a library cache on disk, deleted on Log out.
-   - Also: log files with secrets filtered out, and a "delete all my data" button.
+3. ~~Milestone 3, Library.~~ Built 2026-11-20 (the saved library is deleted on Log out). Still to do: check your real library by hand.
+   - Still open from this list: log files with secrets filtered out, and a "delete all my data" button (they fit best with Settings).
 4. Later milestones:
    - Install
    - Launch (note: Epic's launch code is visible to other programs on the PC while a game starts)

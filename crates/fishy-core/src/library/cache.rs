@@ -73,6 +73,7 @@ mod tests {
                 title: "Tidepool Odyssey".into(),
                 installable: true,
                 cover_url: Some("https://cdn/a.jpg".into()),
+                launch: Default::default(),
             }],
         }
     }

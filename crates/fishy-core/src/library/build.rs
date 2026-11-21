@@ -47,6 +47,40 @@ impl CatalogItem {
         let value = self.custom_attributes.as_ref()?.pointer("/FolderName/value")?.as_str()?.trim();
         (!value.is_empty()).then(|| value.to_string())
     }
+
+    /// The catalog attributes Play needs (spec §6d), with Legendary's defaults.
+    pub fn launch_info(&self) -> LaunchInfo {
+        let text = |key: &str| {
+            let v = self.custom_attributes.as_ref()?.get(key)?.get("value")?.as_str()?.trim();
+            (!v.is_empty()).then(|| v.to_string())
+        };
+        LaunchInfo {
+            additional_command_line: text("AdditionalCommandLine"),
+            requires_ot: text("OwnershipToken").is_some_and(|v| v.eq_ignore_ascii_case("true")),
+            can_run_offline: !text("CanRunOffline").is_some_and(|v| v.eq_ignore_ascii_case("false")),
+            third_party_store: text("ThirdPartyManagedApp").or_else(|| text("ThirdPartyManagedProvider")),
+        }
+    }
+}
+
+/// What Play needs from the catalog. Missing in old caches: then the defaults apply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LaunchInfo {
+    /// Extra arguments (`customAttributes.AdditionalCommandLine`).
+    pub additional_command_line: Option<String>,
+    /// The game wants an ownership token file (`OwnershipToken`).
+    pub requires_ot: bool,
+    /// The game may start without Epic (`CanRunOffline`, default true).
+    pub can_run_offline: bool,
+    /// Another store's launcher starts it (EA app, Ubisoft Connect).
+    pub third_party_store: Option<String>,
+}
+
+impl Default for LaunchInfo {
+    fn default() -> Self {
+        Self { additional_command_line: None, requires_ot: false, can_run_offline: true, third_party_store: None }
+    }
 }
 
 /// A game shown in the Library (also what the cache stores).
@@ -60,6 +94,8 @@ pub struct Game {
     /// False when Epic has no Windows download for it. Caches saved before this field count as true.
     #[serde(default = "yes")]
     pub installable: bool,
+    #[serde(default)]
+    pub launch: LaunchInfo,
 }
 
 fn yes() -> bool {
@@ -93,17 +129,17 @@ pub fn build_library(items: &[LibraryItem], catalog: &HashMap<String, CatalogIte
         .filter(|i| seen.insert(i.catalog_item_id.clone()))
         .filter_map(|i| {
             let app_name = i.app_name.clone().unwrap_or_default();
-            let (title, cover_url) = match catalog.get(&i.catalog_item_id) {
+            let (title, cover_url, launch) = match catalog.get(&i.catalog_item_id) {
                 Some(info) => {
                     if info.main_game_item.is_some() || info.categories.iter().any(|c| c.path == "mods") {
                         return None;
                     }
-                    (info.title.clone(), pick_cover(&info.key_images))
+                    (info.title.clone(), pick_cover(&info.key_images), info.launch_info())
                 }
-                None => (app_name.clone(), None),
+                None => (app_name.clone(), None, LaunchInfo::default()),
             };
             let installable = windows_apps.is_none_or(|apps| apps.contains(&app_name));
-            Some(Game { app_name, namespace: i.namespace.clone(), catalog_item_id: i.catalog_item_id.clone(), title, cover_url, installable })
+            Some(Game { app_name, namespace: i.namespace.clone(), catalog_item_id: i.catalog_item_id.clone(), title, cover_url, installable, launch })
         })
         .collect();
     let twins: HashSet<(String, String)> =
@@ -135,6 +171,62 @@ mod tests {
             main_game_item: dlc.then(|| serde_json::json!({"id": "main"})),
             custom_attributes: None,
         }
+    }
+
+    #[test]
+    fn launch_info_reads_catalog_attributes() {
+        let item: CatalogItem = serde_json::from_value(serde_json::json!({
+            "title": "Reef",
+            "customAttributes": {
+                "AdditionalCommandLine": {"type": "STRING", "value": " -nosplash "},
+                "OwnershipToken": {"type": "STRING", "value": "True"},
+                "CanRunOffline": {"type": "STRING", "value": "false"},
+                "ThirdPartyManagedApp": {"type": "STRING", "value": "Origin"}
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            item.launch_info(),
+            LaunchInfo {
+                additional_command_line: Some("-nosplash".into()),
+                requires_ot: true,
+                can_run_offline: false,
+                third_party_store: Some("Origin".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn launch_info_defaults_without_attributes() {
+        let d = info("X", &[], &[], false).launch_info();
+        assert_eq!(d, LaunchInfo::default());
+        assert!(d.can_run_offline && !d.requires_ot && d.additional_command_line.is_none() && d.third_party_store.is_none());
+        let provider: CatalogItem = serde_json::from_value(serde_json::json!({
+            "title": "X", "customAttributes": {"ThirdPartyManagedProvider": {"value": "Ubisoft Connect"}, "AdditionalCommandLine": {"value": "  "}}
+        }))
+        .unwrap();
+        assert_eq!(provider.launch_info().third_party_store.as_deref(), Some("Ubisoft Connect"));
+        assert_eq!(provider.launch_info().additional_command_line, None);
+    }
+
+    #[test]
+    fn build_library_keeps_launch_info() {
+        let mut catalog = HashMap::new();
+        let mut c = info("Reef", &[], &[], false);
+        c.custom_attributes = Some(serde_json::json!({"OwnershipToken": {"value": "true"}}));
+        catalog.insert("c1".to_string(), c);
+        let games = build_library(&[item("ns", "c1", Some("Reef"), None), item("ns", "c2", Some("Other"), None)], &catalog, None);
+        assert!(games.iter().find(|g| g.app_name == "Reef").unwrap().launch.requires_ot);
+        assert_eq!(games.iter().find(|g| g.app_name == "Other").unwrap().launch, LaunchInfo::default());
+    }
+
+    #[test]
+    fn old_cached_game_without_launch_loads_with_defaults() {
+        let g: Game = serde_json::from_value(serde_json::json!({
+            "app_name": "A", "namespace": "ns", "catalog_item_id": "c", "title": "A", "cover_url": null, "installable": true
+        }))
+        .unwrap();
+        assert_eq!(g.launch, LaunchInfo::default());
     }
 
     #[test]
@@ -242,6 +334,7 @@ mod tests {
                 title: "Fallback".into(),
                 cover_url: None,
                 installable: true,
+                launch: LaunchInfo::default(),
             }]
         );
     }

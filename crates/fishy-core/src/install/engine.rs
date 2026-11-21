@@ -1,15 +1,18 @@
 //! Runs a download: fetches chunks (16 at a time, in order), writes files one by one, checks each
 //! file's SHA-1 and notes it in resume.txt. Stopping (pause or cancel) returns `Stopped`.
+//! Updates (spec §6e) also copy parts from the old files, swap changed files in through a
+//! temporary file and delete removed files at the end.
 use super::client::InstallClient;
 use super::manifest::{FileEntry, Manifest};
-use super::plan::build_plan;
+use super::plan::build_update_plan;
+use super::uninstall::delete_named_files;
 use super::store::{file_path, InstallStore, JobInfo};
 use super::{Guid, InstallError};
 use futures::stream::{self, Stream, StreamExt};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::io::Write;
-use std::path::Path;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -95,12 +98,84 @@ pub async fn run_download_with(
     on_progress: impl Fn(Progress) + Send + Sync,
     opts: RunOptions,
 ) -> Result<(), InstallError> {
-    let plan = build_plan(manifest, &store.finished_files(job))?;
+    run_job(client, store, job, manifest, None, stop, on_progress, opts).await
+}
+
+/// `<name>.fishy-update` next to the file it will replace.
+fn temp_path(target: &Path) -> PathBuf {
+    let mut name = target.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".fishy-update");
+    target.with_file_name(name)
+}
+
+/// Reads `size` bytes at `pos` from the old file. None if it can't (missing, too short).
+fn read_old(old: &mut Option<std::fs::File>, path: &Path, pos: u64, size: usize) -> Option<Vec<u8>> {
+    if old.is_none() {
+        *old = std::fs::File::open(path).ok();
+    }
+    let f = old.as_mut()?;
+    f.seek(SeekFrom::Start(pos)).ok()?;
+    let mut buf = vec![0u8; size];
+    f.read_exact(&mut buf).ok()?;
+    Some(buf)
+}
+
+/// Writes a file from freshly downloaded chunks only (the fallback when reused parts were wrong).
+#[allow(clippy::too_many_arguments)]
+async fn rebuild_from_downloads(
+    client: &InstallClient,
+    base: &str,
+    dir: &'static str,
+    manifest: &Manifest,
+    entry: &FileEntry,
+    path: &Path,
+    stop: &CancellationToken,
+    mut on_bytes: impl FnMut(u64),
+) -> Result<[u8; 20], InstallError> {
+    let io = |e: std::io::Error| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() };
+    let mut out = std::io::BufWriter::new(std::fs::File::create(path).map_err(io)?);
+    let mut hasher = Sha1::new();
+    let mut fetched: HashMap<Guid, Vec<u8>> = HashMap::new();
+    for part in &entry.parts {
+        if !fetched.contains_key(&part.guid) {
+            let info = manifest.chunk(&part.guid).ok_or_else(|| InstallError::BadManifest("unknown chunk".into()))?;
+            let data = tokio::select! {
+                biased;
+                _ = stop.cancelled() => return Err(InstallError::Stopped),
+                d = client.download_chunk(base, dir, info) => d?,
+            };
+            on_bytes(info.file_size);
+            fetched.insert(part.guid, data);
+        }
+        let data = &fetched[&part.guid];
+        let slice = data
+            .get(part.offset as usize..(part.offset + part.size) as usize)
+            .ok_or_else(|| InstallError::DamagedFile(entry.filename.clone()))?;
+        out.write_all(slice).map_err(io)?;
+        hasher.update(slice);
+    }
+    out.flush().map_err(io)?;
+    Ok(hasher.finalize().into())
+}
+
+/// Installs, or (with `old`, the installed version's manifest) updates. See the module docs.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_job(
+    client: &InstallClient,
+    store: &InstallStore,
+    job: &JobInfo,
+    manifest: &Manifest,
+    old: Option<&Manifest>,
+    stop: CancellationToken,
+    on_progress: impl Fn(Progress) + Send + Sync,
+    opts: RunOptions,
+) -> Result<(), InstallError> {
+    let plan = build_update_plan(manifest, old, &store.finished_files(job))?;
     let base = job.base_urls.first().ok_or_else(|| InstallError::BadManifest("no CDN".into()))?.clone();
     let dir = manifest.chunk_dir();
 
-    // Space for what's left, checked on every start and resume (spec §6c).
-    let needed = manifest.install_size().saturating_sub(plan.done_size);
+    // Space for what's left, checked on every start and resume (spec §6c, §6e).
+    let needed = plan.space_needed;
     let free = (opts.free_space)(&job.install_path).unwrap_or(u64::MAX);
     super::space::check_space(&job.install_path, needed, free)?;
 
@@ -131,14 +206,26 @@ pub async fn run_download_with(
             return Err(InstallError::Stopped);
         }
         let entry: &FileEntry = &manifest.files[index];
-        let path = file_path(&job.install_path, &entry.filename)?;
+        let target = file_path(&job.install_path, &entry.filename)?;
+        // A changed file is built next to the old one and swapped in only once it's checked.
+        let path = if plan.replace.contains(&index) { temp_path(&target) } else { target.clone() };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io_err)?;
         }
+        let reuse = plan.reuse.get(&index);
+        let mut old_file: Option<std::fs::File> = None;
         // create() truncates: a file left half-written by an earlier run starts over.
         let mut out = std::io::BufWriter::with_capacity(1 << 20, std::fs::File::create(&path).map_err(io_err)?);
         let mut hasher = Sha1::new();
-        for part in &entry.parts {
+        for (n, part) in entry.parts.iter().enumerate() {
+            if let Some(pos) = reuse.and_then(|r| r[n]) {
+                // Copied from the old file. If it can't be read, zeros go in and the check below
+                // sends the file to the rebuild.
+                let bytes = read_old(&mut old_file, &target, pos, part.size as usize).unwrap_or_else(|| vec![0; part.size as usize]);
+                out.write_all(&bytes).map_err(io_err)?;
+                hasher.update(&bytes);
+                continue;
+            }
             let data = match cache.chunks.get(&part.guid) {
                 Some(d) => d.clone(),
                 None => {
@@ -182,11 +269,27 @@ pub async fn run_download_with(
         }
         out.flush().map_err(io_err)?;
         drop(out);
-        let sha: [u8; 20] = hasher.finalize().into();
+        drop(old_file);
+        let mut sha: [u8; 20] = hasher.finalize().into();
+        if sha != entry.sha1 && reuse.is_some_and(|r| r.iter().any(Option::is_some)) {
+            // The old file wasn't what the old manifest says (edited, damaged): rebuild once.
+            let add = |bytes: u64| {
+                downloaded += bytes;
+                on_progress(Progress { downloaded: downloaded.min(total), total });
+            };
+            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &stop, add).await?;
+        }
         if sha != entry.sha1 {
             return Err(InstallError::DamagedFile(entry.filename.clone()));
         }
+        if path != target {
+            std::fs::rename(&path, &target).map_err(io_err)?; // replaces the old file
+        }
         store.mark_finished(&job.app_name, &hex::encode(sha), &entry.filename).map_err(io_err)?;
+    }
+    if !plan.removed.is_empty() {
+        // Best effort: a removed file that can't be deleted doesn't stop the update.
+        delete_named_files(&job.install_path, plan.removed.iter().map(String::as_str), false);
     }
     Ok(())
 }
@@ -460,5 +563,135 @@ mod tests {
         fn store_root(&self) -> std::path::PathBuf {
             self._dir.path().join("data")
         }
+    }
+    // ---- Updates (spec §6e) ----
+
+    /// Old and new versions built from the same three chunks, so chunk ids match.
+    fn versions() -> (Fixture, Fixture) {
+        let c0: Vec<u8> = (0..=255u8).cycle().take(3000).collect();
+        let c1: Vec<u8> = b"old!".repeat(100);
+        let c2: Vec<u8> = b"new!".repeat(100);
+        let chunks: [&[u8]; 3] = [&c0, &c1, &c2];
+        let old = fixture(&chunks, &[("same.txt", &[(1, 0, 100)]), ("big.pak", &[(0, 0, 3000)]), ("Old/gone.txt", &[(1, 100, 50)])]);
+        let new = fixture(&chunks, &[
+            ("same.txt", &[(1, 0, 100)]),
+            ("big.pak", &[(0, 0, 2000), (2, 0, 200), (0, 2000, 1000)]),
+            ("added.txt", &[(2, 200, 100)]),
+        ]);
+        (old, new)
+    }
+
+    /// Mounts every chunk of `f`, expecting `counts[i]` downloads of chunk i (None: any).
+    async fn serve_counted(server: &MockServer, f: &Fixture, counts: &[Option<u64>]) {
+        for (i, info) in f.manifest.chunks.iter().enumerate() {
+            let res = ResponseTemplate::new(200).set_body_bytes(build_chunk(info.guid, &f.chunk_data[i], true, None));
+            let mock = Mock::given(method("GET")).and(path(format!("/base/{}", chunk_path("ChunksV4", info)))).respond_with(res);
+            match counts.get(i).copied().flatten() {
+                Some(n) => mock.expect(n).mount(server).await,
+                None => mock.mount(server).await,
+            }
+        }
+    }
+
+    /// The old version, already installed on disk, and an update job to the new one.
+    fn installed_old(server: &MockServer, old: &Fixture, new: &Fixture) -> Env {
+        let mut e = env(server, new);
+        for (name, content) in &old.expected {
+            let p = file_path(&e.job.install_path, name).unwrap();
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, content).unwrap();
+        }
+        e.job.update_from = Some("1".into());
+        e
+    }
+
+    fn write_new(e: &Env, new: &Fixture, name: &str) {
+        let content = &new.expected.iter().find(|(n, _)| n == name).unwrap().1;
+        std::fs::write(file_path(&e.job.install_path, name).unwrap(), content).unwrap();
+        e.store.mark_finished("Tide", "x", name).unwrap();
+    }
+
+    fn assert_new_version(e: &Env, new: &Fixture) {
+        for (name, content) in &new.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+        assert!(!e.job.install_path.join("Old").exists(), "the removed file and its empty folder are gone");
+        let leftovers: Vec<_> = std::fs::read_dir(&e.job.install_path)
+            .unwrap()
+            .flatten()
+            .filter(|f| f.file_name().to_string_lossy().ends_with(".fishy-update"))
+            .collect();
+        assert!(leftovers.is_empty(), "no temporary files left");
+    }
+
+    #[tokio::test]
+    async fn update_skips_unchanged_files_and_never_downloads_reused_chunks() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[Some(0), Some(0), Some(1)]).await;
+        let e = installed_old(&server, &old, &new);
+        let same = e.job.install_path.join("same.txt");
+        let before = std::fs::metadata(&same).unwrap().modified().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+        assert_eq!(std::fs::metadata(&same).unwrap().modified().unwrap(), before, "unchanged file is never rewritten");
+    }
+
+    #[tokio::test]
+    async fn update_rebuilds_a_file_whose_old_copy_was_edited() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[None, Some(0), None]).await;
+        let e = installed_old(&server, &old, &new);
+        std::fs::write(e.job.install_path.join("big.pak"), vec![7u8; 3000]).unwrap(); // the user changed it
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+    }
+
+    #[tokio::test]
+    async fn update_paused_then_resumed_finishes() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[Some(0), Some(0), Some(1)]).await;
+        let e = installed_old(&server, &old, &new);
+        write_new(&e, &new, "added.txt"); // done before the pause
+        std::fs::write(e.job.install_path.join("big.pak.fishy-update"), b"half").unwrap(); // half-written temp
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+    }
+
+    #[tokio::test]
+    async fn resume_after_all_files_still_deletes_removed_files() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[Some(0), Some(0), Some(0)]).await;
+        let e = installed_old(&server, &old, &new);
+        write_new(&e, &new, "added.txt");
+        write_new(&e, &new, "big.pak");
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+    }
+
+    #[tokio::test]
+    async fn update_space_check_uses_the_update_plan() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[Some(0), Some(0), Some(0)]).await;
+        let e = installed_old(&server, &old, &new);
+        fn tiny(_: &Path) -> std::io::Result<u64> {
+            Ok(10)
+        }
+        let r = run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, opts(1 << 20, tiny)).await;
+        // added 100 + growth 200 + largest changed 3200
+        assert_eq!(r, Err(InstallError::NoSpace { drive: crate::install::space::drive_label(&e.job.install_path), needed: 3500, free: 10 }));
     }
 }

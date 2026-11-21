@@ -6,6 +6,14 @@ use fishy_core::wipe::{default_data_root, delete_everything};
 use serde::Serialize;
 use tauri::Emitter;
 
+/// Delete all my data, step 4: true if Start with Windows is on and couldn't be turned off.
+/// If its state can't be read, it's turned off anyway.
+pub(crate) fn autostart_off_failed<E>(enabled: Result<bool, E>, disable: impl FnOnce() -> Result<(), E>) -> bool {
+    enabled.unwrap_or(true) && disable().is_err()
+}
+
+pub(crate) const STOP_ERROR: &str = "A download wouldn't stop, so nothing was deleted. Try again in a minute.";
+
 pub(crate) const AUTOSTART_ERROR: &str = "Couldn't change Start with Windows.";
 
 /// Start with Windows, read from the Registry each time (never saved in settings.json).
@@ -66,23 +74,35 @@ pub async fn delete_all_data(
 ) -> Result<DeleteReport, String> {
     tracing::info!("delete all my data (games too: {also_games})");
     // 1. Stop every download and forget prepared Install boxes.
-    let jobs = install.downloads.take_jobs_for_wipe(&app).await;
+    let jobs = install.downloads.stop_for_wipe(std::time::Duration::from_secs(60)).await.map_err(|_| {
+        tracing::warn!("{STOP_ERROR}");
+        let _ = app.emit("downloads-changed", install.downloads.view());
+        STOP_ERROR.to_string()
+    })?;
+    let _ = app.emit("downloads-changed", install.downloads.view());
     install.prepared.lock().unwrap_or_else(|e| e.into_inner()).clear();
     // 2. Log out, the same as the Log out button.
     let state = auth.manager.logout().await;
     let _ = library.cache.clear();
     auth.set(state).await;
+    let autostart_failed;
     // 4. (before the files go, so a failure here can't be missed in the log) Start with Windows off.
     {
         use tauri_plugin_autostart::ManagerExt;
-        let _ = app.autolaunch().disable();
+        let launcher = app.autolaunch();
+        autostart_failed = autostart_off_failed(launcher.is_enabled(), || launcher.disable());
+        if autostart_failed {
+            tracing::warn!("{AUTOSTART_ERROR}");
+        }
     }
     install.downloads.limiter.set(None); // the saved limit is deleted too
     // 3 and 5. Games (if ticked), then everything in %APPDATA%\FishyClient.
     let store = install.downloads.store.clone();
     let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games))
         .await
-        .unwrap_or(1);
+        .unwrap_or(1)
+        + usize::from(autostart_failed);
+    install.downloads.end_wipe();
     let _ = app.emit("installed-changed", ());
     tracing::info!("delete all my data finished, {failed} not deleted");
     Ok(DeleteReport { failed, message: delete_message(failed) })
@@ -116,6 +136,19 @@ mod tests {
             unavailable_folder_note(std::path::Path::new(r"C:\Users\you\Games")),
             r"Your default folder isn't available, so this uses C:\Users\you\Games."
         );
+    }
+
+    #[test]
+    fn autostart_turn_off_failure_is_counted() {
+        let mut asked = false;
+        assert!(autostart_off_failed(Ok(true), || {
+            asked = true;
+            Err(())
+        }));
+        assert!(asked);
+        assert!(!autostart_off_failed::<()>(Ok(true), || Ok(())));
+        assert!(!autostart_off_failed::<()>(Ok(false), || panic!("not on, so not touched")));
+        assert!(!autostart_off_failed::<()>(Err(()), || Ok(())), "can't read it: try to turn it off anyway");
     }
 
     #[test]

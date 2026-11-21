@@ -132,9 +132,22 @@ describe("DeleteDataBox", () => {
     expect(get(authState)).toEqual({ kind: "SignedOut" });
   });
 
+  it("a_download_that_wont_stop_is_explained_in_the_box", async () => {
+    const msg = "A download wouldn't stop, so nothing was deleted. Try again in a minute.";
+    calls(() => {
+      throw msg;
+    });
+    authState.set({ kind: "SignedIn", display_name: "FishFan", account_id: "acc" });
+    render(DeleteDataBox, { games: [], onclose: () => {} });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(msg);
+    expect(get(authState)).toEqual({ kind: "SignedIn", display_name: "FishFan", account_id: "acc" });
+    expect((screen.getByRole("button", { name: "Delete" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("a_failed_call_says_so_in_the_box", async () => {
     calls(() => {
-      throw "ipc down";
+      throw new Error("ipc down");
     });
     render(DeleteDataBox, { games: [], onclose: () => {} });
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));

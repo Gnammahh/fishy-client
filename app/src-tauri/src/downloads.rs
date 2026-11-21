@@ -82,6 +82,8 @@ pub struct DownloadsView {
 #[derive(Default)]
 pub struct Inner {
     pub jobs: Vec<Job>,
+    /// Delete all my data is running: nothing may start or join the queue.
+    pub wiping: bool,
 }
 
 impl Inner {
@@ -89,6 +91,17 @@ impl Inner {
     /// Something is still writing (a running download, or a cancel deleting its files).
     pub fn busy(&self) -> bool {
         self.jobs.iter().any(|j| matches!(j.state, JobState::Downloading | JobState::Removing))
+    }
+
+    /// Asks the running download to stop and pauses the queue.
+    pub fn stop_all(&mut self) {
+        for job in &mut self.jobs {
+            match job.state {
+                JobState::Downloading => job.stop.iter().for_each(CancellationToken::cancel),
+                JobState::Queued => job.state = JobState::Paused,
+                _ => {}
+            }
+        }
     }
 
     /// Empties the queue (Delete all my data).
@@ -123,7 +136,7 @@ impl Inner {
 
     /// The job to start now: the first queued one, if nothing is running.
     pub fn next_to_start(&self) -> Option<usize> {
-        if self.jobs.iter().any(|j| j.state == JobState::Downloading) {
+        if self.wiping || self.jobs.iter().any(|j| j.state == JobState::Downloading) {
             return None;
         }
         self.jobs.iter().position(|j| j.state == JobState::Queued)
@@ -222,7 +235,7 @@ impl Downloads {
                 Some(job)
             })
             .collect();
-        Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs })) }
+        Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs, wiping: false })) }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -245,7 +258,7 @@ impl Downloads {
     pub fn enqueue(&self, app: &AppHandle, info: JobInfo, manifest: Arc<Manifest>, old: Option<Arc<Manifest>>) {
         {
             let mut inner = self.lock();
-            if inner.find(&info.app_name).is_some() {
+            if inner.wiping || inner.find(&info.app_name).is_some() {
                 return;
             }
             let mut job = Job::new(info, manifest, JobState::Queued);
@@ -319,30 +332,36 @@ impl Downloads {
 
     /// Log out: the running download pauses and nothing new starts.
     pub fn pause_all(&self, app: &AppHandle) {
-        {
-            let mut inner = self.lock();
-            for job in &mut inner.jobs {
-                match job.state {
-                    JobState::Downloading => job.stop.iter().for_each(CancellationToken::cancel),
-                    JobState::Queued => job.state = JobState::Paused,
-                    _ => {}
-                }
-            }
-        }
+        self.lock().stop_all();
         self.emit(app);
     }
 
-    /// Delete all my data: stops everything, waits (up to a minute) until nothing is writing,
-    /// then takes every job off the queue so nothing restarts.
-    pub async fn take_jobs_for_wipe(&self, app: &AppHandle) -> Vec<JobInfo> {
-        self.pause_all(app);
-        let deadline = Instant::now() + Duration::from_secs(60);
-        while self.lock().busy() && Instant::now() < deadline {
+    /// Delete all my data, step 1: nothing new may start, everything stops, and once nothing is
+    /// writing every job is taken off the queue. If something is still writing after `timeout`,
+    /// it gives up and leaves everything as it was (Err), so no file can come back after a wipe.
+    /// Call [`Self::end_wipe`] when the wipe is over.
+    pub async fn stop_for_wipe(&self, timeout: Duration) -> Result<Vec<JobInfo>, ()> {
+        self.lock().wiping = true;
+        let deadline = Instant::now() + timeout;
+        loop {
+            {
+                let mut inner = self.lock();
+                inner.stop_all(); // again each time, in case something slipped in
+                if !inner.busy() {
+                    return Ok(inner.take_all());
+                }
+            }
+            if Instant::now() >= deadline {
+                self.lock().wiping = false;
+                return Err(());
+            }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        let jobs = self.lock().take_all();
-        self.emit(app);
-        jobs
+    }
+
+    /// The wipe is over (or was refused): downloads may start again.
+    pub fn end_wipe(&self) {
+        self.lock().wiping = false;
     }
 
     /// Starts the next queued job if nothing is running.
@@ -476,14 +495,61 @@ mod tests {
 
     #[test]
     fn busy_while_a_job_is_downloading_or_being_removed() {
-        assert!(!Inner { jobs: vec![job("p", JobState::Paused), job("q", JobState::Queued)] }.busy());
-        assert!(Inner { jobs: vec![job("d", JobState::Downloading)] }.busy());
-        assert!(Inner { jobs: vec![job("r", JobState::Removing)] }.busy());
+        assert!(!Inner { jobs: vec![job("p", JobState::Paused), job("q", JobState::Queued)], wiping: false }.busy());
+        assert!(Inner { jobs: vec![job("d", JobState::Downloading)], wiping: false }.busy());
+        assert!(Inner { jobs: vec![job("r", JobState::Removing)], wiping: false }.busy());
+    }
+
+    #[test]
+    fn nothing_starts_while_wiping() {
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued)], wiping: false };
+        inner.wiping = true;
+        assert_eq!(inner.next_to_start(), None);
+        inner.wiping = false;
+        assert_eq!(inner.next_to_start(), Some(0));
+    }
+
+    #[test]
+    fn stop_all_cancels_the_running_job_and_pauses_the_queue() {
+        let mut running = job("d", JobState::Downloading);
+        let token = CancellationToken::new();
+        running.stop = Some(token.clone());
+        let mut inner = Inner { jobs: vec![running, job("q", JobState::Queued)], wiping: false };
+        inner.stop_all();
+        assert!(token.is_cancelled());
+        assert_eq!(inner.jobs[1].state, JobState::Paused);
+    }
+
+    fn downloads_with(jobs: Vec<Job>) -> (tempfile::TempDir, Downloads) {
+        let dir = tempfile::tempdir().unwrap();
+        let d = Downloads::new(InstallStore::at(dir.path().to_path_buf()), InstallClient::new());
+        d.lock().jobs = jobs;
+        (dir, d)
+    }
+
+    #[test]
+    fn a_download_that_wont_stop_refuses_the_wipe_and_keeps_everything() {
+        let (_dir, d) = downloads_with(vec![job("stuck", JobState::Downloading), job("p", JobState::Paused)]);
+        let result = tauri::async_runtime::block_on(d.stop_for_wipe(Duration::from_millis(200)));
+        assert!(result.is_err());
+        assert_eq!(d.lock().jobs.len(), 2, "nothing taken off the queue");
+        assert!(!d.lock().wiping, "downloads can start again");
+    }
+
+    #[test]
+    fn stopped_downloads_are_taken_and_new_ones_refused_until_the_wipe_ends() {
+        let (_dir, d) = downloads_with(vec![job("p", JobState::Paused), job("q", JobState::Queued)]);
+        let taken = tauri::async_runtime::block_on(d.stop_for_wipe(Duration::from_millis(200))).unwrap();
+        assert_eq!(taken.iter().map(|j| j.app_name.as_str()).collect::<Vec<_>>(), vec!["p", "q"]);
+        assert!(d.lock().jobs.is_empty());
+        assert!(d.lock().wiping);
+        d.end_wipe();
+        assert!(!d.lock().wiping);
     }
 
     #[test]
     fn take_all_empties_the_queue() {
-        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("e", JobState::Error)] };
+        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("e", JobState::Error)], wiping: false };
         let taken: Vec<String> = inner.take_all().into_iter().map(|j| j.app_name).collect();
         assert_eq!(taken, vec!["p", "e"]);
         assert!(inner.jobs.is_empty());
@@ -493,6 +559,7 @@ mod tests {
     fn view_orders_running_then_queue_then_paused() {
         let inner = Inner {
             jobs: vec![job("p", JobState::Paused), job("q1", JobState::Queued), job("d", JobState::Downloading), job("e", JobState::Error), job("q2", JobState::Queued)],
+            wiping: false,
         };
         let v = inner.view();
         let order: Vec<(&str, &str)> = v.items.iter().map(|i| (i.app_name.as_str(), i.state)).collect();
@@ -503,7 +570,7 @@ mod tests {
 
     #[test]
     fn a_job_being_removed_is_hidden_but_still_blocks_a_reinstall() {
-        let mut inner = Inner { jobs: vec![job("q", JobState::Queued), job("r", JobState::Queued)] };
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued), job("r", JobState::Queued)], wiping: false };
         let info = inner.begin_removal("q").expect("not running, so the caller deletes the files");
         assert_eq!(info.app_name, "q");
         assert_eq!(inner.jobs[0].state, JobState::Removing);
@@ -516,7 +583,7 @@ mod tests {
 
     #[test]
     fn removing_a_running_job_asks_it_to_stop_first() {
-        let mut inner = Inner { jobs: vec![job("d", JobState::Downloading)] };
+        let mut inner = Inner { jobs: vec![job("d", JobState::Downloading)], wiping: false };
         let stop = CancellationToken::new();
         inner.jobs[0].stop = Some(stop.clone());
         assert!(inner.begin_removal("d").is_none(), "the running task deletes once it has stopped");
@@ -526,7 +593,7 @@ mod tests {
 
     #[test]
     fn a_failed_removal_comes_back_with_the_reason() {
-        let mut inner = Inner { jobs: vec![job("q", JobState::Queued)] };
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued)], wiping: false };
         inner.begin_removal("q");
         inner.end_removal("q", Err("Couldn't delete some files. Close the game and try again.".into()));
         assert_eq!(inner.jobs[0].state, JobState::Error);
@@ -542,14 +609,14 @@ mod tests {
 
     #[test]
     fn view_marks_update_jobs() {
-        let inner = Inner { jobs: vec![update("u", JobState::Paused), job("i", JobState::Queued)] };
+        let inner = Inner { jobs: vec![update("u", JobState::Paused), job("i", JobState::Queued)], wiping: false };
         let v = inner.view();
         assert_eq!(v.items.iter().map(|i| (i.app_name.as_str(), i.update)).collect::<Vec<_>>(), vec![("i", false), ("u", true)]);
     }
 
     #[test]
     fn cancelling_an_update_is_refused() {
-        let mut inner = Inner { jobs: vec![update("u", JobState::Downloading)] };
+        let mut inner = Inner { jobs: vec![update("u", JobState::Downloading)], wiping: false };
         let stop = CancellationToken::new();
         inner.jobs[0].stop = Some(stop.clone());
         assert!(inner.is_update("u"));
@@ -560,7 +627,7 @@ mod tests {
 
     #[test]
     fn uninstall_takes_only_a_stopped_update() {
-        let mut inner = Inner { jobs: vec![update("run", JobState::Downloading), update("p", JobState::Paused), job("i", JobState::Paused)] };
+        let mut inner = Inner { jobs: vec![update("run", JobState::Downloading), update("p", JobState::Paused), job("i", JobState::Paused)], wiping: false };
         assert!(!inner.take_stopped_update("run"));
         assert!(!inner.take_stopped_update("i"), "a normal install isn't an update");
         assert!(inner.take_stopped_update("p"));
@@ -587,13 +654,13 @@ mod tests {
 
     #[test]
     fn next_to_start_waits_for_the_running_job() {
-        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("q1", JobState::Queued), job("q2", JobState::Queued)] };
+        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("q1", JobState::Queued), job("q2", JobState::Queued)], wiping: false };
         assert_eq!(inner.next_to_start(), Some(1));
         inner.jobs[1].state = JobState::Downloading;
         assert_eq!(inner.next_to_start(), None);
         inner.jobs.remove(1);
         assert_eq!(inner.next_to_start(), Some(1));
-        let empty = Inner { jobs: vec![job("p", JobState::Paused)] };
+        let empty = Inner { jobs: vec![job("p", JobState::Paused)], wiping: false };
         assert_eq!(empty.next_to_start(), None);
     }
 }

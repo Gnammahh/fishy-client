@@ -674,7 +674,7 @@ Settings gets three sections:
 - The folder picker fails: "Couldn't open the folder picker."
 - Start with Windows can't be changed: "Couldn't change Start with Windows."
 - Open logs folder fails: "Couldn't open the logs folder. It's at %APPDATA%\FishyClient\logs."
-- Delete all my data: see above.
+- Delete all my data: see above. If a download won't stop within a minute, nothing is deleted: "A download wouldn't stop, so nothing was deleted. Try again in a minute." While the delete runs, no download can start or join the queue. If Start with Windows can't be turned off, it counts as one thing that couldn't be deleted.
 
 #### Tests
 - **Rust:**

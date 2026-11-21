@@ -28,8 +28,9 @@ export async function deleteAllData(alsoGames: boolean): Promise<string | null> 
   let report: DeleteReport;
   try {
     report = await invoke<DeleteReport>("delete_all_data", { alsoGames });
-  } catch {
-    return DELETE_ERROR;
+  } catch (e) {
+    // The app's own refusal ("A download wouldn't stop…") is a plain message; anything else isn't.
+    return typeof e === "string" ? e : DELETE_ERROR;
   }
   resetLibrary();
   resetInstalls();

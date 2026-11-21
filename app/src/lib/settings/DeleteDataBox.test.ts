@@ -68,6 +68,26 @@ describe("DeleteDataBox", () => {
     expect(screen.getByRole("checkbox", { name: "Also delete my installed games (1 game, 1.0 GB)" })).toBeTruthy();
   });
 
+  it("a_first_download_alone_still_offers_the_tick", async () => {
+    const seen = calls();
+    const dl = { app_name: "B", title: "B", state: "paused" as const, downloaded: GB, total: 3 * GB, bytes_per_sec: 0, error: null };
+    render(DeleteDataBox, { games: [], downloads: [dl], onclose: () => {} });
+    const box = screen.getByRole("checkbox", { name: "Also delete my unfinished downloads (1 download)" });
+    expect(screen.getByText(NOTE)).toBeTruthy();
+    await fireEvent.click(box);
+    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true }));
+  });
+
+  it("games_and_downloads_are_both_named", () => {
+    calls();
+    const dl = { app_name: "B", title: "B", state: "downloading" as const, downloaded: GB, total: 3 * GB, bytes_per_sec: 1, error: null };
+    render(DeleteDataBox, { games: [game("A", 2)], downloads: [dl, { ...dl, app_name: "C" }], onclose: () => {} });
+    expect(
+      screen.getByRole("checkbox", { name: "Also delete my installed games and unfinished downloads (1 game, 2.0 GB; 2 downloads)" }),
+    ).toBeTruthy();
+  });
+
   it("cancel_does_nothing", async () => {
     const seen = calls();
     let closed = false;

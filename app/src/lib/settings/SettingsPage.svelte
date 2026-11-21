@@ -3,7 +3,7 @@
   import { settings, saveSettings, type Settings } from "./settings";
   import { openLogsFolder, parseSpeed, defaultInstallFolder, getAutostart, setAutostart } from "./data";
   import { signOut } from "$lib/auth/auth";
-  import { installed, pickFolder } from "$lib/install/installs";
+  import { downloads, installed, pickFolder } from "$lib/install/installs";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import DeleteDataBox from "./DeleteDataBox.svelte";
 
@@ -215,7 +215,7 @@
 </section>
 
 {#if deleting}
-  <DeleteDataBox games={$installed} onclose={() => (deleting = false)} />
+  <DeleteDataBox games={$installed} downloads={$downloads.filter((d) => !d.update)} onclose={() => (deleting = false)} />
 {/if}
 
 <style>

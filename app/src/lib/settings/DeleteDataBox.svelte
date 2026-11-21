@@ -1,23 +1,35 @@
 <script lang="ts">
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import { formatBytes } from "$lib/progress/progress";
-  import type { InstalledGame } from "$lib/install/installs";
+  import type { DownloadItem, InstalledGame } from "$lib/install/installs";
   import { deleteAllData } from "./data";
 
-  let { games, onclose }: { games: InstalledGame[]; onclose: () => void } = $props();
+  // `downloads`: unfinished installs (not updates; an update's files go with its installed game).
+  let {
+    games,
+    downloads = [],
+    onclose,
+  }: { games: InstalledGame[]; downloads?: DownloadItem[]; onclose: () => void } = $props();
 
   let alsoGames = $state(false);
   let deleting = $state(false);
   let error = $state("");
 
-  const size = $derived(formatBytes(games.reduce((sum, g) => sum + g.install_size, 0)));
-  const count = $derived(games.length === 1 ? "1 game" : `${games.length} games`);
+  const plural = (n: number, word: string) => (n === 1 ? `1 ${word}` : `${n} ${word}s`);
+  const anything = $derived(games.length > 0 || downloads.length > 0);
+  const tickLabel = $derived.by(() => {
+    const gamesPart = `${plural(games.length, "game")}, ${formatBytes(games.reduce((sum, g) => sum + g.install_size, 0))}`;
+    const downloadsPart = plural(downloads.length, "download");
+    if (downloads.length === 0) return `Also delete my installed games (${gamesPart})`;
+    if (games.length === 0) return `Also delete my unfinished downloads (${downloadsPart})`;
+    return `Also delete my installed games and unfinished downloads (${gamesPart}; ${downloadsPart})`;
+  });
 
   async function remove() {
     if (deleting) return;
     deleting = true;
     error = "";
-    const failed = await deleteAllData(alsoGames && games.length > 0);
+    const failed = await deleteAllData(alsoGames && anything);
     if (failed) {
       error = failed;
       deleting = false;
@@ -43,10 +55,10 @@
   >
     <h3 id="delete-title">Delete all my data?</h3>
     <p>This logs you out and removes everything Fishy Client saved on this PC: settings, your game list, download progress and logs.</p>
-    {#if games.length > 0}
+    {#if anything}
       <label class="tick">
         <input type="checkbox" bind:checked={alsoGames} disabled={deleting} />
-        <span>Also delete my installed games ({count}, {size})</span>
+        <span>{tickLabel}</span>
       </label>
       {#if !alsoGames}<p class="note">Your game folders stay on disk, but Fishy Client will forget them.</p>{/if}
     {/if}

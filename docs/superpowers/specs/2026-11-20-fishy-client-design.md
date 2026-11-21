@@ -635,7 +635,7 @@ Settings gets three sections:
 #### Delete all my data
 - **Settings → Account → Delete all my data…** (a red button) opens a confirm box:
   - "This logs you out and removes everything Fishy Client saved on this PC: settings, your game list, download progress and logs."
-  - Tick box, **off** by default: "Also delete my installed games (N games, X GB)". It's hidden when nothing is installed. While it's off, the box says "Your game folders stay on disk, but Fishy Client will forget them."
+  - Tick box, **off** by default: "Also delete my installed games (N games, X GB)". When there are unfinished downloads it also offers those ("Also delete my installed games and unfinished downloads (1 game, 2.0 GB; 1 download)", or "Also delete my unfinished downloads (1 download)" if nothing is installed yet). It's hidden when there's neither. While it's off, the box says "Your game folders stay on disk, but Fishy Client will forget them."
   - **Cancel** and **Delete**.
 - **What happens, in order:**
   1. Every download stops; prepared Install boxes are forgotten.

@@ -50,7 +50,8 @@ export function resetInstalls() {
 
 const asItems = (v: DownloadsView | null | undefined) => (v && Array.isArray(v.items) ? v.items : []);
 
-async function refreshInstalled() {
+/** Re-reads the installed games from disk. */
+export async function refreshInstalled() {
   try {
     const list = await invoke<InstalledGame[]>("installed_list");
     installed.set(Array.isArray(list) ? list : []);

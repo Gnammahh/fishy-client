@@ -268,7 +268,7 @@ We follow the protocol that the open-source **Legendary** project already worked
 
 ### What the user sees
 - **Library page:** a grid of game cards, each with tall cover art (3:4) and the title underneath. Sorted A–Z, with a **search box** and "N games" above the grid.
-- **Opening the app:** the last saved library shows instantly from the cache, then refreshes quietly in the background. A small "Updating…" note shows while that runs.
+- **Opening the app:** the last saved library shows instantly from the cache, then refreshes quietly in the background. A small "Refreshing…" note shows while that runs. A **Refresh** button next to the search box does the same on demand (it also re-reads the installed games); it is hidden offline. (Renamed from "Updating…" on 2026-11-21 so it isn't confused with game updates.)
 - **First load (no cache yet):** the medium FishLoader with "Fetching your library…".
 - **Empty library:** "No fish in this pond yet. Games you own on Epic show up here."
 - **Error:** "Couldn't load your library from Epic." with **Try again**. If a cache exists, the cached games stay visible and the message appears as a small banner instead.
@@ -692,7 +692,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 **Milestone 3, Library (branch `feat/library`, built 2026-11-20)**
 - **Library page:** your owned games in a grid with cover art (tall box art), sorted A–Z, with a search box and a game count.
 - **Filtering:** DLC, mods, Unreal Engine assets and private items are filtered out, using the same rules as Legendary. A game whose details Epic can't return is still shown, under its internal name.
-- **Fast start:** the last saved library shows instantly, then refreshes from Epic in the background ("Updating…").
+- **Fast start:** the last saved library shows instantly, then refreshes from Epic in the background ("Refreshing…").
 - **States:** first load shows the loading fish; there are an empty state, an error with **Try again**, and a banner that keeps your games visible if a refresh fails.
 - **Offline:** shows the saved games only, with no duplicate error next to the offline banner. It refreshes by itself once Epic is reachable again.
 - **Saved library:** at `%APPDATA%FishyClientlibrary.json` (game list only, never tokens). **Log out deletes it**, and the app also forgets the previous account's games in memory.
@@ -783,8 +783,9 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - The first real **Settings page**: the two switches, saved in `%APPDATA%\FishyClient\settings.json`.
   - Checked in the browser preview with fake data: the badge, Update, the warning box, Updating… on the card and on the Downloads page (Pause only), and Settings.
 - **Not yet:** Epic's "delta manifests" (an extra size saving), separate DLC updates, and checking for updates on a timer while the app stays open.
+- **Refresh button** (added 2026-11-21 at your request): in the Library header, it fetches the library again (which re-checks for updates) and re-reads the installed games, without reloading the app. The Library's own note now says "Refreshing…" so it isn't confused with a game's "Updating…". 3 UI tests.
 - **Small things noticed:** updating a game while it's running fails with the folder message ("Couldn't write to…") instead of "close the game first".
-- **Tests now:** Rust 195 (core 183 + app 12), UI 102. New: 19 core, 5 app, 10 UI.
+- **Tests now:** Rust 195 (core 183 + app 12), UI 105. New: 19 core, 5 app, 13 UI.
 
 ### Still to check by hand (milestone 6)
 - [x] A game shows **Update available**, and **Update** finishes and brings it back to "Installed". Checked on 2026-11-21 with Bendy marked as an older version (2.0.0-test); it went back to 2.1.0 with nothing left in `downloads\`. A real Epic patch is still to be seen.
@@ -831,7 +832,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 
 ### Tests
 - **Rust core:** 183 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 12. (Counts as of 2026-11-21, milestone 6.)
-- **UI:** 102 tests.
+- **UI:** 105 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)

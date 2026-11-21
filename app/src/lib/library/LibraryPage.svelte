@@ -11,6 +11,7 @@
     hasUpdate,
     installed,
     play,
+    refreshInstalled,
     startUpdate,
     statusFor,
     uninstall,
@@ -29,6 +30,12 @@
   let confirmUninstall = $state<Game | null>(null);
   let cardError = $state<{ app: string; message: string } | null>(null);
   let starting = $state<string[]>([]);
+  /** The Refresh button: Epic's library (with the update check) and the installed list again. */
+  async function refreshAll() {
+    await Promise.all([refreshLibrary(), refreshInstalled()]);
+  }
+  const refreshing = $derived($library.updating || $library.status === "loading");
+
   /** The game whose Play is waiting for the "update waiting" answer (spec §6e). */
   let outdatedFor = $state<Game | null>(null);
   let playError = $state<({ app: string } & PlayError) | null>(null);
@@ -120,13 +127,18 @@
       <h2>Library</h2>
       <p class="who">Signed in as <strong>{name}</strong>.</p>
     </div>
-    {#if $library.status === "ready" && $library.games.length > 0}
-      <div class="tools">
+    <div class="tools">
+      {#if $library.status === "ready" && $library.games.length > 0}
         <label class="sr-only" for="library-search">Search your library</label>
         <input id="library-search" type="search" placeholder="Search your library" bind:value={query} autocomplete="off" />
         <span class="count">{windowsGames.length} {windowsGames.length === 1 ? "game" : "games"}</span>
-      </div>
-    {/if}
+      {/if}
+      {#if !offline && $library.status !== "offline"}
+        <button class="refresh" aria-label="Refresh library" title="Check Epic for new games and updates" disabled={refreshing} onclick={refreshAll}
+          >Refresh</button
+        >
+      {/if}
+    </div>
   </header>
 
   {#if $library.status === "ready" && $library.error}
@@ -135,7 +147,7 @@
       <PixelButton variant="ghost" onclick={refreshLibrary}>Try again</PixelButton>
     </div>
   {:else if $library.updating}
-    <p class="updating" role="status">Updating…</p>
+    <p class="updating" role="status">Refreshing…</p>
   {/if}
 
   {#if $library.status === "loading"}
@@ -326,6 +338,26 @@
     border-color: var(--orange);
   }
   .count,
+  .refresh {
+    font-family: var(--font-pixel);
+    font-size: 13px;
+    color: var(--aqua);
+    background: transparent;
+    border: 2px solid var(--aqua);
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .refresh:hover:not(:disabled) {
+    background: rgba(79, 227, 209, 0.15);
+  }
+  .refresh:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .refresh:focus-visible {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+  }
   .updating {
     color: var(--text-2);
     font-size: 13px;

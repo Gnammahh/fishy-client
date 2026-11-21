@@ -433,4 +433,52 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan" });
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
   });
+  // ---- Refresh button ----
+
+  it("refresh_fetches_the_library_and_installed_list_again", async () => {
+    let round = 0;
+    const calls = mockCommands({
+      library_cached: () => null,
+      library_refresh: () => {
+        round += 1;
+        return withUpdate([game("Kelp Runner")], { KelpRunner: round === 1 ? "1" : "2" });
+      },
+      installed_list: () => [installedGame("KelpRunner")],
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Installed")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh library" }));
+    expect(await screen.findByText("Update available")).toBeTruthy();
+    expect(calls.filter((c) => c === "library_refresh")).toHaveLength(2);
+    expect(calls).toContain("installed_list");
+  });
+
+  it("refresh_is_disabled_while_refreshing_and_says_refreshing", async () => {
+    let finish: (v: unknown) => void = () => {};
+    let round = 0;
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => {
+        round += 1;
+        return round === 1 ? withUpdate([game("Kelp Runner")], {}) : new Promise((r) => (finish = r));
+      },
+      installed_list: () => [],
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    const button = screen.getByRole("button", { name: "Refresh library" }) as HTMLButtonElement;
+    await fireEvent.click(button);
+    expect(await screen.findByText("Refreshing…")).toBeTruthy();
+    expect(button.disabled).toBe(true);
+    finish(withUpdate([game("Kelp Runner")], {}));
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it("refresh_is_hidden_offline", async () => {
+    mockCommands({ library_cached: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
+    render(LibraryPage, { name: "FishFan", offline: true });
+    await screen.findByText("Kelp Runner");
+    expect(screen.queryByRole("button", { name: "Refresh library" })).toBeNull();
+  });
 });

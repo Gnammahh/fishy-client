@@ -427,6 +427,73 @@ Before starting, the free space on the install folder's drive must be at least t
 
 ---
 
+## 6d. Launch (milestone 5), approved 2026-11-21 on branch `feat/launch`
+
+### What the user sees
+- **Play** on every installed game card, next to the "⋯" menu.
+- After a click, the button shows **Starting…** for about 5 seconds, then goes back to Play. Fishy Client doesn't track the running game: many games hand off to a second program and the first one exits, so "Running" would often be wrong.
+- Errors appear in a small box on the card (table below).
+
+### Where the launch details come from
+- **Install record** (`installed.json`, §6c): install folder, `executable` and `launch_parameters` from the manifest.
+- **Saved Library** (§6b). Each `Game` also keeps these catalog `customAttributes`, so games installed before this milestone work without reinstalling:
+  - `AdditionalCommandLine.value`: extra arguments (default none).
+  - `OwnershipToken.value == "true"`: the game needs an ownership token (default false).
+  - `CanRunOffline.value != "false"`: the game may start without Epic (default true, as in Legendary).
+  - `ThirdPartyManagedApp.value` or `ThirdPartyManagedProvider.value`: the game starts through another store's launcher (EA app, Ubisoft Connect). Not supported yet.
+  - Caches saved before this milestone lack these fields and read as the defaults until the next refresh.
+- **Session:** `account_id` and `displayName`.
+- **Language:** the language part of Windows' display language (for example `en`), else `en`.
+
+### Epic endpoints (verified against Legendary `api/egs.py` and `core.py`, 2026-11-21)
+- **Exchange code:** `GET https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/exchange` with bearer token and the launcher User-Agent. The response's `code` is used once and expires in about 5 minutes. A fresh one is fetched on every Play.
+- **Ownership token** (only when the game needs one): `POST https://ecommerceintegration-public-service-ecomprod02.ol.epicgames.com/ecommerceintegration/api/public/platforms/EPIC/identities/{account_id}/ownershipToken`, form `nsCatalogItemId={namespace}:{catalogItemId}`, bearer token. The raw response bytes are written to `%TEMP%\FishyClient\{namespace}{catalogItemId}.ovt`.
+
+### Command line (same order as Legendary `get_launch_parameters`)
+- **Program:** `install_path` joined with `executable`, with `/` or `\` accepted and a leading slash ignored. It goes through the same safety check as install file names, so it can never point outside the game folder.
+- **Working folder:** the program's own folder.
+- **Arguments, in order:**
+  1. `launch_parameters`, split on spaces. A part in double quotes stays one argument, with the quotes removed.
+  2. `AdditionalCommandLine`, split the same way.
+  3. `-AUTH_LOGIN=unused`, `-AUTH_PASSWORD={code}`, `-AUTH_TYPE=exchangecode`, `-epicapp={app_name}`, `-epicenv=Prod`
+  4. `-epicovt={path}`, only if an ownership token was fetched
+  5. `-EpicPortal`, `-epicusername={displayName}`, `-epicuserid={account_id}`, `-epiclocale={language}`, `-epicsandboxid={namespace}`
+- **Offline:** `-AUTH_PASSWORD=` is empty and no ownership token is fetched.
+- **Not yet:** `-epicdeploymentid`. Legendary reads it from the manifest info's `sidecar` field, which few games have. It gets added if a real game needs it.
+- The game is started and not waited for.
+
+### Secrets
+- The exchange code and ownership token never go into logs or saved files, apart from the `.ovt` file the game must read.
+- The launch command's debug form shows `-AUTH_PASSWORD=[redacted]`.
+- `.ovt` files left in `%TEMP%\FishyClient\` are deleted when Fishy Client starts.
+- **Known limit (same as Epic's launcher and Legendary):** other programs on the PC can read a game's start-up arguments, including the one-time code, while it is still valid.
+
+### Errors shown to the user
+| Situation | Message |
+|---|---|
+| No internet / Epic unreachable | "Couldn't reach Epic to sign the game in. Check your internet." + **Try again**, plus **Play offline** if the game can run offline |
+| Session expired | Back to the login screen, as in §7 |
+| Program file missing | "Couldn't find *Title*'s program file. Uninstall and install it again." |
+| Windows needs admin rights (os error 740) | "Windows wouldn't start *Title*: it needs administrator rights." |
+| Windows refuses for another reason | "Windows wouldn't start *Title*: *reason*." |
+| EA app / Ubisoft game | "*Title* starts through *store*, which Fishy Client can't do yet." |
+| Game not in the saved Library | "Refresh your Library, then try again." |
+| Epic rejects the request | "Epic wouldn't let *Title* start (*code*). Try again later." |
+
+### Tests
+- **Rust (wiremock):** exchange code and ownership token, each for success, rejection and network failure. Every request must carry the bearer token.
+- **Rust (plain):**
+  - argument order and splitting with quotes
+  - offline form
+  - ownership-token flag
+  - unsafe or missing program path
+  - redacted debug form
+  - catalog attribute defaults
+  - old library caches still load
+- **UI (vitest):** Play shown only on installed cards, Starting… then back to Play, each error message, Play offline shown only when allowed.
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

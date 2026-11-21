@@ -30,6 +30,6 @@ tracing-appender = "0.2"
 test-support = []
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util", "test-util"] }
 wiremock = "0.6"
 tempfile = "3"

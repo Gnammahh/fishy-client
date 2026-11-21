@@ -97,11 +97,12 @@ pub fn settings_get(settings: tauri::State<'_, AppSettings>) -> Settings {
 }
 
 #[tauri::command]
-pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>) -> Result<Settings, String> {
+pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>, install: tauri::State<'_, AppInstall>) -> Result<Settings, String> {
     settings.store.save(&value).map_err(|_| {
         tracing::warn!("Couldn't save your settings.");
         "Couldn't save your settings.".to_string()
     })?;
+    install.downloads.limiter.set(fishy_core::install::limit::limit_bytes(&value));
     Ok(value)
 }
 

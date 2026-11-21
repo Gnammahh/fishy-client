@@ -6,6 +6,7 @@ use fishy_core::install::speed::SpeedMeter;
 use fishy_core::install::store::{InstallStore, JobInfo};
 use fishy_core::install::uninstall::discard_download;
 use fishy_core::install::client::InstallClient;
+use fishy_core::install::limit::SpeedLimiter;
 use fishy_core::install::InstallError;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -193,6 +194,8 @@ impl Inner {
 pub struct Downloads {
     pub store: Arc<InstallStore>,
     pub client: InstallClient,
+    /// The speed limit every download shares (spec §6f.1); `settings_set` changes it live.
+    pub limiter: Arc<SpeedLimiter>,
     inner: Arc<Mutex<Inner>>,
 }
 
@@ -219,7 +222,7 @@ impl Downloads {
                 Some(job)
             })
             .collect();
-        Self { store: Arc::new(store), client, inner: Arc::new(Mutex::new(Inner { jobs })) }
+        Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs })) }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -389,7 +392,7 @@ impl Downloads {
                 self.emit(&app);
             }
         };
-        let result = run_job(&self.client, &self.store, &info, &manifest, old.as_deref(), stop, on_progress, RunOptions::default()).await;
+        let result = run_job(&self.client, &self.store, &info, &manifest, old.as_deref(), stop, on_progress, RunOptions { limiter: Some(self.limiter.clone()), ..RunOptions::default() }).await;
         self.finish(&app, info, &manifest, result).await;
         self.pump(&app);
     }

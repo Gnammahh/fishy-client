@@ -1,6 +1,7 @@
 //! Installing games: manifests, chunk downloads, resume, installed list, uninstall (spec §6c).
 mod error;
 pub(crate) mod reader;
+pub mod limit;
 pub mod manifest;
 pub mod chunk;
 pub mod client;

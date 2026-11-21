@@ -340,7 +340,10 @@ pub fn run() {
                 prepared: std::sync::Mutex::new(HashMap::new()),
             });
             app.manage(play::AppLaunch::new());
-            app.manage(updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() });
+            let settings = updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() };
+            // The saved speed limit applies from the first download, not only after a change.
+            app.state::<AppInstall>().downloads.limiter.set(fishy_core::install::limit::limit_bytes(&settings.store.load()));
+            app.manage(settings);
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.

@@ -3,6 +3,7 @@
 //! Updates (spec §6e) also copy parts from the old files, swap changed files in through a
 //! temporary file and delete removed files at the end.
 use super::client::InstallClient;
+use super::limit::SpeedLimiter;
 use super::manifest::{FileEntry, Manifest};
 use super::plan::build_update_plan;
 use super::uninstall::delete_named_files;
@@ -30,17 +31,19 @@ pub struct Progress {
 }
 
 /// Limits for a run. The defaults are what the app uses; tests shrink them.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct RunOptions {
     /// Most bytes of shared chunks kept in memory; past this a chunk is fetched again when needed.
     pub cache_limit: usize,
     /// Free bytes on the drive of a path (swappable for tests).
     pub free_space: fn(&Path) -> std::io::Result<u64>,
+    /// The download speed limit, shared with every other download (spec §6f.1). None: no limit.
+    pub limiter: Option<Arc<SpeedLimiter>>,
 }
 
 impl Default for RunOptions {
     fn default() -> Self {
-        Self { cache_limit: 512 * 1024 * 1024, free_space: super::space::free_space }
+        Self { cache_limit: 512 * 1024 * 1024, free_space: super::space::free_space, limiter: None }
     }
 }
 
@@ -130,6 +133,7 @@ async fn rebuild_from_downloads(
     entry: &FileEntry,
     path: &Path,
     stop: &CancellationToken,
+    limiter: Option<&SpeedLimiter>,
     mut on_bytes: impl FnMut(u64),
 ) -> Result<[u8; 20], InstallError> {
     let io = |e: std::io::Error| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() };
@@ -139,10 +143,16 @@ async fn rebuild_from_downloads(
     for part in &entry.parts {
         if let std::collections::hash_map::Entry::Vacant(slot) = fetched.entry(part.guid) {
             let info = manifest.chunk(&part.guid).ok_or_else(|| InstallError::BadManifest("unknown chunk".into()))?;
+            let fetch = async {
+                if let Some(l) = limiter {
+                    l.take(info.file_size).await;
+                }
+                client.download_chunk(base, dir, info).await
+            };
             let data = tokio::select! {
                 biased;
                 _ = stop.cancelled() => return Err(InstallError::Stopped),
-                d = client.download_chunk(base, dir, info) => d?,
+                d = fetch => d?,
             };
             on_bytes(info.file_size);
             slot.insert(data);
@@ -188,7 +198,11 @@ pub async fn run_job(
             .map(|guid| {
                 let info = manifest.chunk(&guid).expect("plan checked every chunk").clone();
                 let base = base.clone();
+                let limiter = opts.limiter.clone();
                 async move {
+                    if let Some(l) = &limiter {
+                        l.take(info.file_size).await;
+                    }
                     let result = client.download_chunk(&base, dir, &info).await;
                     (guid, info.file_size, result)
                 }
@@ -277,7 +291,7 @@ pub async fn run_job(
                 downloaded += bytes;
                 on_progress(Progress { downloaded: downloaded.min(total), total });
             };
-            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &stop, add).await?;
+            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &stop, opts.limiter.as_deref(), add).await?;
         }
         if sha != entry.sha1 {
             return Err(InstallError::DamagedFile(entry.filename.clone()));
@@ -409,6 +423,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn engine_respects_the_limiter() {
+        let server = MockServer::start().await;
+        let f = basic();
+        serve(&server, &f, None, None).await;
+        let e = env(&server, &f);
+        // Twice the download size per second: the whole install should take about half a second.
+        let limiter = Arc::new(super::super::limit::SpeedLimiter::new());
+        limiter.set(Some(e.job.download_size * 2));
+        let options = RunOptions { limiter: Some(limiter), ..RunOptions::default() };
+        let start = std::time::Instant::now();
+        run_job(&e.client, &e.store, &e.job, &f.manifest, None, CancellationToken::new(), |_| {}, options).await.unwrap();
+        let secs = start.elapsed().as_secs_f64();
+        assert!(secs >= 0.4, "finished in {secs} s, faster than the limit");
+        for (name, content) in &f.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+    }
+
+    #[tokio::test]
     async fn shared_chunk_downloaded_once() {
         let server = MockServer::start().await;
         let shared: Vec<u8> = b"shared".repeat(50);
@@ -490,7 +523,7 @@ mod tests {
     }
 
     fn opts(cache_limit: usize, free_space: fn(&Path) -> std::io::Result<u64>) -> RunOptions {
-        RunOptions { cache_limit, free_space }
+        RunOptions { cache_limit, free_space, limiter: None }
     }
     fn plenty(_: &Path) -> std::io::Result<u64> {
         Ok(u64::MAX)

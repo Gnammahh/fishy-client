@@ -48,7 +48,7 @@ pub async fn delete_all_data(
         use tauri_plugin_autostart::ManagerExt;
         let _ = app.autolaunch().disable();
     }
-    // Task 8: reset the shared speed limiter here.
+    install.downloads.limiter.set(None); // the saved limit is deleted too
     // 3 and 5. Games (if ticked), then everything in %APPDATA%\FishyClient.
     let store = install.downloads.store.clone();
     let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games))

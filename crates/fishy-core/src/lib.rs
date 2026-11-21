@@ -3,6 +3,7 @@ pub mod auth;
 pub mod install;
 pub mod launch;
 pub mod library;
+pub mod logs;
 pub mod settings;
 
 /// Re-exported so the app uses the same chrono version.

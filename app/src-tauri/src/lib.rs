@@ -311,6 +311,7 @@ fn open_login_in_browser() -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             // Logs first, so everything after is recorded. Without a logs folder the app still runs.
             let guard = fishy_core::logs::init(&fishy_core::logs::default_dir()).ok();
@@ -357,7 +358,8 @@ pub fn run() {
             updates::update_start,
             updates::settings_get,
             updates::settings_set,
-            data::open_logs_folder
+            data::open_logs_folder,
+            data::delete_all_data
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

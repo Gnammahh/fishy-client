@@ -85,6 +85,16 @@ pub struct Inner {
 
 impl Inner {
     /// Running job first, then the queue in order, then paused and failed ones.
+    /// Something is still writing (a running download, or a cancel deleting its files).
+    pub fn busy(&self) -> bool {
+        self.jobs.iter().any(|j| matches!(j.state, JobState::Downloading | JobState::Removing))
+    }
+
+    /// Empties the queue (Delete all my data).
+    pub fn take_all(&mut self) -> Vec<JobInfo> {
+        self.jobs.drain(..).map(|j| j.info).collect()
+    }
+
     pub fn view(&self) -> DownloadsView {
         let rank = |s: JobState| match s {
             JobState::Downloading => 0,
@@ -319,6 +329,19 @@ impl Downloads {
         self.emit(app);
     }
 
+    /// Delete all my data: stops everything, waits (up to a minute) until nothing is writing,
+    /// then takes every job off the queue so nothing restarts.
+    pub async fn take_jobs_for_wipe(&self, app: &AppHandle) -> Vec<JobInfo> {
+        self.pause_all(app);
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while self.lock().busy() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let jobs = self.lock().take_all();
+        self.emit(app);
+        jobs
+    }
+
     /// Starts the next queued job if nothing is running.
     fn pump(&self, app: &AppHandle) {
         let started = {
@@ -446,6 +469,21 @@ mod tests {
             update_from: None,
         };
         Job::new(info, Arc::new(Manifest::new(ManifestMeta::default(), vec![], vec![])), state)
+    }
+
+    #[test]
+    fn busy_while_a_job_is_downloading_or_being_removed() {
+        assert!(!Inner { jobs: vec![job("p", JobState::Paused), job("q", JobState::Queued)] }.busy());
+        assert!(Inner { jobs: vec![job("d", JobState::Downloading)] }.busy());
+        assert!(Inner { jobs: vec![job("r", JobState::Removing)] }.busy());
+    }
+
+    #[test]
+    fn take_all_empties_the_queue() {
+        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("e", JobState::Error)] };
+        let taken: Vec<String> = inner.take_all().into_iter().map(|j| j.app_name).collect();
+        assert_eq!(taken, vec!["p", "e"]);
+        assert!(inner.jobs.is_empty());
     }
 
     #[test]

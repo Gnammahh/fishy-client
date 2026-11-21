@@ -1,5 +1,38 @@
 //! "Delete all my data": empties `%APPDATA%\FishyClient` (spec §6f.1).
+use crate::install::store::{InstallStore, JobInfo};
+use crate::install::uninstall::{discard_download, uninstall};
 use std::path::{Path, PathBuf};
+
+/// `%APPDATA%\FishyClient`: everything Fishy Client saves lives here (tokens are in Credential Manager).
+pub fn default_data_root() -> PathBuf {
+    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    base.join("FishyClient")
+}
+
+/// Steps 3 and 5 of "Delete all my data": with `also_games`, uninstalls every game and
+/// discards half-written installs (`jobs`, already taken off the queue); then wipes
+/// `data_root`. Returns how many things couldn't be deleted.
+pub fn delete_everything(store: &InstallStore, data_root: &Path, jobs: Vec<JobInfo>, also_games: bool) -> usize {
+    let mut failed = 0;
+    if also_games {
+        // An update's files belong to its installed game, which uninstall handles (both versions).
+        for job in jobs.iter().filter(|j| j.update_from.is_none()) {
+            if discard_download(store, job).is_err() {
+                failed += 1;
+            }
+        }
+        for game in store.installed() {
+            if uninstall(store, &game.app_name).is_err() {
+                failed += 1;
+            }
+        }
+    }
+    let report = wipe_dir(data_root);
+    for path in &report.failed {
+        tracing::warn!("couldn't delete {}", path.display());
+    }
+    failed + report.failed.len()
+}
 
 /// What couldn't be deleted (usually a file in use).
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -77,6 +110,64 @@ mod tests {
         assert_eq!(wipe_dir(dir.path()), WipeReport::default());
         assert!(dir.path().exists());
         assert_eq!(remaining(dir.path()), 0);
+    }
+
+    struct Games {
+        dir: tempfile::TempDir,
+        store: InstallStore,
+        jobs: Vec<JobInfo>,
+    }
+
+    fn job(dir: &Path, app: &str) -> JobInfo {
+        JobInfo {
+            app_name: app.into(),
+            title: app.into(),
+            namespace: "ns".into(),
+            catalog_item_id: "cat".into(),
+            install_path: dir.join("games").join(app),
+            download_size: 1,
+            install_size: 1,
+            base_urls: vec![],
+            update_from: None,
+        }
+    }
+
+    /// Game A installed, game B half-downloaded (its job taken off the queue).
+    fn games() -> Games {
+        use crate::install::manifest::testbuild::{build_binary, sample};
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let (a, b) = (job(dir.path(), "A"), job(dir.path(), "B"));
+        for j in [&a, &b] {
+            for f in &sample().files {
+                let p = crate::install::store::file_path(&j.install_path, &f.filename).unwrap();
+                fs::create_dir_all(p.parent().unwrap()).unwrap();
+                fs::write(p, b"x").unwrap();
+            }
+            store.save_job(j, &build_binary(&sample(), true)).unwrap();
+        }
+        store.finish_install(&a, &sample()).unwrap();
+        Games { dir, store, jobs: vec![b] }
+    }
+
+    #[test]
+    fn delete_everything_keeps_game_folders_when_not_ticked() {
+        let g = games();
+        let data = g.dir.path().join("data");
+        assert_eq!(delete_everything(&g.store, &data, g.jobs, false), 0);
+        assert_eq!(remaining(&data), 0);
+        assert!(g.dir.path().join("games").join("A").exists());
+        assert!(g.dir.path().join("games").join("B").exists());
+    }
+
+    #[test]
+    fn delete_everything_removes_games_and_half_downloads_when_ticked() {
+        let g = games();
+        let data = g.dir.path().join("data");
+        assert_eq!(delete_everything(&g.store, &data, g.jobs, true), 0);
+        assert_eq!(remaining(&data), 0);
+        assert!(!g.dir.path().join("games").join("A").exists());
+        assert!(!g.dir.path().join("games").join("B").exists());
     }
 
     #[test]

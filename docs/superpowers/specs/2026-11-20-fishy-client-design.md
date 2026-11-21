@@ -494,6 +494,111 @@ Before starting, the free space on the install folder's drive must be at least t
 
 ---
 
+## 6e. Updates (milestone 6), approved 2026-11-21 on branch `feat/updates`
+
+### What the user sees
+- **Update check:** every Library refresh (at start-up, and on coming back online) compares each installed game's version with Epic's newest. No extra network call is needed.
+- **A card with an update waiting:**
+  - an orange **Update available** badge instead of "Installed"
+  - an **Update** button, with **Play** and **⋯** still next to it
+- **Play on an outdated game** first shows a box:
+  - Text: "*Title* has an update waiting. You'll play the older version, and some online games won't start until they're updated."
+  - Buttons: **Play anyway**, **Update now**, **Cancel**.
+  - Tick box: **Don't show this again** (saved as a setting).
+- **Update** queues the game on the Downloads page like an install, with the fish bar.
+  - The card and the Downloads page say **Updating…**, and Play is hidden while the update is queued, running or paused.
+  - Updates can be **paused and resumed, but not cancelled**, because halfway through some files are already new. The Downloads page shows "Updates can be paused but not cancelled." under an update, and the queue has no × for updates.
+- **Done:** the badge goes back to **Installed**. The saved version and file list are the new ones.
+- **Settings page** (replaces the placeholder):
+  - **Update games automatically**, off by default. When on, every update a refresh finds is queued by itself.
+  - **Warn before playing a game with an update waiting**, on by default. Ticking "Don't show this again" turns it off.
+
+### Saved data
+- `%APPDATA%\FishyClient\settings.json`: `{ "auto_update": false, "warn_outdated_play": true }`. A missing or unreadable file means the defaults. Settings stay on Log out. The future "delete all my data" button removes the file too.
+- `job.json` (§6c) gains `update_from: Option<String>`, the installed version an update started from. None means a normal install. Old `job.json` files without it read as installs.
+
+### Epic endpoints (verified against Legendary `core.py` `get_asset` / `is_installed_game_update_available`, 2026-11-21)
+- **Newest version:** the asset list the Library already fetches (§6b, `GET /launcher/api/public/assets/Windows?label=Live`). Each element has `appName` and `buildVersion`.
+  - The library refresh now returns `latest_versions: { appName: buildVersion }` next to the games.
+  - An update is available when an installed game's `version` differs from its `latest_versions` entry. Games missing from the list never show an update.
+- **New manifest:** the same manifest-info and manifest calls as installs (§6c). The update starts from the manifest whose `buildVersion` is the newest.
+
+### Comparing manifests (ported from Legendary `ManifestComparison`)
+- Files are matched by name, and their SHA-1 decides the group:
+  - same SHA-1: **unchanged**
+  - different SHA-1: **changed**
+  - only in the new manifest: **added**
+  - only in the old manifest: **removed**
+
+### Update plan (ported from Legendary `run_analysis`, `re_usable`)
+- **Unchanged files** count as already done. They are never written.
+- **Added files** are planned like an install.
+- **Changed files:** each part of the new file is checked against the old file's parts.
+  - A new part `(guid, offset, size)` is **reused** when an old part with the same guid covers `offset..offset+size`. Its bytes are then read from the old file at `old_file_pos + (offset - old_part.offset)`.
+  - Every other part is downloaded.
+- **Chunk counts and download size** include only downloaded parts.
+- **Resume:** files in `resume.txt` are skipped, as in installs.
+
+### Writing
+- **Added files** are written in place.
+- **Changed files** are written to `<name>.fishy-update` in the same folder (reused parts read from the old file, the rest from chunks). After the SHA-1 check, the temporary file replaces the old one. The game is never left with a half-written file.
+- **Removed files** are deleted after every planned file is done, then folders left empty, deepest first. Files that can't be deleted are left alone.
+- **Safety net:** if a file that used reused parts fails its SHA-1 check, it is rebuilt once using downloaded chunks only (fetched one by one, outside the normal stream). A second failure is the usual "damaged" error.
+- **Finish:**
+  - the record gets the new version, executable and launch parameters, and keeps its install path and install date
+  - the saved manifest is replaced
+  - the download folder is deleted
+
+### Space check
+Needed space is:
+- the sum of added file sizes
+- plus, for each changed file, `max(0, new size - old size)`
+- plus the size of the largest changed file (its temporary copy)
+
+Files already finished in an earlier run are left out. The message is the same as for installs (§6c).
+
+### Uninstall while an update is paused
+The files listed in both the old and the new manifest are deleted. Then the paused update's download folder is removed, then the record.
+
+### Errors
+These are the same as for installs (§6c table). Two additions:
+
+| Situation | Message |
+|---|---|
+| The new manifest can't be fetched | "Couldn't get the update from Epic. Try again later." |
+| Game no longer in the Library list (no newest version) | No Update button is shown |
+
+### Not in this milestone
+- Epic's delta manifests (`Deltas/<new>/<old>.delta`), which shrink some patches further.
+- Updating DLC separately.
+- Checking for updates on a timer while the app stays open. Refreshing the Library checks again.
+
+### Tests
+- **Rust:**
+  - compare (all four groups)
+  - update plan: reuse ranges, a part only partly covered (so it's downloaded), the download size counting only downloaded chunks, resume skipping
+  - space check for updates
+  - `job.json` without `update_from`
+  - settings defaults and round-trip, including a damaged file
+  - asset list versions
+- **Rust, full update against the fake CDN (wiremock):**
+  - unchanged files are never touched
+  - reused parts are never downloaded
+  - changed files are swapped in
+  - removed files are deleted
+  - the record moves to the new version
+  - pause then resume mid-update
+  - the damaged-reuse fallback
+- **UI:**
+  - Update badge and button
+  - the Play warning: Play anyway, Update now, Cancel, and the tick box saving the setting
+  - Updating… state with Play hidden
+  - no Cancel or × for updates
+  - the Settings switches
+  - auto-update queues a game after a refresh
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

@@ -5,7 +5,19 @@
   import { FISH_MOUTH_CLOSED, FISH_PALETTE } from "$lib/pixel/sprites";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import InstallDialog from "$lib/install/InstallDialog.svelte";
-  import { downloads, installed, play, statusFor, uninstall, type GameStatus, type PlayError } from "$lib/install/installs";
+  import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
+  import {
+    downloads,
+    hasUpdate,
+    installed,
+    play,
+    startUpdate,
+    statusFor,
+    uninstall,
+    type GameStatus,
+    type PlayError,
+  } from "$lib/install/installs";
+  import { settings, saveSettings } from "$lib/settings/settings";
   import { retry as recheckSignIn } from "$lib/auth/auth";
   import { library, loadLibrary, refreshLibrary, filterGames, type Game } from "./library";
 
@@ -17,6 +29,8 @@
   let confirmUninstall = $state<Game | null>(null);
   let cardError = $state<{ app: string; message: string } | null>(null);
   let starting = $state<string[]>([]);
+  /** The game whose Play is waiting for the "update waiting" answer (spec §6e). */
+  let outdatedFor = $state<Game | null>(null);
   let playError = $state<({ app: string } & PlayError) | null>(null);
   /** How long the button says "Starting…" (the game isn't tracked after that, spec §6d). */
   const STARTING_MS = 5000;
@@ -35,6 +49,14 @@
   $effect(() => {
     if (tab === "elsewhere" && elsewhere.length === 0) tab = "all";
   });
+  const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
+  const jobOf = (g: Game) => $downloads.find((d) => d.app_name === g.app_name);
+  const UPDATE_LABELS: Partial<Record<GameStatus, string>> = {
+    downloading: "Updating…",
+    queued: "Updating…",
+    paused: "Update paused",
+    error: "Update stopped",
+  };
   const LABELS: Partial<Record<GameStatus, string>> = {
     downloading: "Downloading…",
     queued: "Queued",
@@ -46,6 +68,25 @@
     confirmUninstall = null;
     cardError = null;
     const err = await uninstall(game.app_name);
+    if (err) cardError = { app: game.app_name, message: err };
+  }
+
+  /** Play, but first ask when an update is waiting (unless the user turned that off). */
+  function askPlay(game: Game) {
+    if (outdated(game) && $settings.warn_outdated_play) outdatedFor = game;
+    else doPlay(game);
+  }
+
+  async function answerOutdated(game: Game, action: "play" | "update", dontShowAgain: boolean) {
+    outdatedFor = null;
+    if (dontShowAgain) await saveSettings({ warn_outdated_play: false });
+    if (action === "play") await doPlay(game);
+    else await doUpdate(game);
+  }
+
+  async function doUpdate(game: Game) {
+    cardError = null;
+    const err = await startUpdate(game.app_name);
     if (err) cardError = { app: game.app_name, message: err };
   }
 
@@ -143,7 +184,9 @@
                   <PixelSprite grid={FISH_MOUTH_CLOSED} palette={FISH_PALETTE} scale={3} />
                 </div>
               {/if}
-              {#if s === "installed"}<span class="badge">Installed</span>{/if}
+              {#if s === "installed"}
+                <span class="badge" class:update={outdated(game)}>{outdated(game) ? "Update available" : "Installed"}</span>
+              {/if}
             </div>
             <span class="title">{game.title}</span>
             <div class="row">
@@ -155,30 +198,16 @@
                 {#if starting.includes(game.app_name)}
                   <button class="play" aria-label="Starting {game.title}" disabled>Starting…</button>
                 {:else}
-                  <button class="play" aria-label="Play {game.title}" onclick={() => doPlay(game)}>Play</button>
+                  <button class="play" aria-label="Play {game.title}" onclick={() => askPlay(game)}>Play</button>
                 {/if}
-                <div class="more">
-                  <button
-                    class="dots"
-                    aria-label="More options for {game.title}"
-                    aria-haspopup="menu"
-                    aria-expanded={menuFor === game.app_name}
-                    onclick={() => (menuFor = menuFor === game.app_name ? null : game.app_name)}>⋯</button
-                  >
-                  {#if menuFor === game.app_name}
-                    <div class="menu" role="menu">
-                      <button
-                        role="menuitem"
-                        onclick={() => {
-                          menuFor = null;
-                          confirmUninstall = game;
-                        }}>Uninstall</button
-                      >
-                    </div>
-                  {/if}
-                </div>
+                {#if outdated(game)}
+                  <button class="update" aria-label="Update {game.title}" onclick={() => doUpdate(game)}>Update</button>
+                {/if}
+                {@render moreMenu(game)}
               {:else}
-                <span class="state" class:bad={s === "error"}>{LABELS[s]}</span>
+                {@const updating = !!jobOf(game)?.update}
+                <span class="state" class:bad={s === "error"}>{updating ? UPDATE_LABELS[s] : LABELS[s]}</span>
+                {#if updating}{@render moreMenu(game)}{/if}
               {/if}
             </div>
             {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
@@ -203,6 +232,39 @@
     {/if}
   {/if}
 </section>
+
+{#snippet moreMenu(game: Game)}
+  <div class="more">
+    <button
+      class="dots"
+      aria-label="More options for {game.title}"
+      aria-haspopup="menu"
+      aria-expanded={menuFor === game.app_name}
+      onclick={() => (menuFor = menuFor === game.app_name ? null : game.app_name)}>⋯</button
+    >
+    {#if menuFor === game.app_name}
+      <div class="menu" role="menu">
+        <button
+          role="menuitem"
+          onclick={() => {
+            menuFor = null;
+            confirmUninstall = game;
+          }}>Uninstall</button
+        >
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#if outdatedFor}
+  {@const g = outdatedFor}
+  <OutdatedPlayDialog
+    title={g.title}
+    onplay={(dontShow) => answerOutdated(g, "play", dontShow)}
+    onupdate={(dontShow) => answerOutdated(g, "update", dontShow)}
+    oncancel={() => (outdatedFor = null)}
+  />
+{/if}
 
 {#if installing}
   <InstallDialog game={installing} onclose={() => (installing = null)} />
@@ -360,6 +422,7 @@
   }
   .install,
   .play,
+  .update,
   .dots {
     font-family: var(--font-pixel);
     font-size: 13px;
@@ -373,6 +436,12 @@
   .play:hover:not(:disabled),
   .dots:hover {
     background: rgba(79, 227, 209, 0.15);
+  }
+  .update {
+    margin-right: 8px;
+  }
+  .badge.update {
+    background: var(--orange);
   }
   .play {
     margin-right: 8px;

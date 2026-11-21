@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { writable } from "svelte/store";
+import { autoUpdate } from "$lib/install/installs";
+import { loadSettings } from "$lib/settings/settings";
 
 /** Mirrors the Rust `Game` (fishy-core library). */
 export type Game = {
@@ -12,7 +14,8 @@ export type Game = {
   installable: boolean;
 };
 
-export type CachedLibrary = { updated_at: string; games: Game[] };
+/** `latest_versions`: Epic's newest build version per app name (spec §6e). */
+export type CachedLibrary = { updated_at: string; games: Game[]; latest_versions?: Record<string, string> };
 
 export type LibraryView = {
   /** loading: nothing to show yet; ready: games shown (maybe from cache); error: nothing to show and the fetch failed;
@@ -23,10 +26,13 @@ export type LibraryView = {
   updating: boolean;
   /** User-facing error ("" when none). */
   error: string;
+  /** Epic's newest version per app name, for update checks. */
+  latestVersions: Record<string, string>;
 };
 
 const LIBRARY_ERROR = "Couldn't load your library from Epic.";
-const initial: LibraryView = { status: "loading", games: [], updating: false, error: "" };
+const initial: LibraryView = { status: "loading", games: [], updating: false, error: "", latestVersions: {} };
+const versionsOf = (c: CachedLibrary | null) => (c?.latest_versions && typeof c.latest_versions === "object" ? c.latest_versions : {});
 
 export const library = writable<LibraryView>({ ...initial });
 
@@ -55,11 +61,15 @@ export async function loadLibrary(offline = false) {
   const hasCache = !!cached && Array.isArray(cached.games);
   if (offline) {
     // Epic is unreachable: show what's saved and don't add a second error next to the offline banner.
-    library.set(hasCache ? { status: "ready", games: cached!.games, updating: false, error: "" } : { ...initial, status: "offline" });
+    library.set(
+      hasCache
+        ? { status: "ready", games: cached!.games, updating: false, error: "", latestVersions: versionsOf(cached) }
+        : { ...initial, status: "offline" },
+    );
     return;
   }
   if (hasCache) {
-    library.set({ status: "ready", games: cached!.games, updating: true, error: "" });
+    library.set({ status: "ready", games: cached!.games, updating: true, error: "", latestVersions: versionsOf(cached) });
   } else if (current.status !== "ready") {
     library.set({ ...initial });
   }
@@ -73,10 +83,12 @@ export async function refreshLibrary() {
   try {
     const fresh = await invoke<CachedLibrary>("library_refresh");
     if (!fresh || !Array.isArray(fresh.games)) throw LIBRARY_ERROR;
-    library.set({ status: "ready", games: fresh.games, updating: false, error: "" });
+    const latestVersions = versionsOf(fresh);
+    library.set({ status: "ready", games: fresh.games, updating: false, error: "", latestVersions });
+    if ((await loadSettings()).auto_update) await autoUpdate(latestVersions);
   } catch {
     library.update((v) =>
-      hadGames ? { ...v, updating: false, error: LIBRARY_ERROR } : { status: "error", games: [], updating: false, error: LIBRARY_ERROR },
+      hadGames ? { ...v, updating: false, error: LIBRARY_ERROR } : { ...initial, status: "error", error: LIBRARY_ERROR },
     );
   }
 }

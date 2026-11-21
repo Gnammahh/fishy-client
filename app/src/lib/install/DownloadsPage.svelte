@@ -58,7 +58,7 @@
 
   {#if current}
     <article class="current">
-      <h3>{current.title}</h3>
+      <h3>{current.title}{#if current.update}<span class="tag">Updating…</span>{/if}</h3>
       <FishProgressBar
         downloaded={current.downloaded}
         total={current.total}
@@ -75,8 +75,11 @@
         {:else if current.state === "paused"}
           <PixelButton onclick={() => resume(current.app_name)}>Resume</PixelButton>
         {/if}
-        <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
+        {#if !current.update}
+          <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
+        {/if}
       </div>
+      {#if current.update}<p class="note small">Updates can be paused but not cancelled.</p>{/if}
     </article>
   {/if}
 
@@ -87,7 +90,9 @@
         <li>
           <span class="name">{d.title}</span>
           <span class="state">Queued</span>
-          <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
+          {#if !d.update}
+            <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -134,6 +139,15 @@
     font-family: var(--font-pixel);
     font-weight: 600;
     font-size: 18px;
+    margin: 0;
+  }
+  .tag {
+    margin-left: 10px;
+    font-size: 13px;
+    color: var(--orange);
+  }
+  .small {
+    font-size: 13px;
     margin: 0;
   }
   .sub {

@@ -113,4 +113,14 @@ describe("DownloadsPage", () => {
     ]);
     expect(await screen.findByText("Finished: Title A. It's in your Library.")).toBeTruthy();
   });
+  it("an_update_says_updating_and_has_no_cancel_or_remove", async () => {
+    mock();
+    downloads.set([item("A", "downloading", { update: true }), item("B", "queued", { update: true })]);
+    render(DownloadsPage);
+    expect(screen.getByText("Updating…")).toBeTruthy();
+    expect(screen.getByText("Updates can be paused but not cancelled.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove Title B from the queue" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+  });
 });

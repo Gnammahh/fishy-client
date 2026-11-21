@@ -3,6 +3,8 @@
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import LibraryPage from "$lib/library/LibraryPage.svelte";
   import DownloadsPage from "$lib/install/DownloadsPage.svelte";
+  import SettingsPage from "$lib/settings/SettingsPage.svelte";
+  import { loadSettings } from "$lib/settings/settings";
   import { initInstalls } from "$lib/install/installs";
   import { onMount } from "svelte";
   import { signOut, retry, type AuthState } from "$lib/auth/auth";
@@ -17,6 +19,7 @@
     let stop: (() => void) | undefined;
     let gone = false;
     initInstalls().then((s) => (gone ? s() : (stop = s)));
+    loadSettings();
     return () => {
       gone = true;
       stop?.();
@@ -61,8 +64,7 @@
     {:else if page === "downloads"}
       <DownloadsPage />
     {:else if page === "settings"}
-      <h2>Settings</h2>
-      <p>Settings arrive together with installs and downloads.</p>
+      <SettingsPage />
     {:else}
       <h2>Account</h2>
       <dl>

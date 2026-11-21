@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { writable } from "svelte/store";
+import { get, writable } from "svelte/store";
 import type { Game } from "$lib/library/library";
 
 
@@ -13,6 +13,8 @@ export type DownloadItem = {
   total: number;
   bytes_per_sec: number;
   error: string | null;
+  /** An update (spec §6e): can be paused, not cancelled. */
+  update?: boolean;
 };
 export type DownloadsView = { items: DownloadItem[] };
 export type InstalledGame = {
@@ -142,5 +144,37 @@ export async function play(appName: string, offline = false): Promise<PlayError 
       return { message: err.message, can_offline: !!err.can_offline, signed_out: !!err.signed_out };
     }
     return { message: message(e), can_offline: false, signed_out: false };
+  }
+}
+
+/** True when Epic's newest version differs from the installed one (spec §6e). */
+export function hasUpdate(appName: string, ins: InstalledGame[], latest: Record<string, string>): boolean {
+  const game = ins.find((g) => g.app_name === appName);
+  const newest = latest[appName];
+  return !!game && !!newest && newest !== game.version;
+}
+
+/** Queues an update. Returns an error message, or null when it worked. */
+export async function startUpdate(appName: string): Promise<string | null> {
+  try {
+    downloads.set(asItems(await invoke<DownloadsView>("update_start", { appName })));
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
+/** Auto-update: queues every installed game that has a newer version and no download yet. */
+export async function autoUpdate(latest: Record<string, string>) {
+  let list: InstalledGame[] = [];
+  try {
+    const fresh = await invoke<InstalledGame[]>("installed_list");
+    list = Array.isArray(fresh) ? fresh : [];
+  } catch {
+    return;
+  }
+  const busy = new Set(get(downloads).map((d) => d.app_name));
+  for (const g of list) {
+    if (!busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
   }
 }

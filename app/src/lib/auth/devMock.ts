@@ -15,7 +15,18 @@ const DEV_GAMES = ["Abyssal Lanterns", "Coral Kart", "Kelp Runner", "Tidepool Od
   installable: true,
 }));
 
-type DevItem = { app_name: string; title: string; state: string; downloaded: number; total: number; bytes_per_sec: number; error: string | null };
+type DevItem = {
+  app_name: string;
+  title: string;
+  state: string;
+  downloaded: number;
+  total: number;
+  bytes_per_sec: number;
+  error: string | null;
+  update?: boolean;
+};
+/** Kelp Runner (installed as 1.0) has a newer version in the preview. */
+const DEV_LATEST = { KelpRunner: "1.1" };
 const GB = 1024 ** 3;
 
 /** A fake download that moves forward every 250 ms, so the Downloads page can be viewed in a browser. */
@@ -40,7 +51,9 @@ function devDownloads() {
     d.downloaded = Math.min(d.total, d.downloaded + d.bytes_per_sec * 0.25 * 3);
     if (d.downloaded >= d.total) {
       items.splice(items.indexOf(d), 1);
-      installed.push({ ...installed[0], app_name: d.app_name, title: d.title, install_path: "C:\\Users\\you\\Games\\" + d.title });
+      const existing = installed.find((g) => g.app_name === d.app_name);
+      if (existing) existing.version = DEV_LATEST[d.app_name as keyof typeof DEV_LATEST] ?? existing.version;
+      else installed.push({ ...installed[0], app_name: d.app_name, title: d.title, install_path: "C:\\Users\\you\\Games\\" + d.title });
       emit("installed-changed", null);
       pump();
     }
@@ -52,6 +65,16 @@ function devDownloads() {
       switch (cmd) {
         case "downloads_state":
           return { items };
+        case "update_start": {
+          const name = (args as { appName: string }).appName;
+          const game = installed.find((g) => g.app_name === name);
+          if (game && !items.some((i) => i.app_name === name)) {
+            items.push({ app_name: name, title: game.title, state: "queued", downloaded: 0, total: 0.3 * GB, bytes_per_sec: 0, error: null, update: true });
+            pump();
+            send();
+          }
+          return { items };
+        }
         case "installed_list":
           return installed;
         case "install_options": {
@@ -110,6 +133,8 @@ function devDownloads() {
   };
 }
 
+let devSettings = { auto_update: false, warn_outdated_play: true };
+
 export function installDevMock(start: string) {
   const dl = devDownloads();
   let state: AuthState =
@@ -140,7 +165,13 @@ export function installDevMock(start: string) {
         case "library_cached":
           return null;
         case "library_refresh":
-          return new Promise((r) => setTimeout(() => r({ updated_at: new Date().toISOString(), games: DEV_GAMES }), 1500));
+          return new Promise((r) =>
+            setTimeout(() => r({ updated_at: new Date().toISOString(), games: DEV_GAMES, latest_versions: DEV_LATEST }), 1500),
+          );
+        case "settings_get":
+          return devSettings;
+        case "settings_set":
+          return (devSettings = { ...devSettings, ...(args as { value: object }).value });
         default:
           return dl.handle(cmd, args);
       }

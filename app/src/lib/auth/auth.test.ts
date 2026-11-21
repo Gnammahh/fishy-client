@@ -106,6 +106,7 @@ describe("AppShell", () => {
     library.set({
       status: "ready",
       updating: false,
+      latestVersions: {},
       error: "",
       games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null, installable: true }],
     });

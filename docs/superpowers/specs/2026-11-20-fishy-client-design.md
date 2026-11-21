@@ -599,6 +599,103 @@ These are the same as for installs (§6c table). Two additions:
 
 ---
 
+## 6f. Polish (milestone 7), started 2026-11-21 on branch `feat/polish`
+
+Polish is split into five sub-projects, built in this order. Each gets its own design here, its own plan and its own hand check:
+1. **Settings, logs and your data** (this section, approved 2026-11-21)
+2. Friendlier error screens (every error: a plain message plus a next step)
+3. Library filters and sort (an Updates tab, a sort option)
+4. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12)
+5. Installer (`.msi`), last, so it packages everything above
+
+### 6f.1 Settings, logs and your data
+
+Built in two halves: **1a** logs, Account and "Delete all my data"; **1b** the four new settings.
+
+#### What the user sees
+Settings gets three sections:
+- **Downloads:** Default install folder, Limit download speed, Update games automatically, Warn before playing a game with an update waiting (the last two already exist).
+- **Appearance and startup:** Reduce motion, Start with Windows.
+- **Account:** Log out (moved here from the sidebar, so there is one place for it), Open logs folder, Delete all my data….
+
+#### Logs
+- **Where:** `%APPDATA%\FishyClient\logs\`, one file per day (`fishy-client.YYYY-MM-DD.log`). Files older than 7 days are deleted at startup.
+- **How:** the standard Rust tools: `tracing`, `tracing-subscriber` and `tracing-appender` (daily file). Info level and up.
+- **What's logged:** app start and version; sign-in worked or failed (no details from Epic); Library refresh and how long it took; install, update, pause, resume, cancel and uninstall steps (game name, sizes, result); every error with the plain message the user saw.
+- **Never logged:** tokens, sign-in or exchange codes, Epic's raw error text, the Epic account ID, the email or display name.
+- **Two safety layers:**
+  1. Secret types already print as `[redacted]` (§12).
+  2. Every finished line passes through a **scrubber** before it's written. It replaces with `[redacted]`:
+     - anything after `Authorization:`, `bearer ` or `basic `
+     - values of `code`, `token`, `access_token`, `refresh_token`, `exchange_code`, `password` (as `key=value` or `"key": "value"`)
+     - Epic's `eg1~…` tokens
+     - any unbroken run of 32 or more letters, digits, `-`, `_`, `+`, `/`, `=` (long random strings), **except** in Windows paths (a run that is part of a path such as `C:\…\…` is kept, so game folders stay readable)
+- **Open logs folder** opens the folder in File Explorer (it's created first if missing). The Rust side starts `explorer.exe` with that one fixed path; no plugin and no general "open any link" permission comes back (§12).
+
+#### Delete all my data
+- **Settings → Account → Delete all my data…** (a red button) opens a confirm box:
+  - "This logs you out and removes everything Fishy Client saved on this PC: settings, your game list, download progress and logs."
+  - Tick box, **off** by default: "Also delete my installed games (N games, X GB)". It's hidden when nothing is installed. While it's off, the box says "Your game folders stay on disk, but Fishy Client will forget them."
+  - **Cancel** and **Delete**.
+- **What happens, in order:**
+  1. Every download stops; prepared Install boxes are forgotten.
+  2. Log out (tokens leave Credential Manager, the saved library is deleted), the same as the Log out button.
+  3. If ticked: each installed game is uninstalled the normal way (§6c), including both versions of a paused update.
+  4. Start with Windows is turned off.
+  5. Everything inside `%APPDATA%\FishyClient\` is deleted. Today's log file is still open, so it's emptied instead.
+  6. The app shows the Login screen with default settings.
+- **If something can't be deleted** (a file in use, usually a running game), the rest still goes, and the box says: "Some files couldn't be deleted (N). Close any running games and try again." The list of what failed goes to the log (paths only).
+- Nothing in the WebView's own storage needs deleting: the app keeps nothing there.
+
+#### Default install folder
+- `settings.json` gains `install_folder` (none = the built-in default, `%USERPROFILE%\Games`).
+- Settings shows the folder in use with **Change…** (the folder picker) and **Use default** (only shown when a folder is set).
+- The Install box starts with this folder; it can still be changed per game.
+- If the saved folder can't be used (its drive is missing), the Install box uses the built-in default and says "Your default folder isn't available, so this uses C:\Users\…\Games."
+
+#### Max download speed
+- `settings.json` gains `speed_limit_mbps` (none = no limit; 1 to 1000 MB/s).
+- Settings: a switch "Limit download speed" and a number box "MB/s" (starts at 10). Out-of-range numbers are refused with "Pick a number from 1 to 1000."
+- The engine shares one **limiter** (a token bucket, one second of burst) across all piece downloads. It reads the current limit every time, so a change applies to a running download right away.
+
+#### Reduce motion
+- `settings.json` gains `reduce_motion` (off by default).
+- On: the fish animations use their reduced-motion versions (§3). Off: the app follows Windows' "Animation effects" setting, as before. The `reducedMotion` store becomes "Windows asks for it **or** the setting is on".
+
+#### Start with Windows
+- Uses Tauri's official **autostart** plugin (a value under the current user's `Run` key in the Registry; no admin rights).
+- Off by default. It isn't saved in `settings.json`: the switch reads the real Registry state each time Settings opens, so the two can't disagree.
+
+#### Saved data
+`settings.json` becomes `{ auto_update, warn_outdated_play, install_folder, speed_limit_mbps, reduce_motion }`. Older files without the new fields still load, with the defaults filled in.
+
+#### Errors
+- Saving any setting fails: "Couldn't save your settings." and the control shows what's really saved (as now).
+- The folder picker fails: "Couldn't open the folder picker."
+- Start with Windows can't be changed: "Couldn't change Start with Windows."
+- Open logs folder fails: "Couldn't open the logs folder. It's at %APPDATA%\FishyClient\logs."
+- Delete all my data: see above.
+
+#### Tests
+- **Rust:**
+  - the scrubber: each secret shape is masked; normal lines and Windows paths are unchanged
+  - logging into a temp folder: a line with a fake token is written as `[redacted]`
+  - old log files are pruned after 7 days; newer ones stay
+  - settings: the new fields round-trip; an old file without them loads with defaults
+  - default install folder: used when set and present; falls back when missing
+  - the speed limiter (fake clock): 2 MB at 1 MB/s waits about 2 s; no limit never waits; a limit change applies to the next piece
+  - delete all my data on a temp folder: with and without games; a locked file is counted and the rest still goes; the open log file is emptied
+- **UI (vitest):**
+  - Settings shows the three sections
+  - each new control saves its setting and shows the saved value after a failed save
+  - Use default only appears when a folder is set
+  - speed box range check
+  - the delete box: tick box hidden with no games, the "folders stay" note, Cancel does nothing, Delete calls the command and shows Login, the partial-failure message
+  - Log out is gone from the sidebar and works from Settings
+  - reduced motion follows the setting or Windows
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

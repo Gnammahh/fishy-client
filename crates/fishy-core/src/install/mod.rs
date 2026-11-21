@@ -4,6 +4,7 @@ pub(crate) mod reader;
 pub mod manifest;
 pub mod chunk;
 pub mod client;
+pub mod compare;
 pub mod engine;
 pub mod plan;
 pub mod space;

@@ -5,7 +5,8 @@
   import { FISH_MOUTH_CLOSED, FISH_PALETTE } from "$lib/pixel/sprites";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import InstallDialog from "$lib/install/InstallDialog.svelte";
-  import { downloads, installed, statusFor, uninstall, type GameStatus } from "$lib/install/installs";
+  import { downloads, installed, play, statusFor, uninstall, type GameStatus, type PlayError } from "$lib/install/installs";
+  import { retry as recheckSignIn } from "$lib/auth/auth";
   import { library, loadLibrary, refreshLibrary, filterGames, type Game } from "./library";
 
   let { name, offline = false }: { name: string; offline?: boolean } = $props();
@@ -15,6 +16,10 @@
   let menuFor = $state<string | null>(null);
   let confirmUninstall = $state<Game | null>(null);
   let cardError = $state<{ app: string; message: string } | null>(null);
+  let starting = $state<string[]>([]);
+  let playError = $state<({ app: string } & PlayError) | null>(null);
+  /** How long the button says "Starting…" (the game isn't tracked after that, spec §6d). */
+  const STARTING_MS = 5000;
 
   const status = (g: Game): GameStatus => statusFor(g.app_name, $downloads, $installed);
   const installedCount = $derived($library.games.filter((g) => $installed.some((i) => i.app_name === g.app_name)).length);
@@ -42,6 +47,20 @@
     cardError = null;
     const err = await uninstall(game.app_name);
     if (err) cardError = { app: game.app_name, message: err };
+  }
+
+  async function doPlay(game: Game, offline = false) {
+    if (starting.includes(game.app_name)) return;
+    playError = null;
+    starting = [...starting, game.app_name];
+    const err = await play(game.app_name, offline);
+    if (err) {
+      starting = starting.filter((a) => a !== game.app_name);
+      if (err.signed_out) await recheckSignIn(); // the shell then shows the login screen
+      else playError = { app: game.app_name, ...err };
+      return;
+    }
+    setTimeout(() => (starting = starting.filter((a) => a !== game.app_name)), STARTING_MS);
   }
 
   // Load on open, and again whenever we come back online (offline → online).
@@ -133,6 +152,11 @@
               {:else if s === "none"}
                 <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
               {:else if s === "installed"}
+                {#if starting.includes(game.app_name)}
+                  <button class="play" aria-label="Starting {game.title}" disabled>Starting…</button>
+                {:else}
+                  <button class="play" aria-label="Play {game.title}" onclick={() => doPlay(game)}>Play</button>
+                {/if}
                 <div class="more">
                   <button
                     class="dots"
@@ -158,6 +182,15 @@
               {/if}
             </div>
             {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
+            {#if playError?.app === game.app_name}
+              <div class="play-error" role="alert">
+                <p class="error small">{playError.message}</p>
+                <div class="actions">
+                  <button class="link" onclick={() => doPlay(game)}>Try again</button>
+                  {#if playError.can_offline}<button class="link" onclick={() => doPlay(game, true)}>Play offline</button>{/if}
+                </div>
+              </div>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -326,6 +359,7 @@
     min-height: 30px;
   }
   .install,
+  .play,
   .dots {
     font-family: var(--font-pixel);
     font-size: 13px;
@@ -336,8 +370,32 @@
     cursor: pointer;
   }
   .install:hover,
+  .play:hover:not(:disabled),
   .dots:hover {
     background: rgba(79, 227, 209, 0.15);
+  }
+  .play {
+    margin-right: 8px;
+    color: var(--orange);
+    border-color: var(--orange);
+  }
+  .play:disabled {
+    opacity: 0.7;
+    cursor: default;
+  }
+  .play-error .actions {
+    display: flex;
+    gap: 12px;
+  }
+  .link {
+    font-family: var(--font-pixel);
+    font-size: 12px;
+    color: var(--aqua);
+    background: none;
+    border: none;
+    padding: 2px 0;
+    text-decoration: underline;
+    cursor: pointer;
   }
   .more {
     position: relative;

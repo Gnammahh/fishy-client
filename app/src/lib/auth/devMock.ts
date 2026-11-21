@@ -96,6 +96,14 @@ function devDownloads() {
           installed.splice(0, installed.length, ...installed.filter((g) => g.app_name !== name));
           return installed;
         }
+        case "play_game": {
+          // Preview only: pretend the game started. `?play=fail` shows the offline error instead.
+          const offline = (args as { offline?: boolean }).offline;
+          if (!offline && new URLSearchParams(location.search).get("play") === "fail") {
+            throw { message: "Couldn't reach Epic to sign the game in. Check your internet.", can_offline: true, signed_out: false };
+          }
+          return null;
+        }
       }
       return undefined;
     },

@@ -1,5 +1,6 @@
 mod downloads;
 mod login_window;
+mod play;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
 use downloads::{Downloads, DownloadsView};
@@ -277,6 +278,7 @@ pub fn run() {
                 downloads: Downloads::new(InstallStore::default_location(), InstallClient::new()),
                 prepared: std::sync::Mutex::new(HashMap::new()),
             });
+            app.manage(play::AppLaunch::new());
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.
@@ -302,7 +304,8 @@ pub fn run() {
             download_resume,
             download_cancel,
             installed_list,
-            uninstall_game
+            uninstall_game,
+            play::play_game
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

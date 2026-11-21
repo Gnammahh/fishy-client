@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/svelte";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
@@ -34,16 +34,18 @@ const game = (title: string, cover: string | null = null): Game => ({
   installable: true,
 });
 
-function mockCommands(handlers: Record<string, () => unknown>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mockCommands(handlers: Record<string, (args?: any) => unknown>) {
   const calls: string[] = [];
-  mockIPC((cmd) => {
+  mockIPC((cmd, args) => {
     calls.push(cmd);
-    return handlers[cmd]?.();
+    return handlers[cmd]?.(args);
   });
   return calls;
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   clearMocks();
   resetLibrary();
@@ -242,5 +244,82 @@ describe("LibraryPage", () => {
     await screen.findByText("With Cover");
     expect((screen.getByAltText("With Cover cover art") as HTMLImageElement).src).toBe("https://cdn/a.jpg");
     expect(screen.getByLabelText("No cover art for No Cover")).toBeTruthy();
+  });
+  it("play_shows_only_on_installed_games_and_says_starting_then_play_again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const played: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner"), game("Reef Run")] }),
+      play_game: (args) => {
+        played.push(args);
+        return null;
+      },
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    const play = await screen.findByRole("button", { name: "Play Kelp Runner" });
+    expect(screen.queryByRole("button", { name: "Play Reef Run" })).toBeNull();
+    await fireEvent.click(play);
+    await waitFor(() => expect(played).toEqual([{ appName: "KelpRunner", offline: false }]));
+    const starting = await screen.findByRole("button", { name: "Starting Kelp Runner" });
+    expect(starting.textContent?.trim()).toBe("Starting…");
+    expect((starting as HTMLButtonElement).disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await screen.findByRole("button", { name: "Play Kelp Runner" })).toBeTruthy();
+  });
+
+  it("a_failed_play_explains_and_offers_play_offline_when_allowed", async () => {
+    const played: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      play_game: (args) => {
+        played.push(args);
+        if (!args.offline) throw { message: "Couldn't reach Epic to sign the game in. Check your internet.", can_offline: true, signed_out: false };
+        return null;
+      },
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Play Kelp Runner" }));
+    expect(await screen.findByText("Couldn't reach Epic to sign the game in. Check your internet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Play offline" }));
+    await waitFor(() => expect(played).toEqual([
+      { appName: "KelpRunner", offline: false },
+      { appName: "KelpRunner", offline: true },
+    ]));
+    await waitFor(() => expect(screen.queryByText("Couldn't reach Epic to sign the game in. Check your internet.")).toBeNull());
+  });
+
+  it("play_offline_is_hidden_when_the_game_needs_epic", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      play_game: () => {
+        throw { message: "Couldn't find Kelp Runner's program file. Uninstall and install it again.", can_offline: false, signed_out: false };
+      },
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Play Kelp Runner" }));
+    expect(await screen.findByText("Couldn't find Kelp Runner's program file. Uninstall and install it again.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play offline" })).toBeNull();
+  });
+
+  it("an_expired_sign_in_goes_back_to_login", async () => {
+    const calls = mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      play_game: () => {
+        throw { message: "Your sign-in has expired. Please sign in again.", can_offline: false, signed_out: true };
+      },
+      retry_auth: () => ({ kind: "SignedOut" }),
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Play Kelp Runner" }));
+    await waitFor(() => expect(calls).toContain("retry_auth"));
   });
 });

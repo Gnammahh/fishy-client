@@ -33,6 +33,8 @@ export type InstallOptions = {
   enough_space: boolean;
   error: string | null;
 };
+/** Mirrors `PlayError` (app/src-tauri play.rs). */
+export type PlayError = { message: string; can_offline: boolean; signed_out: boolean };
 export type GameStatus = "installed" | "downloading" | "queued" | "paused" | "error" | "none";
 
 export const downloads = writable<DownloadItem[]>([]);
@@ -126,5 +128,19 @@ export async function uninstall(appName: string): Promise<string | null> {
     return null;
   } catch (e) {
     return message(e);
+  }
+}
+
+/** Starts an installed game (spec §6d). Returns null when it started, else what went wrong. */
+export async function play(appName: string, offline = false): Promise<PlayError | null> {
+  try {
+    await invoke("play_game", { appName, offline });
+    return null;
+  } catch (e) {
+    if (e && typeof e === "object" && typeof (e as PlayError).message === "string") {
+      const err = e as PlayError;
+      return { message: err.message, can_offline: !!err.can_offline, signed_out: !!err.signed_out };
+    }
+    return { message: message(e), can_offline: false, signed_out: false };
   }
 }

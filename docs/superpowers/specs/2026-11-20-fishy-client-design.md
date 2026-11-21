@@ -557,8 +557,9 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - `feat/epic-login`: milestone 2, Epic login.
   - `feat/library`: milestone 3, the Library.
   - `feat/install`: milestone 4, Install (started 2026-11-20).
+  - `feat/launch`: milestone 5, Launch (started 2026-11-21, built on `feat/install`).
 - **Approved visual reference:** `design/mockup.html`. It's also published as a private claude.ai artifact, "Fishy Client Mockup".
-- **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md` and `docs/superpowers/plans/2026-11-20-epic-login.md`.
+- **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md`, `docs/superpowers/plans/2026-11-20-epic-login.md`, `docs/superpowers/plans/2026-11-20-install.md` and `docs/superpowers/plans/2026-11-21-launch.md`.
 
 ### What's done
 
@@ -636,6 +637,31 @@ The fish components come first, in milestone 1, because they don't depend on Epi
     - The bar's "Installed" done state is replaced by a "Finished" note.
   - Tests now: Rust 134 (core 129 + app 5), UI 86.
 
+**Milestone 5, Launch (branch `feat/launch`, built 2026-11-21)**
+- **Design approved** and written as §6d. The protocol was researched in Legendary (`core.py` `get_launch_parameters`, `api/egs.py`, `models/game.py`).
+- **Decisions:**
+  - **Play offline** is offered when Epic can't be reached, only for games Epic marks as able to run offline.
+  - The button shows **Starting…** for 5 seconds; the running game isn't tracked.
+  - The extra launch details are kept in the saved Library, so games installed earlier work without reinstalling.
+- **Built (test-first), in `crates/fishy-core/src/launch/`:**
+  - Asks Epic for a fresh one-time sign-in code on every Play, plus an ownership-token file for the few games that need one.
+  - Builds the game's command line in Legendary's exact order.
+  - The program path gets the same safety check as installs.
+  - Starts the game from its own folder.
+  - **Secrets:** the code shows as `[redacted]` in any debug output and is never logged or saved. Ownership-token files in `%TEMP%\FishyClient\` are deleted when the app starts.
+- **App:**
+  - **Play** button next to "⋯" on installed games.
+  - **Starting…**
+  - Plain-word errors with **Try again** and, when allowed, **Play offline**.
+  - An expired sign-in goes back to the login screen.
+  - EA app / Ubisoft games get a clear "can't do this yet" message.
+  - Checked in the browser preview with fake data: Play, the error box, Play offline then Starting…, with no console errors.
+- **Not yet:** Epic's per-game "deployment id" (few games need it). It gets added if a real game fails without it.
+- **Tests now:** Rust 171 (core 164 + app 7), UI 92. New: 29 core, 2 app, 4 UI.
+
+### Still to check by hand (milestone 5)
+- [ ] Launch Bad Cheese or Bendy from Fishy Client, signed in as you
+
 ### Still to check by hand (milestone 4)
 Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - [x] Install from the Library (default folder)
@@ -672,8 +698,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 135 tests, plus 1 that writes to the real Credential Manager (run on purpose only). (Counts as of 2026-11-21.)
-- **UI:** 88 tests.
+- **Rust core:** 164 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 7. (Counts as of 2026-11-21, milestone 5.)
+- **UI:** 92 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -703,7 +729,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 3. ~~Milestone 3, Library.~~ Built and checked with your real library on 2026-11-20 (the saved library is deleted on Log out).
    - Still open from this list: log files with secrets filtered out, and a "delete all my data" button (they fit best with Settings).
 4. Later milestones:
-   - Install
-   - Launch (note: Epic's launch code is visible to other programs on the PC while a game starts)
+   - ~~Install~~ built (milestone 4)
+   - ~~Launch~~ built on 2026-11-21 (milestone 5); the hand check is above. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - Updates
    - Polish, signed updates and a code-signed installer

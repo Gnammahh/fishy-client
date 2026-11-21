@@ -6,6 +6,35 @@ use fishy_core::wipe::{default_data_root, delete_everything};
 use serde::Serialize;
 use tauri::Emitter;
 
+pub(crate) const AUTOSTART_ERROR: &str = "Couldn't change Start with Windows.";
+
+/// Start with Windows, read from the Registry each time (never saved in settings.json).
+#[tauri::command]
+pub fn autostart_get(app: tauri::AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Turns Start with Windows on or off. Returns the real state afterwards.
+#[tauri::command]
+pub fn autostart_set(app: tauri::AppHandle, on: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    let result = if on { launcher.enable() } else { launcher.disable() };
+    if result.is_err() {
+        tracing::warn!("{AUTOSTART_ERROR}");
+        return Err(AUTOSTART_ERROR.to_string());
+    }
+    tracing::info!("start with Windows: {on}");
+    Ok(launcher.is_enabled().unwrap_or(on))
+}
+
+/// The built-in default install folder, `%USERPROFILE%\Games`, for Settings to show.
+#[tauri::command]
+pub fn default_install_folder() -> String {
+    fishy_core::install::space::default_install_root().display().to_string()
+}
+
 /// Shown in the Install box when the saved default folder's drive is missing.
 pub(crate) fn unavailable_folder_note(used: &std::path::Path) -> String {
     format!("Your default folder isn't available, so this uses {}.", used.display())
@@ -87,6 +116,11 @@ mod tests {
             unavailable_folder_note(std::path::Path::new(r"C:\Users\you\Games")),
             r"Your default folder isn't available, so this uses C:\Users\you\Games."
         );
+    }
+
+    #[test]
+    fn autostart_error_is_plain() {
+        assert_eq!(AUTOSTART_ERROR, "Couldn't change Start with Windows.");
     }
 
     #[test]

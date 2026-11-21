@@ -375,7 +375,10 @@ pub fn run() {
             updates::settings_get,
             updates::settings_set,
             data::open_logs_folder,
-            data::delete_all_data
+            data::delete_all_data,
+            data::autostart_get,
+            data::autostart_set,
+            data::default_install_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

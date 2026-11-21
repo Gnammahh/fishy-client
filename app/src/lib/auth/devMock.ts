@@ -133,7 +133,8 @@ function devDownloads() {
   };
 }
 
-let devSettings = { auto_update: false, warn_outdated_play: true };
+let devSettings = { auto_update: false, warn_outdated_play: true, install_folder: null as string | null, speed_limit_mbps: null as number | null, reduce_motion: false };
+let devAutostart = false;
 
 export function installDevMock(start: string) {
   const dl = devDownloads();
@@ -172,6 +173,19 @@ export function installDevMock(start: string) {
           return devSettings;
         case "settings_set":
           return (devSettings = { ...devSettings, ...(args as { value: object }).value });
+        case "default_install_folder":
+          return "C:\\Users\\you\\Games";
+        case "autostart_get":
+          return devAutostart;
+        case "autostart_set":
+          return (devAutostart = (args as { on: boolean }).on);
+        case "open_logs_folder":
+          return null;
+        case "delete_all_data":
+          return new Promise((r) => setTimeout(() => r({ failed: 0, message: null }), 800)).then((v) => {
+            state = { kind: "SignedOut" };
+            return v;
+          });
         default:
           return dl.handle(cmd, args);
       }

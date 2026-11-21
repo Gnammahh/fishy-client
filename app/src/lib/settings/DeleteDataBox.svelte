@@ -53,7 +53,7 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <div class="actions">
       <PixelButton variant="ghost" disabled={deleting} onclick={onclose}>Cancel</PixelButton>
-      <PixelButton disabled={deleting} onclick={remove}>Delete</PixelButton>
+      <PixelButton variant="danger" disabled={deleting} onclick={remove}>Delete</PixelButton>
     </div>
   </div>
 </div>

@@ -1,7 +1,7 @@
 //! The Downloads manager: one game downloads at a time, the rest wait in a queue (spec §6c).
 //! It owns a stop token per running job and tells the UI about changes with `downloads-changed`.
-use fishy_core::install::engine::{run_download, Progress};
-use fishy_core::install::manifest::Manifest;
+use fishy_core::install::engine::{run_job, Progress, RunOptions};
+use fishy_core::install::manifest::{parse_manifest, Manifest};
 use fishy_core::install::speed::SpeedMeter;
 use fishy_core::install::store::{InstallStore, JobInfo};
 use fishy_core::install::uninstall::discard_download;
@@ -12,6 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
+
+/// Shown when Cancel or the queue's × is used on an update (spec §6e).
+pub const UPDATE_NO_CANCEL: &str = "Updates can be paused but not cancelled.";
 
 /// Progress events are sent at most this often (spec: about 4 times a second).
 const EMIT_EVERY: Duration = Duration::from_millis(250);
@@ -41,6 +44,8 @@ impl JobState {
 pub struct Job {
     pub info: JobInfo,
     pub manifest: Arc<Manifest>,
+    /// For an update: the installed version's manifest.
+    pub old: Option<Arc<Manifest>>,
     pub state: JobState,
     pub downloaded: u64,
     pub bytes_per_sec: f64,
@@ -51,7 +56,7 @@ pub struct Job {
 
 impl Job {
     pub fn new(info: JobInfo, manifest: Arc<Manifest>, state: JobState) -> Self {
-        Self { info, manifest, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false }
+        Self { info, manifest, old: None, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false }
     }
 }
 
@@ -64,6 +69,8 @@ pub struct DownloadItem {
     pub total: u64,
     pub bytes_per_sec: f64,
     pub error: Option<String>,
+    /// An update (can be paused, not cancelled).
+    pub update: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -97,6 +104,7 @@ impl Inner {
                     total: j.info.download_size,
                     bytes_per_sec: if j.state == JobState::Downloading { j.bytes_per_sec } else { 0.0 },
                     error: j.error.clone(),
+                    update: j.info.update_from.is_some(),
                 })
                 .collect(),
         }
@@ -119,6 +127,9 @@ impl Inner {
     pub fn begin_removal(&mut self, app: &str) -> Option<JobInfo> {
         let i = self.find(app)?;
         let job = &mut self.jobs[i];
+        if job.info.update_from.is_some() {
+            return None; // updates can't be cancelled (spec §6e)
+        }
         match job.state {
             JobState::Removing => None,
             JobState::Downloading => {
@@ -131,6 +142,22 @@ impl Inner {
                 Some(job.info.clone())
             }
         }
+    }
+
+    pub fn is_update(&self, app: &str) -> bool {
+        self.find(app).is_some_and(|i| self.jobs[i].info.update_from.is_some())
+    }
+
+    /// Uninstall of a game with a paused (or failed) update: the job leaves the list.
+    /// False if the update is running or queued.
+    pub fn take_stopped_update(&mut self, app: &str) -> bool {
+        let Some(i) = self.find(app) else { return true };
+        let job = &self.jobs[i];
+        if job.info.update_from.is_none() || !matches!(job.state, JobState::Paused | JobState::Error) {
+            return false;
+        }
+        self.jobs.remove(i);
+        true
     }
 
     /// Cancel, step 2: gone when the files are deleted, or back as an error with the reason.
@@ -167,11 +194,17 @@ impl Downloads {
             .into_iter()
             .filter_map(|info| {
                 let bytes = store.job_manifest(&info.app_name).ok()?;
-                let manifest = fishy_core::install::manifest::parse_manifest(&bytes).ok()?;
+                let manifest = parse_manifest(&bytes).ok()?;
                 let mut job = Job::new(info, Arc::new(manifest), JobState::Paused);
+                if job.info.update_from.is_some() {
+                    // Without the old manifest the update still works, it just downloads everything.
+                    job.old = store.installed_manifest(&job.info.app_name).ok().and_then(|b| parse_manifest(&b).ok()).map(Arc::new);
+                }
                 let finished = store.finished_files(&job.info);
                 // Rough "already downloaded" for the bar, until the job runs and reports for real.
-                let done = fishy_core::install::plan::build_plan(&job.manifest, &finished).map(|p| p.download_size).unwrap_or(0);
+                let done = fishy_core::install::plan::build_update_plan(&job.manifest, job.old.as_deref(), &finished)
+                    .map(|p| p.download_size)
+                    .unwrap_or(0);
                 job.downloaded = job.info.download_size.saturating_sub(done);
                 Some(job)
             })
@@ -196,13 +229,15 @@ impl Downloads {
     }
 
     /// Adds a new download to the queue (or starts it).
-    pub fn enqueue(&self, app: &AppHandle, info: JobInfo, manifest: Arc<Manifest>) {
+    pub fn enqueue(&self, app: &AppHandle, info: JobInfo, manifest: Arc<Manifest>, old: Option<Arc<Manifest>>) {
         {
             let mut inner = self.lock();
             if inner.find(&info.app_name).is_some() {
                 return;
             }
-            inner.jobs.push(Job::new(info, manifest, JobState::Queued));
+            let mut job = Job::new(info, manifest, JobState::Queued);
+            job.old = old;
+            inner.jobs.push(job);
         }
         self.pump(app);
     }
@@ -238,6 +273,9 @@ impl Downloads {
 
     /// Stops the download and deletes what it wrote.
     pub async fn cancel(&self, app: &AppHandle, app_name: &str) -> Result<(), String> {
+        if self.lock().is_update(app_name) {
+            return Err(UPDATE_NO_CANCEL.to_string());
+        }
         // A running job's own task deletes the files once it has stopped writing.
         let Some(info) = self.lock().begin_removal(app_name) else {
             self.emit(app);
@@ -256,6 +294,11 @@ impl Downloads {
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.user_message())
+    }
+
+    /// For Uninstall: drops a paused or failed update of this game. False if one is running or queued.
+    pub fn take_stopped_update(&self, app_name: &str) -> bool {
+        self.lock().take_stopped_update(app_name)
     }
 
     /// Log out: the running download pauses and nothing new starts.
@@ -283,18 +326,18 @@ impl Downloads {
                 job.state = JobState::Downloading;
                 job.stop = Some(stop.clone());
                 job.cancel_requested = false;
-                (job.info.clone(), job.manifest.clone(), stop)
+                (job.info.clone(), job.manifest.clone(), job.old.clone(), stop)
             })
         };
         self.emit(app);
-        if let Some((info, manifest, stop)) = started {
+        if let Some((info, manifest, old, stop)) = started {
             let this = self.clone();
             let app = app.clone();
-            tauri::async_runtime::spawn(async move { this.run(app, info, manifest, stop).await });
+            tauri::async_runtime::spawn(async move { this.run(app, info, manifest, old, stop).await });
         }
     }
 
-    async fn run(self, app: AppHandle, info: JobInfo, manifest: Arc<Manifest>, stop: CancellationToken) {
+    async fn run(self, app: AppHandle, info: JobInfo, manifest: Arc<Manifest>, old: Option<Arc<Manifest>>, stop: CancellationToken) {
         let meter = Mutex::new((SpeedMeter::new(), Instant::now() - EMIT_EVERY));
         let on_progress = |p: Progress| {
             let speed = {
@@ -320,7 +363,7 @@ impl Downloads {
                 self.emit(&app);
             }
         };
-        let result = run_download(&self.client, &self.store, &info, &manifest, stop, on_progress).await;
+        let result = run_job(&self.client, &self.store, &info, &manifest, old.as_deref(), stop, on_progress, RunOptions::default()).await;
         self.finish(&app, info, &manifest, result).await;
         self.pump(&app);
     }
@@ -441,6 +484,57 @@ mod tests {
         assert_eq!(inner.jobs[0].state, JobState::Error);
         let v = inner.view();
         assert_eq!(v.items[0].error.as_deref(), Some("Couldn't delete some files. Close the game and try again."));
+    }
+
+    fn update(app: &str, state: JobState) -> Job {
+        let mut j = job(app, state);
+        j.info.update_from = Some("1.0".into());
+        j
+    }
+
+    #[test]
+    fn view_marks_update_jobs() {
+        let inner = Inner { jobs: vec![update("u", JobState::Paused), job("i", JobState::Queued)] };
+        let v = inner.view();
+        assert_eq!(v.items.iter().map(|i| (i.app_name.as_str(), i.update)).collect::<Vec<_>>(), vec![("i", false), ("u", true)]);
+    }
+
+    #[test]
+    fn cancelling_an_update_is_refused() {
+        let mut inner = Inner { jobs: vec![update("u", JobState::Downloading)] };
+        let stop = CancellationToken::new();
+        inner.jobs[0].stop = Some(stop.clone());
+        assert!(inner.is_update("u"));
+        assert!(inner.begin_removal("u").is_none());
+        assert!(!stop.is_cancelled() && !inner.jobs[0].cancel_requested);
+        assert_eq!(inner.jobs[0].state, JobState::Downloading);
+    }
+
+    #[test]
+    fn uninstall_takes_only_a_stopped_update() {
+        let mut inner = Inner { jobs: vec![update("run", JobState::Downloading), update("p", JobState::Paused), job("i", JobState::Paused)] };
+        assert!(!inner.take_stopped_update("run"));
+        assert!(!inner.take_stopped_update("i"), "a normal install isn't an update");
+        assert!(inner.take_stopped_update("p"));
+        assert!(inner.find("p").is_none());
+        assert!(inner.take_stopped_update("none"), "nothing to take is fine");
+    }
+
+    #[test]
+    fn restored_update_job_keeps_its_old_manifest() {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let mut info = job("Tide", JobState::Paused).info;
+        info.install_path = dir.path().join("game");
+        store.save_job(&info, &build_binary(&sample(), true)).unwrap();
+        store.finish_install(&info, &sample()).unwrap(); // the installed version
+        info.update_from = Some("1.0.0-CL1".into());
+        store.save_job(&info, &build_binary(&sample(), true)).unwrap(); // a paused update
+        let d = Downloads::new(store, InstallClient::new());
+        let inner = d.lock();
+        assert!(inner.jobs[0].old.is_some());
+        assert!(inner.view().items[0].update);
     }
 
     #[test]

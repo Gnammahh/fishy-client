@@ -1,6 +1,7 @@
 mod downloads;
 mod login_window;
 mod play;
+mod updates;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
 use downloads::{Downloads, DownloadsView};
@@ -100,8 +101,8 @@ fn library_cached(library: tauri::State<'_, AppLibrary>) -> Option<CachedLibrary
 #[tauri::command]
 async fn library_refresh(auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
     let token = auth.manager.access_token().await.map_err(|_| LIBRARY_ERROR.to_string())?;
-    let games = library.client.fetch_library(&token).await.map_err(|_| LIBRARY_ERROR.to_string())?;
-    let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games };
+    let data = library.client.fetch_library(&token).await.map_err(|_| LIBRARY_ERROR.to_string())?;
+    let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
     Ok(fresh)
 }
@@ -208,7 +209,7 @@ async fn install_start(
         .save_job(&job, &p.bytes)
         .map_err(|e| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() }.user_message())?;
     install.prepared.lock().unwrap_or_else(|e| e.into_inner()).remove(&game.app_name);
-    downloads.enqueue(&app, job, p.manifest);
+    downloads.enqueue(&app, job, p.manifest, None);
     Ok(downloads.view())
 }
 
@@ -250,6 +251,11 @@ fn installed_list(install: tauri::State<'_, AppInstall>) -> Vec<InstalledGame> {
 
 #[tauri::command]
 async fn uninstall_game(app: tauri::AppHandle, app_name: String, install: tauri::State<'_, AppInstall>) -> Result<Vec<InstalledGame>, String> {
+    // A paused update goes with the game (spec §6e); a running one must be paused first.
+    if !install.downloads.take_stopped_update(&app_name) {
+        return Err("Pause the update first, then uninstall.".to_string());
+    }
+    let _ = app.emit("downloads-changed", install.downloads.view());
     let store = install.downloads.store.clone();
     let name = app_name.clone();
     tauri::async_runtime::spawn_blocking(move || uninstall(&store, &name))
@@ -280,6 +286,7 @@ pub fn run() {
                 prepared: std::sync::Mutex::new(HashMap::new()),
             });
             app.manage(play::AppLaunch::new());
+            app.manage(updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() });
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.
@@ -306,7 +313,10 @@ pub fn run() {
             download_cancel,
             installed_list,
             uninstall_game,
-            play::play_game
+            play::play_game,
+            updates::update_start,
+            updates::settings_get,
+            updates::settings_set
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

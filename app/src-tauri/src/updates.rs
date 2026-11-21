@@ -1,0 +1,102 @@
+//! Updates and settings commands (spec §6e).
+use crate::downloads::DownloadsView;
+use crate::{AppAuth, AppInstall, AppLibrary};
+use fishy_core::install::manifest::parse_manifest;
+use fishy_core::install::plan::build_update_plan;
+use fishy_core::install::space::{check_space, free_space};
+use fishy_core::install::store::JobInfo;
+use fishy_core::install::InstallError;
+use fishy_core::settings::{Settings, SettingsStore};
+use std::collections::HashSet;
+use std::sync::Arc;
+
+const UPDATE_FETCH_ERROR: &str = "Couldn't get the update from Epic. Try again later.";
+
+pub struct AppSettings {
+    pub store: SettingsStore,
+}
+
+/// Sign-in, format and space problems keep their own message; anything else while getting the
+/// update is "Couldn't get the update".
+fn update_error(e: InstallError) -> String {
+    match e {
+        InstallError::Rejected(_) | InstallError::Unsupported | InstallError::NoSpace { .. } => e.user_message(),
+        _ => UPDATE_FETCH_ERROR.to_string(),
+    }
+}
+
+/// Queues an update of an installed game to Epic's newest version. Nothing happens if it's
+/// already up to date or already in the Downloads list.
+#[tauri::command]
+pub async fn update_start(
+    app: tauri::AppHandle,
+    app_name: String,
+    auth: tauri::State<'_, AppAuth>,
+    library: tauri::State<'_, AppLibrary>,
+    install: tauri::State<'_, AppInstall>,
+) -> Result<DownloadsView, String> {
+    let downloads = &install.downloads;
+    if downloads.has_job(&app_name) {
+        return Ok(downloads.view());
+    }
+    let installed = downloads.store.installed().into_iter().find(|g| g.app_name == app_name).ok_or_else(|| InstallError::NotInstalled.user_message())?;
+    let game = library
+        .cache
+        .load()
+        .and_then(|c| c.games.into_iter().find(|g| g.app_name == app_name))
+        .ok_or_else(|| "Refresh your Library, then try again.".to_string())?;
+
+    let token = auth.manager.access_token().await.map_err(|e| update_error(e.into()))?;
+    let info = downloads.client.manifest_info(&token, &game.namespace, &game.catalog_item_id, &app_name).await.map_err(update_error)?;
+    let bytes = downloads.client.download_manifest(&info).await.map_err(update_error)?;
+    let manifest = parse_manifest(&bytes).map_err(update_error)?;
+    if manifest.meta.build_version == installed.version {
+        return Ok(downloads.view()); // Epic's list ran ahead of its manifests; nothing to do yet
+    }
+    let old = downloads.store.installed_manifest(&app_name).ok().and_then(|b| parse_manifest(&b).ok());
+    let plan = build_update_plan(&manifest, old.as_ref(), &HashSet::new()).map_err(update_error)?;
+    let path = installed.install_path.clone();
+    check_space(&path, plan.space_needed, free_space(&path).unwrap_or(0)).map_err(update_error)?;
+    let job = JobInfo {
+        app_name: app_name.clone(),
+        title: installed.title.clone(),
+        namespace: game.namespace.clone(),
+        catalog_item_id: game.catalog_item_id.clone(),
+        install_path: path.clone(),
+        download_size: plan.download_size,
+        install_size: manifest.install_size(),
+        base_urls: info.base_urls.clone(),
+        update_from: Some(installed.version.clone()),
+    };
+    downloads
+        .store
+        .save_job(&job, &bytes)
+        .map_err(|e| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() }.user_message())?;
+    downloads.enqueue(&app, job, Arc::new(manifest), old.map(Arc::new));
+    Ok(downloads.view())
+}
+
+#[tauri::command]
+pub fn settings_get(settings: tauri::State<'_, AppSettings>) -> Settings {
+    settings.store.load()
+}
+
+#[tauri::command]
+pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>) -> Result<Settings, String> {
+    settings.store.save(&value).map_err(|_| "Couldn't save your settings.".to_string())?;
+    Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_errors_are_plain() {
+        assert_eq!(update_error(InstallError::Network("x".into())), UPDATE_FETCH_ERROR);
+        assert_eq!(update_error(InstallError::BadManifest("x".into())), UPDATE_FETCH_ERROR);
+        assert_eq!(update_error(InstallError::NoDownload), UPDATE_FETCH_ERROR);
+        assert_eq!(update_error(InstallError::Rejected("c".into())), "That sign-in didn't work. Please try again.");
+        assert_eq!(update_error(InstallError::Unsupported), "This game uses a download format Fishy Client can't install yet.");
+    }
+}

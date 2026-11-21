@@ -1,8 +1,9 @@
 //! Epic's game manifest: which files a build has and which chunks they're made of.
 mod binary;
 mod json;
-#[cfg(test)]
-pub(crate) mod testbuild;
+/// Builds manifests in tests (also for the app's tests, through the `test-support` feature).
+#[cfg(any(test, feature = "test-support"))]
+pub mod testbuild;
 
 use super::{Guid, InstallError};
 use std::collections::HashMap;

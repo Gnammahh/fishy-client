@@ -28,4 +28,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sys-locale = "0.3"
 
-
+[dev-dependencies]
+fishy-core = { path = "../../crates/fishy-core", features = ["test-support"] }
+tempfile = "3"

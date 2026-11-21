@@ -21,6 +21,10 @@ sha1 = "0.10"
 hex = "0.4"
 fs4 = { version = "0.13", features = ["sync"] }
 
+[features]
+# Test helpers (manifest builder) for other crates' tests. Never on in the shipped app.
+test-support = []
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util"] }
 wiremock = "0.6"

@@ -149,16 +149,33 @@ describe("LibraryPage", () => {
     expect(await screen.findByText("No games installed yet.")).toBeTruthy();
   });
 
-  it("games_without_a_windows_build_say_so_instead_of_install", async () => {
+  it("games_without_a_windows_build_get_their_own_tab_with_one_explanation", async () => {
     mockCommands({
       library_cached: () => null,
-      library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey"), { ...game("Mac Minnow"), installable: false }] }),
+      library_refresh: () => ({
+        updated_at: "x",
+        games: [game("Tidepool Odyssey"), { ...game("Mac Minnow"), installable: false }, { ...game("Phone Plaice"), installable: false }],
+      }),
     });
     render(LibraryPage, { name: "FishFan" });
-    await screen.findByText("Mac Minnow");
-    expect(screen.getByText("Not on Windows")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Install Mac Minnow" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Install Tidepool Odyssey" })).toBeTruthy();
+    await screen.findByText("Tidepool Odyssey");
+    // "All" only has games you can install, and the count matches it.
+    expect(screen.queryByText("Mac Minnow")).toBeNull();
+    expect(screen.getByText("1 game")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("tab", { name: "Not on Windows (2)" }));
+    await waitFor(() => expect(screen.queryByText("Tidepool Odyssey")).toBeNull());
+    expect(screen.getByText("Mac Minnow")).toBeTruthy();
+    expect(screen.getByText("Phone Plaice")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Install / })).toBeNull();
+    // One explanation for the whole tab, not one per game.
+    expect(screen.getAllByText(/Epic has no Windows download for these games/)).toHaveLength(1);
+  });
+
+  it("the_not_on_windows_tab_is_hidden_when_every_game_runs_on_windows", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey")] }) });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Tidepool Odyssey");
+    expect(screen.queryByRole("tab", { name: /Not on Windows/ })).toBeNull();
   });
 
   it("install_button_opens_the_install_box", async () => {

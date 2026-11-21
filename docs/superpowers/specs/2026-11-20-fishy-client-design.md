@@ -295,7 +295,7 @@ All calls send `Authorization: bearer <access_token>` and the launcher User-Agen
 - Remove duplicates by `catalogItemId`.
 - **Windows check** (added 2026-11-21, like Legendary's `get_game_assets`): each refresh also fetches Epic's list of apps with a Windows build (`GET {launcher}/launcher/api/public/assets/Windows?label=Live`, a JSON list of `{appName, namespace, catalogItemId, buildVersion, ...}`). A game whose `appName` isn't in it gets `installable: false`:
   - if the same namespace has an installable game with the same title, the non-Windows one is hidden (Bendy is in some libraries twice);
-  - otherwise it stays, with "Not on Windows" where Install would be.
+  - otherwise it moves to its own **Not on Windows (N)** tab (shown only when N > 0), with no button on its card and one explanation under the grid: these are mostly phone games, because Epic's mobile store shares one library with PC games. "All" and the game count only cover games with a Windows download.
   - If that list can't be fetched, every game counts as installable (the Install box still explains), and caches saved before this field count as installable too.
 - If the catalog lookup for an item fails, keep it with `appName` as its title and no cover, rather than hiding a game the user owns.
 
@@ -582,6 +582,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **Bendy and the Ink Machine** is in the library **twice** (same game, two Epic entries). One has no Windows download, so Epic answers `download_info_not_found`. The message used to say "format Fishy Client can't install yet"; it now says Epic offers no Windows download for that item and suggests trying the other entry.
   - **Fixed on 2026-11-21** (test-first): each Library refresh asks Epic which games have a Windows download, hides the Bendy twin without one, and shows "Not on Windows" instead of Install for any other game without one (rules in §6b). Tests: 4 new Rust tests in `library/build.rs`, 2 wiremock tests in `library/client.rs`, 1 UI test in `library.test.ts`.
   - [x] Hand check on 2026-11-21: Bendy shows once and its install starts.
+  - Your library had 8 more games without a Windows download, mostly phone games (Dead Cells, Rocket League Sideswipe twice, Super Meat Boy Forever Mobile, both KOTORs, MR RACER, Residual). At your request they now sit in a **Not on Windows** tab with one explanation, instead of showing a label on every card in All (2 UI tests).
 - **Resume goes back a little** (about 10% for Bad Cheese). The file that was half-written when you paused starts again from its beginning; every finished file is kept. Legendary does the same.
   - Possible later improvement: continue inside big half-written files.
 - **Speed in the test build** looks lower because `tauri dev` builds without optimizations, so unzipping and checking pieces is slower than in the real app.
@@ -605,7 +606,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 
 ### Tests
 - **Rust core:** 135 tests, plus 1 that writes to the real Credential Manager (run on purpose only). (Counts as of 2026-11-21.)
-- **UI:** 87 tests.
+- **UI:** 88 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)

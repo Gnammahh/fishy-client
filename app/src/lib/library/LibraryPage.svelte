@@ -10,7 +10,7 @@
 
   let { name, offline = false }: { name: string; offline?: boolean } = $props();
   let query = $state("");
-  let tab = $state<"all" | "installed">("all");
+  let tab = $state<"all" | "installed" | "elsewhere">("all");
   let installing = $state<Game | null>(null);
   let menuFor = $state<string | null>(null);
   let confirmUninstall = $state<Game | null>(null);
@@ -18,9 +18,18 @@
 
   const status = (g: Game): GameStatus => statusFor(g.app_name, $downloads, $installed);
   const installedCount = $derived($library.games.filter((g) => $installed.some((i) => i.app_name === g.app_name)).length);
+  // Games Epic has no Windows download for (mostly phone games) live in their own tab.
+  const windowsGames = $derived($library.games.filter((g) => g.installable));
+  const elsewhere = $derived($library.games.filter((g) => !g.installable));
   const shown = $derived(
-    filterGames($library.games, query).filter((g) => tab === "all" || $installed.some((i) => i.app_name === g.app_name)),
+    filterGames(tab === "elsewhere" ? elsewhere : windowsGames, query).filter(
+      (g) => tab !== "installed" || $installed.some((i) => i.app_name === g.app_name),
+    ),
   );
+  // If a refresh empties the "Not on Windows" tab while it's open, go back to All.
+  $effect(() => {
+    if (tab === "elsewhere" && elsewhere.length === 0) tab = "all";
+  });
   const LABELS: Partial<Record<GameStatus, string>> = {
     downloading: "Downloading…",
     queued: "Queued",
@@ -55,7 +64,7 @@
       <div class="tools">
         <label class="sr-only" for="library-search">Search your library</label>
         <input id="library-search" type="search" placeholder="Search your library" bind:value={query} autocomplete="off" />
-        <span class="count">{$library.games.length} {$library.games.length === 1 ? "game" : "games"}</span>
+        <span class="count">{windowsGames.length} {windowsGames.length === 1 ? "game" : "games"}</span>
       </div>
     {/if}
   </header>
@@ -94,6 +103,11 @@
       <button role="tab" aria-selected={tab === "installed"} class:active={tab === "installed"} onclick={() => (tab = "installed")}>
         Installed ({installedCount})
       </button>
+      {#if elsewhere.length > 0}
+        <button role="tab" aria-selected={tab === "elsewhere"} class:active={tab === "elsewhere"} onclick={() => (tab = "elsewhere")}>
+          Not on Windows ({elsewhere.length})
+        </button>
+      {/if}
     </div>
     {#if shown.length === 0}
       <p class="none">{query.trim() ? `No games match "${query.trim()}".` : "No games installed yet."}</p>
@@ -115,7 +129,7 @@
             <span class="title">{game.title}</span>
             <div class="row">
               {#if s === "none" && !game.installable}
-                <span class="state">Not on Windows</span>
+                <!-- nothing to install: one explanation sits under the grid -->
               {:else if s === "none"}
                 <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
               {:else if s === "installed"}
@@ -147,6 +161,12 @@
           </li>
         {/each}
       </ul>
+      {#if tab === "elsewhere"}
+        <p class="explain">
+          Epic has no Windows download for these games. They're in your Epic account, but most are phone games from Epic's mobile
+          store, which shares one library with your PC games. To play one on this PC, you'd need its PC version.
+        </p>
+      {/if}
     {/if}
   {/if}
 </section>
@@ -243,6 +263,12 @@
   }
   .none {
     color: var(--text-2);
+    margin: 0;
+  }
+  .explain {
+    color: var(--text-2);
+    font-size: 14px;
+    max-width: 640px;
     margin: 0;
   }
   .grid {

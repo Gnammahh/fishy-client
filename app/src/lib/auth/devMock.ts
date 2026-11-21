@@ -12,6 +12,7 @@ const DEV_GAMES = ["Abyssal Lanterns", "Coral Kart", "Kelp Runner", "Tidepool Od
   catalog_item_id: title.toLowerCase().replace(/\W+/g, "-"),
   title,
   cover_url: null,
+  installable: true,
 }));
 
 type DevItem = { app_name: string; title: string; state: string; downloaded: number; total: number; bytes_per_sec: number; error: string | null };

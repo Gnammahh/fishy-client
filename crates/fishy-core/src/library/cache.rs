@@ -71,6 +71,7 @@ mod tests {
                 namespace: "n".into(),
                 catalog_item_id: "a".into(),
                 title: "Tidepool Odyssey".into(),
+                installable: true,
                 cover_url: Some("https://cdn/a.jpg".into()),
             }],
         }

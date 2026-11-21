@@ -114,7 +114,9 @@
             </div>
             <span class="title">{game.title}</span>
             <div class="row">
-              {#if s === "none"}
+              {#if s === "none" && !game.installable}
+                <span class="state">Not on Windows</span>
+              {:else if s === "none"}
                 <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
               {:else if s === "installed"}
                 <div class="more">

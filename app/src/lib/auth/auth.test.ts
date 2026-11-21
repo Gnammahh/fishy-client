@@ -107,7 +107,7 @@ describe("AppShell", () => {
       status: "ready",
       updating: false,
       error: "",
-      games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null }],
+      games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null, installable: true }],
     });
     render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
     await fireEvent.click(screen.getByRole("button", { name: "Account" }));

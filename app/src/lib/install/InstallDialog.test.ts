@@ -5,7 +5,7 @@ import InstallDialog from "./InstallDialog.svelte";
 import { resetInstalls } from "./installs";
 
 const GB = 1024 ** 3;
-const game = { app_name: "Tide", namespace: "ns", catalog_item_id: "cat", title: "Tidepool Odyssey", cover_url: null };
+const game = { app_name: "Tide", namespace: "ns", catalog_item_id: "cat", title: "Tidepool Odyssey", cover_url: null, installable: true };
 const options = (over: Record<string, unknown> = {}) => ({
   install_path: "C:\\Users\\you\\Games\\Tidepool Odyssey",
   download_size: 3.1 * GB,

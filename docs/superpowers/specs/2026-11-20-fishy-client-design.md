@@ -293,6 +293,10 @@ All calls send `Authorization: bearer <access_token>` and the launcher User-Agen
   - items with `mainGameItem` (DLC; it'll be shown under its game later)
   - items with a category `path == "mods"`
 - Remove duplicates by `catalogItemId`.
+- **Windows check** (added 2026-11-21, like Legendary's `get_game_assets`): each refresh also fetches Epic's list of apps with a Windows build (`GET {launcher}/launcher/api/public/assets/Windows?label=Live`, a JSON list of `{appName, namespace, catalogItemId, buildVersion, ...}`). A game whose `appName` isn't in it gets `installable: false`:
+  - if the same namespace has an installable game with the same title, the non-Windows one is hidden (Bendy is in some libraries twice);
+  - otherwise it stays, with "Not on Windows" where Install would be.
+  - If that list can't be fetched, every game counts as installable (the Install box still explains), and caches saved before this field count as installable too.
 - If the catalog lookup for an item fails, keep it with `appName` as its title and no cover, rather than hiding a game the user owns.
 
 ### Cache and privacy
@@ -476,7 +480,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ---
 
-## 12. Progress log (updated 2026-11-20)
+## 12. Progress log (updated 2026-11-21)
 
 ### Where everything is
 - **Project folder:** `Desktop\fishy-client`.
@@ -576,7 +580,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 
 **Found during the hand check:**
 - **Bendy and the Ink Machine** is in the library **twice** (same game, two Epic entries). One has no Windows download, so Epic answers `download_info_not_found`. The message used to say "format Fishy Client can't install yet"; it now says Epic offers no Windows download for that item and suggests trying the other entry.
-  - Planned next: during Library refresh, ask Epic which games have a Windows download (`/launcher/api/public/assets/Windows?label=Live`, as Legendary does), hide duplicates without one, and show "Not on Windows" instead of Install for the rest.
+  - **Fixed on 2026-11-21** (test-first): each Library refresh asks Epic which games have a Windows download, hides the Bendy twin without one, and shows "Not on Windows" instead of Install for any other game without one (rules in §6b). Tests: 4 new Rust tests in `library/build.rs`, 2 wiremock tests in `library/client.rs`, 1 UI test in `library.test.ts`.
+  - [ ] Hand check: Bendy shows once and installs.
 - **Resume goes back a little** (about 10% for Bad Cheese). The file that was half-written when you paused starts again from its beginning; every finished file is kept. Legendary does the same.
   - Possible later improvement: continue inside big half-written files.
 - **Speed in the test build** looks lower because `tauri dev` builds without optimizations, so unzipping and checking pieces is slower than in the real app.
@@ -599,8 +604,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 55 tests, plus 1 that writes to the real Credential Manager (run on purpose only).
-- **UI:** 64 tests.
+- **Rust core:** 135 tests, plus 1 that writes to the real Credential Manager (run on purpose only). (Counts as of 2026-11-21.)
+- **UI:** 87 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)

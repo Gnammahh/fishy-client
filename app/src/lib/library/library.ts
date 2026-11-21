@@ -8,6 +8,8 @@ export type Game = {
   catalog_item_id: string;
   title: string;
   cover_url: string | null;
+  /** False when Epic has no Windows download for it. */
+  installable: boolean;
 };
 
 export type CachedLibrary = { updated_at: string; games: Game[] };

@@ -31,6 +31,7 @@ const game = (title: string, cover: string | null = null): Game => ({
   catalog_item_id: title.toLowerCase().replace(/\W/g, "-"),
   title,
   cover_url: cover,
+  installable: true,
 });
 
 function mockCommands(handlers: Record<string, () => unknown>) {
@@ -146,6 +147,18 @@ describe("LibraryPage", () => {
     expect(screen.getByText("Kelp Runner")).toBeTruthy();
     installed.set([]);
     expect(await screen.findByText("No games installed yet.")).toBeTruthy();
+  });
+
+  it("games_without_a_windows_build_say_so_instead_of_install", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey"), { ...game("Mac Minnow"), installable: false }] }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Mac Minnow");
+    expect(screen.getByText("Not on Windows")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Install Mac Minnow" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Install Tidepool Odyssey" })).toBeTruthy();
   });
 
   it("install_button_opens_the_install_box", async () => {

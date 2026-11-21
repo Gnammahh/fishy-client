@@ -57,6 +57,13 @@ pub struct Game {
     pub catalog_item_id: String,
     pub title: String,
     pub cover_url: Option<String>,
+    /// False when Epic has no Windows download for it. Caches saved before this field count as true.
+    #[serde(default = "yes")]
+    pub installable: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Cheap checks before asking the catalog (same rules as Legendary, spec §6b).
@@ -75,7 +82,10 @@ pub fn pick_cover(images: &[KeyImage]) -> Option<String> {
 
 /// Turns library items + catalog info into the games to show, sorted A-Z.
 /// DLC and mods are dropped; items without catalog info are kept under their app name.
-pub fn build_library(items: &[LibraryItem], catalog: &HashMap<String, CatalogItem>) -> Vec<Game> {
+/// `windows_apps` is Epic's list of app names with a Windows build (None if it couldn't be fetched:
+/// then every game counts as installable). A non-Windows entry is hidden when the same namespace
+/// has an installable entry with the same title (e.g. Bendy is in some libraries twice).
+pub fn build_library(items: &[LibraryItem], catalog: &HashMap<String, CatalogItem>, windows_apps: Option<&HashSet<String>>) -> Vec<Game> {
     let mut seen = HashSet::new();
     let mut games: Vec<Game> = items
         .iter()
@@ -92,9 +102,13 @@ pub fn build_library(items: &[LibraryItem], catalog: &HashMap<String, CatalogIte
                 }
                 None => (app_name.clone(), None),
             };
-            Some(Game { app_name, namespace: i.namespace.clone(), catalog_item_id: i.catalog_item_id.clone(), title, cover_url })
+            let installable = windows_apps.is_none_or(|apps| apps.contains(&app_name));
+            Some(Game { app_name, namespace: i.namespace.clone(), catalog_item_id: i.catalog_item_id.clone(), title, cover_url, installable })
         })
         .collect();
+    let twins: HashSet<(String, String)> =
+        games.iter().filter(|g| g.installable).map(|g| (g.namespace.clone(), g.title.to_lowercase())).collect();
+    games.retain(|g| g.installable || !twins.contains(&(g.namespace.clone(), g.title.to_lowercase())));
     games.sort_by_key(|g| g.title.to_lowercase());
     games
 }
@@ -158,8 +172,53 @@ mod tests {
         catalog.insert("alpha".to_string(), info("alpha odyssey", &[], &["games"], false));
         catalog.insert("dlc".to_string(), info("Zeta Quest: Extra", &[], &["addons"], true));
         catalog.insert("mod".to_string(), info("A Mod", &[], &["mods"], false));
-        let titles: Vec<String> = build_library(&items, &catalog).into_iter().map(|g| g.title).collect();
+        let titles: Vec<String> = build_library(&items, &catalog, None).into_iter().map(|g| g.title).collect();
         assert_eq!(titles, vec!["alpha odyssey", "Zeta Quest"]);
+    }
+
+    fn apps(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn games_missing_from_the_windows_list_are_not_installable() {
+        let items = vec![item("n1", "a", Some("AppA"), None), item("n2", "b", Some("AppB"), None)];
+        let games = build_library(&items, &HashMap::new(), Some(&apps(&["AppA"])));
+        let flags: Vec<(&str, bool)> = games.iter().map(|g| (g.app_name.as_str(), g.installable)).collect();
+        assert_eq!(flags, vec![("AppA", true), ("AppB", false)]);
+    }
+
+    #[test]
+    fn without_a_windows_list_every_game_counts_as_installable() {
+        let items = vec![item("n1", "a", Some("AppA"), None)];
+        assert!(build_library(&items, &HashMap::new(), None)[0].installable);
+    }
+
+    #[test]
+    fn a_non_windows_twin_of_an_installable_game_is_hidden() {
+        // Like Bendy: same namespace and title twice, only one has a Windows build.
+        let items = vec![
+            item("bendy", "old", Some("BendyOld"), None),
+            item("bendy", "new", Some("BendyNew"), None),
+            item("other", "solo", Some("MacOnly"), None),
+        ];
+        let mut catalog = HashMap::new();
+        catalog.insert("old".to_string(), info("Bendy and the Ink Machine", &[], &["games"], false));
+        catalog.insert("new".to_string(), info("Bendy and the Ink Machine", &[], &["games"], false));
+        catalog.insert("solo".to_string(), info("Mac Only Game", &[], &["games"], false));
+        let games = build_library(&items, &catalog, Some(&apps(&["BendyNew"])));
+        let shown: Vec<(&str, bool)> = games.iter().map(|g| (g.app_name.as_str(), g.installable)).collect();
+        // The lone non-Windows game stays (shown as "Not on Windows"); the Bendy twin goes.
+        assert_eq!(shown, vec![("BendyNew", true), ("MacOnly", false)]);
+    }
+
+    #[test]
+    fn old_cached_games_without_the_flag_count_as_installable() {
+        let g: Game = serde_json::from_value(serde_json::json!({
+            "app_name": "A", "namespace": "n", "catalog_item_id": "a", "title": "A", "cover_url": null
+        }))
+        .unwrap();
+        assert!(g.installable);
     }
 
     #[test]
@@ -167,13 +226,13 @@ mod tests {
         let items = vec![item("n", "same", Some("A"), None), item("n", "same", Some("A"), None)];
         let mut catalog = HashMap::new();
         catalog.insert("same".to_string(), info("Same Game", &[], &[], false));
-        assert_eq!(build_library(&items, &catalog).len(), 1);
+        assert_eq!(build_library(&items, &catalog, None).len(), 1);
     }
 
     #[test]
     fn missing_catalog_info_keeps_the_game_with_its_app_name() {
         let items = vec![item("n", "x", Some("Fallback"), None)];
-        let games = build_library(&items, &HashMap::new());
+        let games = build_library(&items, &HashMap::new(), None);
         assert_eq!(
             games,
             vec![Game {
@@ -182,6 +241,7 @@ mod tests {
                 catalog_item_id: "x".into(),
                 title: "Fallback".into(),
                 cover_url: None,
+                installable: true,
             }]
         );
     }

@@ -905,19 +905,20 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Tests now:** Rust 228 (core 205 + app 23), UI 136. New: 22 core, 11 app, 31 UI.
 
 ### Still to check by hand (milestone 7, sub-project 1)
-- [ ] A log file appears in `%APPDATA%\FishyClient\logs`, and **Open logs folder** opens it
-- [ ] After signing in and refreshing, the log has no secrets: `Select-String -Path "$env:APPDATA\FishyClient\logs\*.log" -Pattern "eg1~|access_token=[^\[]"` finds nothing
-- [ ] **Limit download speed** visibly slows a download, and turning it off speeds it up again
-- [ ] A changed **Default install folder** is used by the Install box
-- [ ] **Reduce motion** stops the ocean and the sidebar fish
-- [ ] **Start with Windows** stays as set after restarting the app (and the app starts after signing out of Windows and back in)
+Checked by you on 2026-11-21 in the real app (the log and secret search were checked by script):
+- [x] A log file appears in `%APPDATA%\FishyClient\logs`, and **Open logs folder** opens it
+- [x] After signing in and refreshing, the log has no secrets: `Select-String -Path "$env:APPDATA\FishyClient\logs\*.log" -Pattern "eg1~|access_token=[^\[]"` finds nothing
+- [x] **Limit download speed** visibly slows a download, and turning it off speeds it up again
+- [x] A changed **Default install folder** is used by the Install box
+- [x] **Reduce motion** stops the ocean and the sidebar fish
+- [x] **Start with Windows** stays as set after restarting the app (and the app starts after signing out of Windows and back in)
 - [ ] **Delete all my data**, unticked: you're logged out, `%APPDATA%\FishyClient` is empty apart from today's empty log, `cmdkey /list | findstr /i fishy` prints nothing, and game folders still exist
-- [ ] The two left from milestone 6: the Play warning's tick box, and settings staying as set after a restart
+- [x] The two left from milestone 6: the Play warning's tick box, and settings staying as set after a restart
 
 ### Still to check by hand (milestone 6)
 - [x] A game shows **Update available**, and **Update** finishes and brings it back to "Installed". Checked on 2026-11-21 with Bendy marked as an older version (2.0.0-test); it went back to 2.1.0 with nothing left in `downloads\`. A real Epic patch is still to be seen.
-- [ ] Play on an outdated game shows the warning; the tick box stops it showing again
-- [ ] The Settings switches stay as set after restarting the app
+- [x] Play on an outdated game shows the warning; the tick box stops it showing again (2026-11-21)
+- [x] The Settings switches stay as set after restarting the app (2026-11-21)
 
 ### Still to check by hand (milestone 5)
 - [x] Launch a real game from Fishy Client, signed in as you: **Bendy and the Ink Machine** started on 2026-11-21

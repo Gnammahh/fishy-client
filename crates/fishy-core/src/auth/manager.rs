@@ -78,17 +78,27 @@ impl<S: SessionStore> AuthManager<S> {
     /// A usable access token for Epic API calls, refreshed first if it expires within
     /// 5 minutes. Not signed in → `Rejected { code: "signed_out" }`.
     pub async fn access_token(&self) -> Result<super::Secret, AuthError> {
+        Ok(self.session().await?.access_token)
+    }
+
+    /// Like `access_token`, but the whole session (Play also needs the account id and name).
+    pub async fn session(&self) -> Result<Session, AuthError> {
         let _turn = self.one_at_a_time.lock().await;
         let session = match self.store.load() {
             Ok(Some(s)) => s,
             _ => return Err(AuthError::Rejected { code: "signed_out".into() }),
         };
         if session.expires_at - (self.now)() > Duration::minutes(REFRESH_MARGIN_MINUTES) {
-            return Ok(session.access_token);
+            return Ok(session);
         }
         let fresh = self.client.refresh(&session.refresh_token).await?;
         let _ = self.store.save(&fresh);
-        Ok(fresh.access_token)
+        Ok(fresh)
+    }
+
+    /// (display name, account id) of the saved sign-in, without asking Epic. For offline play.
+    pub fn saved_identity(&self) -> Option<(String, String)> {
+        self.store.load().ok().flatten().map(|s| (s.display_name, s.account_id))
     }
 
     /// Trade the authorization code from the login window for a saved session.
@@ -313,5 +323,21 @@ mod tests {
     async fn access_token_without_session_is_rejected() {
         let m = manager("http://127.0.0.1:9", MemoryStore::default());
         assert!(matches!(m.access_token().await, Err(AuthError::Rejected { .. })));
+    }
+
+    #[tokio::test]
+    async fn session_returns_a_fresh_session_with_who_is_signed_in() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(fresh_token_json())).expect(1).mount(&server).await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(1), Duration::days(20))));
+        let s = m.session().await.unwrap();
+        assert_eq!((s.access_token.expose(), s.account_id.as_str(), s.display_name.as_str()), ("eg1~NEW", "acc123", "FishFan"));
+    }
+
+    #[tokio::test]
+    async fn saved_identity_works_offline_and_is_none_when_signed_out() {
+        let m = manager("http://127.0.0.1:9", MemoryStore::with(session(Duration::minutes(1), Duration::days(20))));
+        assert_eq!(m.saved_identity(), Some(("FishFan".to_string(), "acc123".to_string())));
+        assert_eq!(manager("http://127.0.0.1:9", MemoryStore::default()).saved_identity(), None);
     }
 }

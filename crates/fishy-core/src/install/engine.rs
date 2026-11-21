@@ -137,7 +137,7 @@ async fn rebuild_from_downloads(
     let mut hasher = Sha1::new();
     let mut fetched: HashMap<Guid, Vec<u8>> = HashMap::new();
     for part in &entry.parts {
-        if !fetched.contains_key(&part.guid) {
+        if let std::collections::hash_map::Entry::Vacant(slot) = fetched.entry(part.guid) {
             let info = manifest.chunk(&part.guid).ok_or_else(|| InstallError::BadManifest("unknown chunk".into()))?;
             let data = tokio::select! {
                 biased;
@@ -145,7 +145,7 @@ async fn rebuild_from_downloads(
                 d = client.download_chunk(base, dir, info) => d?,
             };
             on_bytes(info.file_size);
-            fetched.insert(part.guid, data);
+            slot.insert(data);
         }
         let data = &fetched[&part.guid];
         let slice = data

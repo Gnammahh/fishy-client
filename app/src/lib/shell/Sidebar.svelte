@@ -87,16 +87,16 @@
       transform: translate(90px, calc(-100vh - 96px)) rotate(-35deg);
     }
   }
+  /* Reduced motion: each fish stops where it is. Their different start points (the negative
+     delays) keep them scattered up the column instead of lined up in one row. */
   @media (prefers-reduced-motion: reduce) {
     .drifter {
-      animation: none;
-      transform: translate(0, -40vh) rotate(-35deg);
+      animation-play-state: paused;
     }
   }
   /* The Reduce motion setting (spec §6f.1). */
   :global(html[data-reduce-motion]) .drifter {
-    animation: none;
-    transform: translate(0, -40vh) rotate(-35deg);
+    animation-play-state: paused;
   }
   .brand {
     display: flex;

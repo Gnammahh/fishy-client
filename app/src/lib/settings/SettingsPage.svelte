@@ -1,7 +1,31 @@
 <script lang="ts">
   import { settings, saveSettings, type Settings } from "./settings";
+  import { openLogsFolder } from "./data";
+  import { signOut } from "$lib/auth/auth";
+  import { installed } from "$lib/install/installs";
+  import PixelButton from "$lib/ui/PixelButton.svelte";
+  import DeleteDataBox from "./DeleteDataBox.svelte";
+
+  let { account }: { account?: { display_name: string; account_id?: string } } = $props();
 
   let error = $state("");
+  let accountError = $state("");
+  let busy = $state(false);
+  let deleting = $state(false);
+
+  async function logOut() {
+    busy = true;
+    accountError = "";
+    try {
+      if (!(await signOut())) accountError = "Couldn't log out. Please try again.";
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function openLogs() {
+    accountError = (await openLogsFolder()) ?? "";
+  }
 
   async function toggle(key: keyof Settings, e: Event) {
     const box = e.currentTarget as HTMLInputElement;
@@ -45,7 +69,30 @@
   </label>
 
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+  <h3>Account</h3>
+  {#if account}
+    <dl>
+      <dt>Epic display name</dt>
+      <dd>{account.display_name}</dd>
+      {#if account.account_id}
+        <dt>Account ID</dt>
+        <dd class="mono">{account.account_id}</dd>
+      {/if}
+    </dl>
+  {/if}
+  <p class="hint">Logging out ends this session at Epic and removes it from this PC.</p>
+  <div class="buttons">
+    <PixelButton variant="ghost" disabled={busy} onclick={logOut}>Log out</PixelButton>
+    <PixelButton variant="ghost" onclick={openLogs}>Open logs folder</PixelButton>
+    <PixelButton variant="danger" onclick={() => (deleting = true)}>Delete all my data…</PixelButton>
+  </div>
+  {#if accountError}<p class="error" role="alert">{accountError}</p>{/if}
 </section>
+
+{#if deleting}
+  <DeleteDataBox games={$installed} onclose={() => (deleting = false)} />
+{/if}
 
 <style>
   .settings {
@@ -94,5 +141,29 @@
   }
   .error {
     color: var(--error);
+  }
+  p {
+    margin: 0;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 18px;
+    margin: 0;
+  }
+  dt {
+    color: var(--text-2);
+  }
+  dd {
+    margin: 0;
+  }
+  .mono {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 13px;
+  }
+  .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 </style>

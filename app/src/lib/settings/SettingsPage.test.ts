@@ -42,4 +42,39 @@ describe("SettingsPage", () => {
     expect(await screen.findByText("Couldn't save your settings.")).toBeTruthy();
     expect(auto.checked).toBe(false);
   });
+
+  it("account_section_has_log_out_logs_and_delete", async () => {
+    const seen: string[] = [];
+    mockIPC((cmd) => {
+      seen.push(cmd);
+      if (cmd === "logout") return { kind: "SignedOut" };
+      return null;
+    });
+    render(SettingsPage, { account: { display_name: "FishFan", account_id: "acc123" } });
+    expect(screen.getByRole("heading", { name: "Account" })).toBeTruthy();
+    expect(screen.getByText("FishFan")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open logs folder" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete all my data…" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    await waitFor(() => expect(seen).toContain("logout"));
+  });
+
+  it("open_logs_failure_shows_the_message", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "open_logs_folder") throw "Couldn't open the logs folder. It's at %APPDATA%\\FishyClient\\logs.";
+      return null;
+    });
+    render(SettingsPage, { account: { display_name: "FishFan" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Open logs folder" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Couldn't open the logs folder. It's at %APPDATA%\\FishyClient\\logs.");
+  });
+
+  it("delete_all_my_data_opens_the_box", async () => {
+    mockIPC(() => null);
+    render(SettingsPage, { account: { display_name: "FishFan" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Delete all my data…" }));
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
 });

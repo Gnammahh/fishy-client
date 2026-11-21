@@ -3,7 +3,7 @@
   import PixelSprite from "$lib/pixel/PixelSprite.svelte";
   import { FISH_MOUTH_CLOSED } from "$lib/pixel/sprites";
 
-  export type Page = "library" | "downloads" | "settings" | "account";
+  export type Page = "library" | "downloads" | "settings";
 
   let { page, onselect }: { page: Page; onselect: (p: Page) => void } = $props();
 
@@ -11,7 +11,6 @@
     { id: "library", label: "Library" },
     { id: "downloads", label: "Downloads" },
     { id: "settings", label: "Settings" },
-    { id: "account", label: "Account" },
   ];
 
   // A faint school of gray fish drifting up and to the right behind the menu.

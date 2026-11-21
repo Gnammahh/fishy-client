@@ -15,4 +15,10 @@ describe("Sidebar", () => {
     expect(school!.innerHTML).toContain("#7A8A99");
     expect(school!.innerHTML).not.toContain("#4FE3D1");
   });
+
+  it("has_no_account_page_any_more", () => {
+    const { getByRole, queryByRole } = render(Sidebar, { page: "library", onselect: () => {} });
+    expect(getByRole("button", { name: "Settings" })).toBeTruthy();
+    expect(queryByRole("button", { name: "Account" })).toBeNull();
+  });
 });

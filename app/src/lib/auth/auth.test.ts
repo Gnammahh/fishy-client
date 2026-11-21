@@ -93,7 +93,7 @@ describe("AppShell", () => {
   it("account_log_out_calls_logout", async () => {
     const calls = mockCommands({ logout: () => ({ kind: "SignedOut" }) });
     render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => expect(calls).toContain("logout"));
     let current: unknown;
@@ -111,7 +111,7 @@ describe("AppShell", () => {
       games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null, installable: true }],
     });
     render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     await waitFor(() => {
       let games: unknown[] = [1];
@@ -136,7 +136,7 @@ describe("AppShell", () => {
     });
     authState.set({ kind: "SignedIn", display_name: "FishFan", account_id: "acc123" });
     render(AppShell, { state: { kind: "SignedIn", display_name: "FishFan", account_id: "acc123" } });
-    await fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await fireEvent.click(screen.getByRole("button", { name: "Log out" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't log out. Please try again.");
     let current: unknown;

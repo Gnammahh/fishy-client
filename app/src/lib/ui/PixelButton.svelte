@@ -8,7 +8,7 @@
     onclick = undefined,
     children,
   }: {
-    variant?: "primary" | "ghost" | "play";
+    variant?: "primary" | "ghost" | "play" | "danger";
     type?: "button" | "submit";
     disabled?: boolean;
     onclick?: (e: MouseEvent) => void;
@@ -53,6 +53,12 @@
   }
   .play {
     background: var(--success);
+  }
+  /* Outlined in the error red: for actions that delete things. */
+  .danger {
+    background: transparent;
+    color: var(--error);
+    box-shadow: inset 0 0 0 2px var(--error);
   }
   .pixel-btn:disabled {
     opacity: 0.4;

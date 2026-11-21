@@ -7,7 +7,7 @@
   import { loadSettings } from "$lib/settings/settings";
   import { initInstalls } from "$lib/install/installs";
   import { onMount } from "svelte";
-  import { signOut, retry, type AuthState } from "$lib/auth/auth";
+  import { retry, type AuthState } from "$lib/auth/auth";
 
   // `state` is the prop name; renamed locally so it can't clash with the $state rune.
   let { state: auth }: { state: Exclude<AuthState, { kind: "SignedOut" }> } = $props();
@@ -25,19 +25,7 @@
       stop?.();
     };
   });
-  let busy = $state(false);
   let checking = $state(false);
-  let logoutError = $state("");
-
-  async function logOut() {
-    busy = true;
-    logoutError = "";
-    try {
-      if (!(await signOut())) logoutError = "Couldn't log out. Please try again.";
-    } finally {
-      busy = false;
-    }
-  }
 
   async function tryAgain() {
     checking = true;
@@ -63,21 +51,8 @@
       <LibraryPage name={auth.display_name} offline={auth.kind === "Offline"} />
     {:else if page === "downloads"}
       <DownloadsPage />
-    {:else if page === "settings"}
-      <SettingsPage />
     {:else}
-      <h2>Account</h2>
-      <dl>
-        <dt>Epic display name</dt>
-        <dd>{auth.display_name}</dd>
-        {#if auth.kind === "SignedIn"}
-          <dt>Account ID</dt>
-          <dd class="mono">{auth.account_id}</dd>
-        {/if}
-      </dl>
-      <p class="note">Logging out ends this session at Epic and removes it from this PC.</p>
-      <PixelButton variant="ghost" disabled={busy} onclick={logOut}>Log out</PixelButton>
-      {#if logoutError}<p class="error" role="alert">{logoutError}</p>{/if}
+      <SettingsPage account={{ display_name: auth.display_name, account_id: auth.kind === "SignedIn" ? auth.account_id : undefined }} />
     {/if}
   </main>
 </div>
@@ -96,17 +71,6 @@
     gap: 14px;
     min-width: 0;
   }
-  h2 {
-    font-family: var(--font-pixel);
-    font-weight: 600;
-    font-size: 28px;
-    margin: 0;
-  }
-  p {
-    margin: 0;
-    max-width: 62ch;
-    color: var(--text);
-  }
   .banner {
     display: flex;
     flex-wrap: wrap;
@@ -117,28 +81,5 @@
     background: rgba(11, 15, 20, 0.9);
     color: var(--orange);
     align-self: stretch;
-  }
-  dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 6px 18px;
-    margin: 0;
-  }
-  dt {
-    color: var(--text-2);
-  }
-  dd {
-    margin: 0;
-  }
-  .mono {
-    font-family: ui-monospace, Consolas, monospace;
-    font-size: 13px;
-  }
-  .error {
-    color: var(--error);
-  }
-  .note {
-    color: var(--text-2);
-    font-size: 14px;
   }
 </style>

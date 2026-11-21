@@ -1,6 +1,7 @@
 use super::Game;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// What's saved on disk: the game list only, never tokens.
@@ -8,6 +9,9 @@ use std::path::{Path, PathBuf};
 pub struct CachedLibrary {
     pub updated_at: DateTime<Utc>,
     pub games: Vec<Game>,
+    /// Epic's newest build version per app name (spec §6e). Missing in caches from before updates.
+    #[serde(default)]
+    pub latest_versions: HashMap<String, String>,
 }
 
 /// `%APPDATA%\FishyClient\library.json` (spec §6b). Deleted on Log out.
@@ -75,7 +79,16 @@ mod tests {
                 cover_url: Some("https://cdn/a.jpg".into()),
                 launch: Default::default(),
             }],
+            latest_versions: HashMap::from([("A".to_string(), "2".to_string())]),
         }
+    }
+
+    #[test]
+    fn old_cache_without_versions_loads() {
+        let c = temp_cache("oldversions");
+        std::fs::create_dir_all(c.path().parent().unwrap()).unwrap();
+        std::fs::write(c.path(), r#"{"updated_at":"2026-11-20T20:00:00Z","games":[]}"#).unwrap();
+        assert!(c.load().unwrap().latest_versions.is_empty());
     }
 
     #[test]

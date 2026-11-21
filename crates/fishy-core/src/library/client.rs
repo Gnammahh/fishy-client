@@ -12,6 +12,13 @@ pub const LAUNCHER_HOST: &str = crate::install::client::LAUNCHER_HOST;
 /// How many catalog lookups run at the same time.
 const PARALLEL_LOOKUPS: usize = 8;
 
+/// A fresh library: the games plus Epic's newest version of each (for update checks, spec §6e).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LibraryData {
+    pub games: Vec<Game>,
+    pub latest_versions: HashMap<String, String>,
+}
+
 /// Reads the user's library and game info from Epic.
 #[derive(Clone)]
 pub struct LibraryClient {
@@ -42,8 +49,9 @@ impl LibraryClient {
         }
     }
 
-    /// App names that have a Windows build (Epic's asset list, like Legendary's `get_game_assets`).
-    pub async fn windows_apps(&self, token: &Secret) -> Result<HashSet<String>, AuthError> {
+    /// App names that have a Windows build, with their newest build version ("" if Epic gives none)
+    /// (Epic's asset list, like Legendary's `get_game_assets`).
+    pub async fn windows_assets(&self, token: &Secret) -> Result<HashMap<String, String>, AuthError> {
         let res = self
             .http
             .get(format!("{}/launcher/api/public/assets/Windows", self.launcher_base))
@@ -54,7 +62,14 @@ impl LibraryClient {
             .map_err(network)?;
         let json = read_json(res).await?;
         let assets = json.as_array().ok_or_else(|| AuthError::Unexpected("asset list is not a list".into()))?;
-        Ok(assets.iter().filter_map(|a| a.get("appName")?.as_str()).map(str::to_string).collect())
+        Ok(assets
+            .iter()
+            .filter_map(|a| {
+                let name = a.get("appName")?.as_str()?.to_string();
+                let version = a.get("buildVersion").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                Some((name, version))
+            })
+            .collect())
     }
 
     /// Every library record, following `nextCursor` page by page.
@@ -107,9 +122,10 @@ impl LibraryClient {
 
     /// The whole Library: items, then game info (8 at a time). A failed lookup keeps the game,
     /// and a failed Windows list leaves every game installable (the Install box still explains).
-    pub async fn fetch_library(&self, token: &Secret) -> Result<Vec<Game>, AuthError> {
+    pub async fn fetch_library(&self, token: &Secret) -> Result<LibraryData, AuthError> {
         let items = self.items(token).await?;
-        let windows_apps = self.windows_apps(token).await.ok();
+        let assets = self.windows_assets(token).await.ok();
+        let windows_apps: Option<HashSet<String>> = assets.as_ref().map(|a| a.keys().cloned().collect());
         // Each lookup owns its data (client, token, ids) so the future is Send + 'static,
         // which Tauri's async commands require.
         let wanted: Vec<(String, String)> = items
@@ -129,7 +145,9 @@ impl LibraryClient {
             .collect();
         let results: Vec<(String, Option<CatalogItem>)> = stream::iter(lookups).buffer_unordered(PARALLEL_LOOKUPS).collect().await;
         let catalog: HashMap<String, CatalogItem> = results.into_iter().filter_map(|(id, info)| info.map(|i| (id, i))).collect();
-        Ok(build_library(&items, &catalog, windows_apps.as_ref()))
+        let games = build_library(&items, &catalog, windows_apps.as_ref());
+        let latest_versions = assets.unwrap_or_default().into_iter().filter(|(_, v)| !v.is_empty()).collect();
+        Ok(LibraryData { games, latest_versions })
     }
 }
 
@@ -208,7 +226,7 @@ mod tests {
             .mount(&server)
             .await;
         let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
-        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap();
+        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         assert_eq!(games.len(), 2);
         assert_eq!(games[0].title, "AppB"); // fallback title, sorted A-Z
         assert_eq!(games[1].title, "Tidepool Odyssey");
@@ -240,9 +258,35 @@ mod tests {
             .mount(&server)
             .await;
         let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
-        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap();
+        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         let flags: Vec<(&str, bool)> = games.iter().map(|g| (g.app_name.as_str(), g.installable)).collect();
         assert_eq!(flags, vec![("AppA", true), ("AppB", false)]);
+    }
+
+    #[tokio::test]
+    async fn fetch_library_returns_latest_versions() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/library/api/public/items"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "records": [{"namespace": "n1", "catalogItemId": "a", "appName": "AppA"}],
+                "responseMetadata": {}
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/launcher/api/public/assets/Windows"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"appName": "AppA", "buildVersion": "2.0-CL9"},
+                {"appName": "NoVersion"}
+            ])))
+            .mount(&server)
+            .await;
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let data = c.fetch_library(&Secret::new("eg1~A")).await.unwrap();
+        assert_eq!(data.latest_versions.get("AppA").map(String::as_str), Some("2.0-CL9"));
+        assert!(!data.latest_versions.contains_key("NoVersion"));
+        assert!(data.games[0].installable);
     }
 
     #[tokio::test]
@@ -262,7 +306,7 @@ mod tests {
             .mount(&server)
             .await;
         let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
-        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap();
+        let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         assert!(games[0].installable);
     }
 

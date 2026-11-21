@@ -201,6 +201,7 @@ async fn install_start(
         download_size: p.manifest.chunks.iter().map(|c| c.file_size).sum(),
         install_size,
         base_urls: p.info.base_urls.clone(),
+        update_from: None,
     };
     downloads
         .store

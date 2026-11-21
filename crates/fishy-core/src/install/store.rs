@@ -21,6 +21,9 @@ pub struct JobInfo {
     pub download_size: u64,
     pub install_size: u64,
     pub base_urls: Vec<String>,
+    /// The installed version an update started from (spec §6e). None: a normal install.
+    #[serde(default)]
+    pub update_from: Option<String>,
 }
 
 /// One entry of `installed.json`.
@@ -168,6 +171,8 @@ impl InstallStore {
     pub fn finish_install(&self, job: &JobInfo, m: &Manifest) -> io::Result<InstalledGame> {
         let saved = self.saved_manifest(&job.app_name)?;
         write_atomic(&saved, &self.job_manifest(&job.app_name)?)?;
+        // An update keeps the original install date.
+        let installed_at = self.installed().into_iter().find(|g| g.app_name == job.app_name).map(|g| g.installed_at).unwrap_or_else(Utc::now);
         let game = InstalledGame {
             app_name: job.app_name.clone(),
             title: job.title.clone(),
@@ -176,7 +181,7 @@ impl InstallStore {
             executable: m.meta.launch_exe.clone(),
             launch_parameters: m.meta.launch_command.clone(),
             install_size: m.install_size(),
-            installed_at: Utc::now(),
+            installed_at,
         };
         let mut games: Vec<InstalledGame> = self.installed().into_iter().filter(|g| g.app_name != job.app_name).collect();
         games.push(game.clone());
@@ -214,6 +219,7 @@ mod tests {
             download_size: 900,
             install_size: 1224,
             base_urls: vec!["https://cdn/x".into()],
+            update_from: None,
         }
     }
 
@@ -275,6 +281,31 @@ mod tests {
         assert_eq!(store.installed_manifest("Tide").unwrap(), bytes);
         assert!(store.pending_jobs().is_empty());
         assert!(!dir.path().join("data/downloads/Tide").exists());
+    }
+
+    #[test]
+    fn old_job_json_without_update_from_loads() {
+        let j: JobInfo = serde_json::from_value(serde_json::json!({
+            "app_name": "Tide", "title": "T", "namespace": "ns", "catalog_item_id": "c",
+            "install_path": "C:/Games/T", "download_size": 1, "install_size": 1, "base_urls": []
+        }))
+        .unwrap();
+        assert_eq!(j.update_from, None);
+    }
+
+    #[test]
+    fn finish_install_keeps_the_install_date_on_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let j = job(&dir.path().join("game"));
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        let first = store.finish_install(&j, &sample()).unwrap();
+        let update = JobInfo { update_from: Some("1.0.0-CL1".into()), ..j.clone() };
+        store.save_job(&update, &build_binary(&sample(), true)).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let second = store.finish_install(&update, &sample()).unwrap();
+        assert_eq!(second.installed_at, first.installed_at);
+        assert_eq!(store.installed().len(), 1);
     }
 
     #[test]

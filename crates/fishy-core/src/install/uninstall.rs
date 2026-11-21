@@ -9,11 +9,17 @@ use std::path::{Path, PathBuf};
 /// Deletes the manifest's files under `root` and the folders left empty. False if a file that
 /// exists couldn't be deleted (for example, the game is running).
 pub fn delete_manifest_files(root: &Path, m: &Manifest) -> bool {
+    delete_named_files(root, m.files.iter().map(|f| f.filename.as_str()), true)
+}
+
+/// Deletes the named files under `root`, then the folders left empty (and `root` itself if
+/// `remove_root` and it's empty). False if a file that exists couldn't be deleted.
+pub fn delete_named_files<'a>(root: &Path, names: impl IntoIterator<Item = &'a str>, remove_root: bool) -> bool {
     let mut ok = true;
     let mut dirs: BTreeSet<PathBuf> = BTreeSet::new();
-    for f in &m.files {
+    for name in names {
         // Names that would escape the folder were never written, so there's nothing to delete.
-        let Ok(path) = file_path(root, &f.filename) else { continue };
+        let Ok(path) = file_path(root, name) else { continue };
         let mut dir = path.parent();
         while let Some(d) = dir.filter(|d| d.starts_with(root) && *d != root) {
             dirs.insert(d.to_path_buf());
@@ -27,7 +33,7 @@ pub fn delete_manifest_files(root: &Path, m: &Manifest) -> bool {
     // Deepest first; remove_dir only removes empty folders, so the user's own files keep theirs.
     let mut dirs: Vec<PathBuf> = dirs.into_iter().collect();
     dirs.sort_by_key(|d| std::cmp::Reverse(d.components().count()));
-    for d in dirs.iter().map(PathBuf::as_path).chain([root]) {
+    for d in dirs.iter().map(PathBuf::as_path).chain(remove_root.then_some(root)) {
         let _ = std::fs::remove_dir(d);
     }
     ok
@@ -37,11 +43,17 @@ pub fn uninstall(store: &InstallStore, app: &str) -> Result<(), InstallError> {
     let game = store.installed().into_iter().find(|g| g.app_name == app).ok_or(InstallError::NotInstalled)?;
     let io_err = |e: std::io::Error| InstallError::Io { folder: game.install_path.display().to_string(), detail: e.to_string() };
     // No saved manifest (damaged data folder): forget the record; the files stay for the user to delete.
-    if let Some(manifest) = store.installed_manifest(app).ok().and_then(|b| parse_manifest(&b).ok()) {
-        if !delete_manifest_files(&game.install_path, &manifest) {
-            return Err(InstallError::InUse);
-        }
+    // A paused update may already have written files only the new version lists (spec §6e).
+    let manifests = [store.installed_manifest(app), store.job_manifest(app)];
+    let names: Vec<String> = manifests
+        .iter()
+        .filter_map(|b| b.as_ref().ok().and_then(|b| parse_manifest(b).ok()))
+        .flat_map(|m| m.files.into_iter().map(|f| f.filename))
+        .collect();
+    if !delete_named_files(&game.install_path, names.iter().map(String::as_str), true) {
+        return Err(InstallError::InUse);
     }
+    store.remove_job(app).map_err(io_err)?;
     store.forget_installed(app).map_err(io_err)
 }
 
@@ -83,6 +95,7 @@ mod tests {
             download_size: 1,
             install_size: 1,
             base_urls: vec![],
+            update_from: None,
         };
         write_files(&root);
         store.save_job(&job, &build_binary(&sample(), true)).unwrap();
@@ -124,6 +137,25 @@ mod tests {
         assert!(root(&e).join("Binaries").join("mod.dll").exists());
         assert!(!root(&e).join("Binaries").join("Tidepool.exe").exists());
         assert!(!root(&e).join("readme.txt").exists());
+    }
+
+    #[test]
+    fn uninstall_with_a_paused_update_deletes_files_from_both_manifests() {
+        use crate::install::manifest::{FileEntry, Manifest};
+        let e = installed();
+        e.store.finish_install(&e.job, &sample()).unwrap();
+        // A paused update whose new version adds one more file, already written.
+        let mut files = sample().files.clone();
+        files.push(FileEntry { filename: "Content/New.pak".into(), sha1: [0; 20], executable: false, parts: vec![] });
+        let s = sample();
+        let newer = Manifest::new(s.meta.clone(), s.chunks.clone(), files);
+        let update = JobInfo { update_from: Some("1.0.0-CL1".into()), ..e.job.clone() };
+        e.store.save_job(&update, &build_binary(&newer, true)).unwrap();
+        std::fs::create_dir_all(root(&e).join("Content")).unwrap();
+        std::fs::write(root(&e).join("Content").join("New.pak"), b"new").unwrap();
+        uninstall(&e.store, "Tide").unwrap();
+        assert!(!root(&e).exists(), "both versions' files are gone");
+        assert!(e.store.pending_jobs().is_empty(), "the paused update is gone too");
     }
 
     #[test]

@@ -93,6 +93,11 @@
       transform: translate(0, -40vh) rotate(-35deg);
     }
   }
+  /* The Reduce motion setting (spec §6f.1). */
+  :global(html[data-reduce-motion]) .drifter {
+    animation: none;
+    transform: translate(0, -40vh) rotate(-35deg);
+  }
   .brand {
     display: flex;
     align-items: center;

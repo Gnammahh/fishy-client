@@ -60,4 +60,23 @@ describe("reducedMotion", () => {
     expect(values.at(-1)).toBe(false);
     unsub();
   });
+
+  it("the_html_attribute_follows_reduced_motion_so_css_animations_stop_too", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: (_: string, fn: Listener) => (listener = fn),
+      removeEventListener: () => (listener = null),
+    })) as unknown as typeof window.matchMedia;
+    const { syncMotionAttribute } = await import("./motion");
+    const { settings, DEFAULT_SETTINGS } = await import("./settings/settings");
+    const html = document.documentElement;
+    const stop = syncMotionAttribute(html);
+    expect(html.hasAttribute("data-reduce-motion")).toBe(false);
+    settings.set({ ...DEFAULT_SETTINGS, reduce_motion: true });
+    expect(html.hasAttribute("data-reduce-motion")).toBe(true);
+    settings.set({ ...DEFAULT_SETTINGS, reduce_motion: false });
+    expect(html.hasAttribute("data-reduce-motion")).toBe(false);
+    stop();
+  });
 });

@@ -1,9 +1,13 @@
 <script lang="ts">
   import "$lib/theme.css";
   import OceanBackground from "$lib/ocean/OceanBackground.svelte";
-  import type { Snippet } from "svelte";
+  import { onMount, type Snippet } from "svelte";
+  import { syncMotionAttribute } from "$lib/motion";
 
   let { children }: { children: Snippet } = $props();
+
+  // CSS-only animations (ocean, sidebar fish) follow the Reduce motion setting through this attribute.
+  onMount(() => syncMotionAttribute());
 </script>
 
 <OceanBackground />

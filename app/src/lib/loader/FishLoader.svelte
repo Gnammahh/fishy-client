@@ -185,4 +185,7 @@
       transition: none;
     }
   }
+  :global(html[data-reduce-motion]) canvas {
+    transition: none;
+  }
 </style>

@@ -75,4 +75,8 @@
       animation: none !important;
     }
   }
+  /* The Reduce motion setting (spec §6f.1). */
+  :global(html[data-reduce-motion]) .layer {
+    animation: none !important;
+  }
 </style>

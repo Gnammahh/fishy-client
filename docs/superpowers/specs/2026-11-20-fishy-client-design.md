@@ -787,7 +787,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Tests now:** Rust 195 (core 183 + app 12), UI 102. New: 19 core, 5 app, 10 UI.
 
 ### Still to check by hand (milestone 6)
-- [ ] A game shows **Update available**, and **Update** finishes and brings it back to "Installed"
+- [x] A game shows **Update available**, and **Update** finishes and brings it back to "Installed". Checked on 2026-11-21 with Bendy marked as an older version (2.0.0-test); it went back to 2.1.0 with nothing left in `downloads\`. A real Epic patch is still to be seen.
 - [ ] Play on an outdated game shows the warning; the tick box stops it showing again
 - [ ] The Settings switches stay as set after restarting the app
 

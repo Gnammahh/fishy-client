@@ -2,9 +2,23 @@ import { invoke } from "@tauri-apps/api/core";
 import { get, writable } from "svelte/store";
 
 /** Mirrors fishy-core `Settings` (spec §6e). */
-export type Settings = { auto_update: boolean; warn_outdated_play: boolean };
+export type Settings = {
+  auto_update: boolean;
+  warn_outdated_play: boolean;
+  /** Where the Install box starts; null means %USERPROFILE%\Games. */
+  install_folder: string | null;
+  /** MB/s, 1 to 1000; null means no limit. */
+  speed_limit_mbps: number | null;
+  reduce_motion: boolean;
+};
 
-export const DEFAULT_SETTINGS: Settings = { auto_update: false, warn_outdated_play: true };
+export const DEFAULT_SETTINGS: Settings = {
+  auto_update: false,
+  warn_outdated_play: true,
+  install_folder: null,
+  speed_limit_mbps: null,
+  reduce_motion: false,
+};
 const SAVE_ERROR = "Couldn't save your settings.";
 
 export const settings = writable<Settings>({ ...DEFAULT_SETTINGS });

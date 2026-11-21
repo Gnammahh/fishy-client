@@ -8,7 +8,7 @@ use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, Keyr
 use downloads::{Downloads, DownloadsView};
 use fishy_core::install::client::{InstallClient, ManifestInfo};
 use fishy_core::install::manifest::{parse_manifest, Manifest};
-use fishy_core::install::space::{check_space, default_install_root, folder_for, free_space};
+use fishy_core::install::space::{check_space, folder_for, free_space, install_root};
 use fishy_core::install::store::{InstallStore, InstalledGame, JobInfo};
 use fishy_core::install::uninstall::uninstall;
 use fishy_core::install::InstallError;
@@ -155,6 +155,7 @@ struct InstallOptions {
     free_space: u64,
     enough_space: bool,
     error: Option<String>,
+    note: Option<String>,
 }
 
 async fn prepare(game: &Game, auth: &AppAuth, library: &AppLibrary, install: &AppInstall) -> Result<Prepared, InstallError> {
@@ -172,9 +173,18 @@ async fn prepare(game: &Game, auth: &AppAuth, library: &AppLibrary, install: &Ap
     Ok(p)
 }
 
-fn install_path(game: &Game, parent: Option<String>, p: &Prepared) -> PathBuf {
-    let root = parent.filter(|s| !s.trim().is_empty()).map(PathBuf::from).unwrap_or_else(default_install_root);
-    folder_for(&root, p.folder.as_deref(), &game.title)
+/// The parent picked in the Install box, else the saved default folder (spec §6f.1). The note
+/// is set when the saved default couldn't be used.
+fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &updates::AppSettings) -> (PathBuf, Option<String>) {
+    let (root, note) = match parent.filter(|s| !s.trim().is_empty()) {
+        Some(picked) => (PathBuf::from(picked), None),
+        None => {
+            let (root, unavailable) = install_root(settings.store.load().install_folder.as_deref());
+            let note = unavailable.then(|| data::unavailable_folder_note(&root));
+            (root, note)
+        }
+    };
+    (folder_for(&root, p.folder.as_deref(), &game.title), note)
 }
 
 /// Everything the Install box shows: folder, sizes and free space.
@@ -185,9 +195,10 @@ async fn install_options(
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
+    settings: tauri::State<'_, updates::AppSettings>,
 ) -> Result<InstallOptions, String> {
     let p = prepare(&game, &auth, &library, &install).await.map_err(|e| e.user_message())?;
-    let path = install_path(&game, parent, &p);
+    let (path, note) = install_path(&game, parent, &p, &settings);
     let install_size = p.manifest.install_size();
     let free = free_space(&path).unwrap_or(0);
     let space = check_space(&path, install_size, free);
@@ -198,6 +209,7 @@ async fn install_options(
         free_space: free,
         enough_space: space.is_ok(),
         error: space.err().map(|e| e.user_message()),
+        note,
     })
 }
 
@@ -209,6 +221,7 @@ async fn install_start(
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
+    settings: tauri::State<'_, updates::AppSettings>,
 ) -> Result<DownloadsView, String> {
     let downloads = &install.downloads;
     if downloads.has_job(&game.app_name) || downloads.store.installed().iter().any(|g| g.app_name == game.app_name) {
@@ -220,7 +233,7 @@ async fn install_start(
         m
     };
     let p = prepare(&game, &auth, &library, &install).await.map_err(refused)?;
-    let path = install_path(&game, parent, &p);
+    let (path, _) = install_path(&game, parent, &p, &settings);
     let install_size = p.manifest.install_size();
     check_space(&path, install_size, free_space(&path).unwrap_or(0)).map_err(refused)?;
     let job = JobInfo {

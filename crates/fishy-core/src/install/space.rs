@@ -9,6 +9,18 @@ pub fn default_install_root() -> PathBuf {
     home.join("Games")
 }
 
+/// The folder new games go into: the saved default if its drive is there, else the built-in one.
+/// The bool is true when a saved folder couldn't be used (the Install box says so).
+pub fn install_root(saved: Option<&str>) -> (PathBuf, bool) {
+    let Some(saved) = saved.map(str::trim).filter(|s| !s.is_empty()) else {
+        return (default_install_root(), false);
+    };
+    let path = PathBuf::from(saved);
+    // A missing folder is fine (the install creates it); a missing drive is not.
+    let drive_there = path.is_absolute() && path.ancestors().last().is_some_and(Path::exists);
+    if drive_there { (path, false) } else { (default_install_root(), true) }
+}
+
 /// `root\<folder>`: Epic's FolderName if it has one, else the title, minus characters Windows forbids.
 pub fn folder_for(root: &Path, folder_name: Option<&str>, title: &str) -> PathBuf {
     let clean = |s: &str| -> String {
@@ -50,6 +62,25 @@ pub fn check_space(path: &Path, needed: u64, free: u64) -> Result<(), InstallErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A drive letter with nothing behind it on this PC.
+    fn missing_drive() -> String {
+        ('D'..='Z').rev().map(|c| format!("{c}:\\")).find(|d| !Path::new(d).exists()).expect("a free drive letter")
+    }
+
+    #[test]
+    fn install_root_uses_the_saved_folder_or_falls_back() {
+        assert_eq!(install_root(None), (default_install_root(), false));
+        assert_eq!(install_root(Some("  ")), (default_install_root(), false));
+        let dir = tempfile::tempdir().unwrap();
+        let here = dir.path().display().to_string();
+        assert_eq!(install_root(Some(&here)), (dir.path().to_path_buf(), false));
+        // A folder that doesn't exist yet is fine: the install creates it.
+        let later = dir.path().join("New Games").display().to_string();
+        assert_eq!(install_root(Some(&later)), (dir.path().join("New Games"), false));
+        let gone = format!("{}Games", missing_drive());
+        assert_eq!(install_root(Some(&gone)), (default_install_root(), true));
+    }
 
     #[test]
     fn default_root_is_games_in_the_user_folder() {

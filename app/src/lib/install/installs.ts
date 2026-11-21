@@ -34,6 +34,8 @@ export type InstallOptions = {
   free_space: number;
   enough_space: boolean;
   error: string | null;
+  /** Set when the saved default folder couldn't be used (spec §6f.1). */
+  note?: string | null;
 };
 /** Mirrors `PlayError` (app/src-tauri play.rs). */
 export type PlayError = { message: string; can_offline: boolean; signed_out: boolean };

@@ -43,6 +43,13 @@ describe("InstallDialog", () => {
     expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("says_when_the_default_folder_isnt_available", async () => {
+    const note = "Your default folder isn't available, so this uses C:\\Users\\you\\Games.";
+    mock({ install_options: () => options({ note }) });
+    render(InstallDialog, { game, onclose: () => {} });
+    expect(await screen.findByText(note)).toBeTruthy();
+  });
+
   it("not_enough_space_disables_install_and_says_why", async () => {
     mock({ install_options: () => options({ enough_space: false, error: "Not enough space on C:. Needs 900.0 GB, 695.0 GB free." }) });
     render(InstallDialog, { game, onclose: () => {} });

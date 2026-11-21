@@ -85,6 +85,7 @@
         <dt>Free space</dt>
         <dd>{formatBytes(options.free_space)}</dd>
       </dl>
+      {#if options.note}<p class="note">{options.note}</p>{/if}
       {#if options.error}<p class="error" role="alert">{options.error}</p>{/if}
       {#if startError}<p class="error" role="alert">{startError}</p>{/if}
       <div class="actions">
@@ -146,6 +147,10 @@
     align-items: center;
     gap: 12px;
     color: var(--text-2);
+  }
+  .note {
+    color: var(--orange);
+    font-size: 14px;
   }
   .error {
     color: var(--error);

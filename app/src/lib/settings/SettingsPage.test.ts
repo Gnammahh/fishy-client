@@ -28,7 +28,11 @@ describe("SettingsPage", () => {
     expect(auto.checked).toBe(false);
     expect(warn.checked).toBe(true);
     await fireEvent.click(auto);
-    await waitFor(() => expect(saved).toEqual([{ auto_update: true, warn_outdated_play: true }]));
+    await waitFor(() =>
+      expect(saved).toEqual([
+        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false },
+      ]),
+    );
   });
 
   it("a_failed_save_says_so_and_keeps_the_old_value", async () => {

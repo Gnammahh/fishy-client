@@ -2,18 +2,24 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Queue every update a Library refresh finds.
     pub auto_update: bool,
     /// Ask before playing a game that has an update waiting.
     pub warn_outdated_play: bool,
+    /// Where the Install box starts (spec §6f.1). None: `%USERPROFILE%\Games`.
+    pub install_folder: Option<String>,
+    /// Download speed limit in MB/s (1 MB = 1,000,000 bytes), 1 to 1000. None: no limit.
+    pub speed_limit_mbps: Option<u32>,
+    /// Calm animations even when Windows doesn't ask for it.
+    pub reduce_motion: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { auto_update: false, warn_outdated_play: true }
+        Self { auto_update: false, warn_outdated_play: true, install_folder: None, speed_limit_mbps: None, reduce_motion: false }
     }
 }
 
@@ -54,18 +60,36 @@ mod tests {
     fn settings_default_when_missing_or_damaged() {
         let dir = tempfile::tempdir().unwrap();
         let store = SettingsStore::at(dir.path().join("settings.json"));
-        assert_eq!(store.load(), Settings { auto_update: false, warn_outdated_play: true });
+        assert_eq!(store.load(), Settings::default());
+        assert!(!Settings::default().auto_update && Settings::default().warn_outdated_play);
         std::fs::write(dir.path().join("settings.json"), b"{not json").unwrap();
         assert_eq!(store.load(), Settings::default());
         std::fs::write(dir.path().join("settings.json"), br#"{"auto_update": true}"#).unwrap();
-        assert_eq!(store.load(), Settings { auto_update: true, warn_outdated_play: true });
+        assert_eq!(store.load(), Settings { auto_update: true, ..Settings::default() });
+    }
+
+    #[test]
+    fn old_settings_file_loads_with_new_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("settings.json"), br#"{"auto_update": true, "warn_outdated_play": false}"#).unwrap();
+        let s = SettingsStore::at(dir.path().join("settings.json")).load();
+        assert_eq!(s.install_folder, None);
+        assert_eq!(s.speed_limit_mbps, None);
+        assert!(!s.reduce_motion);
+        assert!(s.auto_update && !s.warn_outdated_play);
     }
 
     #[test]
     fn settings_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let store = SettingsStore::at(dir.path().join("sub").join("settings.json"));
-        let s = Settings { auto_update: true, warn_outdated_play: false };
+        let s = Settings {
+            auto_update: true,
+            warn_outdated_play: false,
+            install_folder: Some(r"D:\Games".into()),
+            speed_limit_mbps: Some(25),
+            reduce_motion: true,
+        };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);
     }

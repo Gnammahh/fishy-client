@@ -4,7 +4,7 @@ import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
 import { filterGames, resetLibrary, type Game } from "./library";
 import { downloads, installed, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
-import { settings, resetSettings } from "$lib/settings/settings";
+import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
 const installedGame = (app_name: string): InstalledGame => ({
   app_name,
@@ -401,7 +401,7 @@ describe("LibraryPage", () => {
       library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "2" }),
       play_game: () => null,
     });
-    settings.set({ auto_update: false, warn_outdated_play: false });
+    settings.set({ ...DEFAULT_SETTINGS, warn_outdated_play: false });
     installed.set([installedGame("KelpRunner")]);
     render(LibraryPage, { name: "FishFan" });
     await fireEvent.click(await screen.findByRole("button", { name: "Play Kelp Runner" }));

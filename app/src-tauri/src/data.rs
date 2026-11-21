@@ -6,6 +6,11 @@ use fishy_core::wipe::{default_data_root, delete_everything};
 use serde::Serialize;
 use tauri::Emitter;
 
+/// Shown in the Install box when the saved default folder's drive is missing.
+pub(crate) fn unavailable_folder_note(used: &std::path::Path) -> String {
+    format!("Your default folder isn't available, so this uses {}.", used.display())
+}
+
 pub(crate) fn logs_error() -> String {
     r"Couldn't open the logs folder. It's at %APPDATA%\FishyClient\logs.".to_string()
 }
@@ -74,6 +79,14 @@ mod tests {
     fn delete_message_wording() {
         assert_eq!(delete_message(0), None);
         assert_eq!(delete_message(3).as_deref(), Some("Some files couldn't be deleted (3). Close any running games and try again."));
+    }
+
+    #[test]
+    fn unavailable_folder_note_names_the_folder_used() {
+        assert_eq!(
+            unavailable_folder_note(std::path::Path::new(r"C:\Users\you\Games")),
+            r"Your default folder isn't available, so this uses C:\Users\you\Games."
+        );
     }
 
     #[test]

@@ -93,10 +93,12 @@ pub async fn finish_login(app: &AppHandle, code: &str) {
     let auth = app.state::<AppAuth>();
     match auth.manager.complete_login(code).await {
         Ok(state) => {
+            tracing::info!("signed in");
             auth.set(state.clone()).await;
             let _ = app.emit_to(MAIN, "auth-changed", state);
         }
         Err(e) => {
+            tracing::warn!("sign-in failed"); // Epic's text can quote secrets, so no details
             let _ = app.emit_to(MAIN, "login-failed", e.to_string());
             let _ = app.emit_to(MAIN, "auth-changed", AuthState::SignedOut);
         }

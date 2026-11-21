@@ -55,6 +55,21 @@ pub async fn play_game(
     install: tauri::State<'_, AppInstall>,
     launch: tauri::State<'_, AppLaunch>,
 ) -> Result<(), PlayError> {
+    let result = launch_game(app_name.clone(), offline, auth, library, install, launch).await;
+    if let Err(e) = &result {
+        tracing::warn!("play {app_name} failed: {}", e.message);
+    }
+    result
+}
+
+async fn launch_game(
+    app_name: String,
+    offline: bool,
+    auth: tauri::State<'_, AppAuth>,
+    library: tauri::State<'_, AppLibrary>,
+    install: tauri::State<'_, AppInstall>,
+    launch: tauri::State<'_, AppLaunch>,
+) -> Result<(), PlayError> {
     let Some(installed) = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name) else {
         return Err(play_error(LaunchError::NotInstalled, &app_name, false));
     };
@@ -74,7 +89,9 @@ pub async fn play_game(
     let locale = language_from(sys_locale::get_locale().as_deref());
     let player = Player { display_name: &display_name, account_id: &account_id, locale: &locale };
     let cmd = prepare_launch(&launch.client, token.as_ref(), &player, &installed, &game, &launch.ovt_dir).await.map_err(fail)?;
-    start(&cmd).map_err(fail)
+    start(&cmd).map_err(fail)?;
+    tracing::info!("started {app_name}{}", if offline { " (offline)" } else { "" });
+    Ok(())
 }
 
 #[cfg(test)]

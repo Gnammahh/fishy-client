@@ -35,6 +35,20 @@ pub async fn update_start(
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
 ) -> Result<DownloadsView, String> {
+    let result = queue_update(app, app_name.clone(), auth, library, install).await;
+    if let Err(m) = &result {
+        tracing::warn!("update of {app_name} refused: {m}");
+    }
+    result
+}
+
+async fn queue_update(
+    app: tauri::AppHandle,
+    app_name: String,
+    auth: tauri::State<'_, AppAuth>,
+    library: tauri::State<'_, AppLibrary>,
+    install: tauri::State<'_, AppInstall>,
+) -> Result<DownloadsView, String> {
     let downloads = &install.downloads;
     if downloads.has_job(&app_name) {
         return Ok(downloads.view());
@@ -72,6 +86,7 @@ pub async fn update_start(
         .store
         .save_job(&job, &bytes)
         .map_err(|e| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() }.user_message())?;
+    tracing::info!("update queued: {app_name} from {} ({} bytes to download)", installed.version, job.download_size);
     downloads.enqueue(&app, job, Arc::new(manifest), old.map(Arc::new));
     Ok(downloads.view())
 }
@@ -83,7 +98,10 @@ pub fn settings_get(settings: tauri::State<'_, AppSettings>) -> Settings {
 
 #[tauri::command]
 pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>) -> Result<Settings, String> {
-    settings.store.save(&value).map_err(|_| "Couldn't save your settings.".to_string())?;
+    settings.store.save(&value).map_err(|_| {
+        tracing::warn!("Couldn't save your settings.");
+        "Couldn't save your settings.".to_string()
+    })?;
     Ok(value)
 }
 

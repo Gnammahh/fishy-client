@@ -1,3 +1,4 @@
+mod data;
 mod downloads;
 mod login_window;
 mod play;
@@ -18,6 +19,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
+use tracing::{info, warn};
+
+/// Only the kind of state goes to the log, never the name or account ID.
+pub(crate) fn state_name(s: &AuthState) -> &'static str {
+    match s {
+        AuthState::SignedOut => "signed out",
+        AuthState::SignedIn { .. } => "signed in",
+        AuthState::Offline { .. } => "offline",
+    }
+}
 
 /// Login state shared by all commands. `current` is None until startup has run once.
 pub struct AppAuth {
@@ -38,7 +49,9 @@ const NOT_A_CODE: &str = "That doesn't look like a sign-in code. Paste the autho
 async fn auth_state(auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String> {
     let mut current = auth.current.lock().await;
     if current.is_none() {
-        *current = Some(auth.manager.startup().await);
+        let state = auth.manager.startup().await;
+        info!("startup sign-in check: {}", state_name(&state));
+        *current = Some(state);
     }
     Ok(current.clone().unwrap_or(AuthState::SignedOut))
 }
@@ -47,6 +60,7 @@ async fn auth_state(auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String
 #[tauri::command]
 async fn retry_auth(auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String> {
     let state = auth.manager.startup().await;
+    info!("sign-in re-check: {}", state_name(&state));
     auth.set(state.clone()).await;
     Ok(state)
 }
@@ -62,7 +76,11 @@ async fn start_login(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn submit_code(input: String, auth: tauri::State<'_, AppAuth>) -> Result<AuthState, String> {
     let code = parse_auth_code(&input).ok_or_else(|| NOT_A_CODE.to_string())?;
-    let state = auth.manager.complete_login(&code).await.map_err(|e| e.to_string())?;
+    let state = auth.manager.complete_login(&code).await.map_err(|e| {
+        warn!("sign-in with a pasted code failed"); // Epic's text can quote secrets, so no details
+        e.to_string()
+    })?;
+    info!("signed in with a pasted code");
     auth.set(state.clone()).await;
     Ok(state)
 }
@@ -79,6 +97,7 @@ async fn logout(
     install.prepared.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let state = auth.manager.logout().await;
     let _ = library.cache.clear(); // the saved game list goes too (spec §6b)
+    info!("logged out");
     auth.set(state.clone()).await;
     Ok(state)
 }
@@ -100,8 +119,14 @@ fn library_cached(library: tauri::State<'_, AppLibrary>) -> Option<CachedLibrary
 /// Fetches the library from Epic, saves it, and returns it.
 #[tauri::command]
 async fn library_refresh(auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
-    let token = auth.manager.access_token().await.map_err(|_| LIBRARY_ERROR.to_string())?;
-    let data = library.client.fetch_library(&token).await.map_err(|_| LIBRARY_ERROR.to_string())?;
+    let started = std::time::Instant::now();
+    let failed = || {
+        warn!("library refresh failed: {LIBRARY_ERROR}");
+        LIBRARY_ERROR.to_string()
+    };
+    let token = auth.manager.access_token().await.map_err(|_| failed())?;
+    let data = library.client.fetch_library(&token).await.map_err(|_| failed())?;
+    info!("library refreshed: {} games in {:.1} s", data.games.len(), started.elapsed().as_secs_f64());
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
     Ok(fresh)
@@ -189,10 +214,15 @@ async fn install_start(
     if downloads.has_job(&game.app_name) || downloads.store.installed().iter().any(|g| g.app_name == game.app_name) {
         return Ok(downloads.view());
     }
-    let p = prepare(&game, &auth, &library, &install).await.map_err(|e| e.user_message())?;
+    let refused = |e: InstallError| {
+        let m = e.user_message();
+        warn!("install of {} refused: {m}", game.app_name);
+        m
+    };
+    let p = prepare(&game, &auth, &library, &install).await.map_err(refused)?;
     let path = install_path(&game, parent, &p);
     let install_size = p.manifest.install_size();
-    check_space(&path, install_size, free_space(&path).unwrap_or(0)).map_err(|e| e.user_message())?;
+    check_space(&path, install_size, free_space(&path).unwrap_or(0)).map_err(refused)?;
     let job = JobInfo {
         app_name: game.app_name.clone(),
         title: game.title.clone(),
@@ -209,6 +239,7 @@ async fn install_start(
         .save_job(&job, &p.bytes)
         .map_err(|e| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() }.user_message())?;
     install.prepared.lock().unwrap_or_else(|e| e.into_inner()).remove(&game.app_name);
+    info!("install queued: {} ({} bytes to download) into {}", job.app_name, job.download_size, path.display());
     downloads.enqueue(&app, job, p.manifest, None);
     Ok(downloads.view())
 }
@@ -261,7 +292,12 @@ async fn uninstall_game(app: tauri::AppHandle, app_name: String, install: tauri:
     tauri::async_runtime::spawn_blocking(move || uninstall(&store, &name))
         .await
         .map_err(|e| e.to_string())?
-        .map_err(|e| e.user_message())?;
+        .map_err(|e| {
+            let m = e.user_message();
+            warn!("uninstall of {app_name} failed: {m}");
+            m
+        })?;
+    info!("uninstalled {app_name}");
     let _ = app.emit("installed-changed", ());
     Ok(install.downloads.store.installed())
 }
@@ -276,6 +312,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // Logs first, so everything after is recorded. Without a logs folder the app still runs.
+            let guard = fishy_core::logs::init(&fishy_core::logs::default_dir()).ok();
+            app.manage(data::AppLogs(guard));
+            info!("Fishy Client {} started", app.package_info().version);
             app.manage(AppAuth {
                 manager: AuthManager::new(EpicClient::new(), KeyringStore::windows(), chrono_now),
                 current: Mutex::new(None),
@@ -316,7 +356,8 @@ pub fn run() {
             play::play_game,
             updates::update_start,
             updates::settings_get,
-            updates::settings_set
+            updates::settings_set,
+            data::open_logs_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

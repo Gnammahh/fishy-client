@@ -243,6 +243,7 @@ impl Downloads {
     }
 
     pub fn pause(&self, app: &AppHandle, app_name: &str) {
+        tracing::info!("pause {app_name}");
         {
             let mut inner = self.lock();
             let Some(i) = inner.find(app_name) else { return };
@@ -259,6 +260,7 @@ impl Downloads {
 
     /// Resume, or Retry after an error.
     pub fn resume(&self, app: &AppHandle, app_name: &str) {
+        tracing::info!("resume {app_name}");
         {
             let mut inner = self.lock();
             let Some(i) = inner.find(app_name) else { return };
@@ -277,6 +279,7 @@ impl Downloads {
             return Err(UPDATE_NO_CANCEL.to_string());
         }
         // A running job's own task deletes the files once it has stopped writing.
+        tracing::info!("cancel {app_name}");
         let Some(info) = self.lock().begin_removal(app_name) else {
             self.emit(app);
             return Ok(());
@@ -404,17 +407,21 @@ impl Downloads {
         let Some(i) = inner.find(&info.app_name) else { return };
         match outcome {
             Ok(()) => {
+                tracing::info!("finished {} ({} bytes downloaded)", info.app_name, info.download_size);
                 inner.jobs.remove(i);
                 drop(inner);
                 let _ = app.emit("installed-changed", ());
             }
             Err(InstallError::Stopped) => {
+                tracing::info!("paused {}", info.app_name);
                 inner.jobs[i].state = JobState::Paused;
                 inner.jobs[i].stop = None;
             }
             Err(e) => {
+                let m = e.user_message();
+                tracing::warn!("download of {} failed: {m}", info.app_name);
                 inner.jobs[i].state = JobState::Error;
-                inner.jobs[i].error = Some(e.user_message());
+                inner.jobs[i].error = Some(m);
                 inner.jobs[i].stop = None;
             }
         }

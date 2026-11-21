@@ -660,7 +660,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Tests now:** Rust 171 (core 164 + app 7), UI 92. New: 29 core, 2 app, 4 UI.
 
 ### Still to check by hand (milestone 5)
-- [ ] Launch Bad Cheese or Bendy from Fishy Client, signed in as you
+- [x] Launch a real game from Fishy Client, signed in as you: **Bendy and the Ink Machine** started on 2026-11-21
 
 ### Still to check by hand (milestone 4)
 Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
@@ -730,6 +730,6 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - Still open from this list: log files with secrets filtered out, and a "delete all my data" button (they fit best with Settings).
 4. Later milestones:
    - ~~Install~~ built (milestone 4)
-   - ~~Launch~~ built on 2026-11-21 (milestone 5); the hand check is above. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
+   - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - Updates
    - Polish, signed updates and a code-signed installer

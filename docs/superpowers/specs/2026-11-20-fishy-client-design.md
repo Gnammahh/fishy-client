@@ -663,8 +663,9 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - `feat/library`: milestone 3, the Library.
   - `feat/install`: milestone 4, Install (started 2026-11-20).
   - `feat/launch`: milestone 5, Launch (started 2026-11-21, built on `feat/install`).
+  - `feat/updates`: milestone 6, Updates (started 2026-11-21, built on `feat/launch`).
 - **Approved visual reference:** `design/mockup.html`. It's also published as a private claude.ai artifact, "Fishy Client Mockup".
-- **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md`, `docs/superpowers/plans/2026-11-20-epic-login.md`, `docs/superpowers/plans/2026-11-20-install.md` and `docs/superpowers/plans/2026-11-21-launch.md`.
+- **Plans that were built:** `docs/superpowers/plans/2026-11-20-fishy-ui-foundation.md`, `docs/superpowers/plans/2026-11-20-epic-login.md`, `docs/superpowers/plans/2026-11-20-install.md`, `docs/superpowers/plans/2026-11-21-launch.md` and `docs/superpowers/plans/2026-11-21-updates.md`.
 
 ### What's done
 
@@ -764,6 +765,32 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Not yet:** Epic's per-game "deployment id" (few games need it). It gets added if a real game fails without it.
 - **Tests now:** Rust 171 (core 164 + app 7), UI 92. New: 29 core, 2 app, 4 UI.
 
+**Milestone 6, Updates (branch `feat/updates`, built 2026-11-21)**
+- **Design approved** and written as §6e. The protocol was researched in Legendary (`downloader/mp/manager.py` `run_analysis`, `workers.py`, `models/manifest.py` `ManifestComparison`).
+- **Decisions:**
+  - An **Update** button by default, plus an **Update games automatically** switch (off by default).
+  - **Play** stays next to Update. Playing an outdated game first warns that it's the older version and that some online games won't start; the warning has a **Don't show this again** tick box.
+  - Updates can be **paused but not cancelled**.
+- **Built (test-first):**
+  - Every Library refresh also keeps Epic's newest version of each game (no extra call). A game whose version differs shows **Update available**.
+  - The download engine now updates:
+    - unchanged files are skipped
+    - pieces that already exist inside a changed file are **copied from your disk** instead of downloaded
+    - changed files are written beside the old one and swapped in only after their fingerprint check
+    - removed files are deleted at the end
+    - if the old file was edited, that one file is rebuilt from fresh downloads
+  - Resume, the space check and uninstall all understand updates. Uninstall with a paused update deletes the files of both versions.
+  - The first real **Settings page**: the two switches, saved in `%APPDATA%\FishyClient\settings.json`.
+  - Checked in the browser preview with fake data: the badge, Update, the warning box, Updating… on the card and on the Downloads page (Pause only), and Settings.
+- **Not yet:** Epic's "delta manifests" (an extra size saving), separate DLC updates, and checking for updates on a timer while the app stays open.
+- **Small things noticed:** updating a game while it's running fails with the folder message ("Couldn't write to…") instead of "close the game first".
+- **Tests now:** Rust 195 (core 183 + app 12), UI 102. New: 19 core, 5 app, 10 UI.
+
+### Still to check by hand (milestone 6)
+- [ ] A game shows **Update available**, and **Update** finishes and brings it back to "Installed"
+- [ ] Play on an outdated game shows the warning; the tick box stops it showing again
+- [ ] The Settings switches stay as set after restarting the app
+
 ### Still to check by hand (milestone 5)
 - [x] Launch a real game from Fishy Client, signed in as you: **Bendy and the Ink Machine** started on 2026-11-21
 
@@ -803,8 +830,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 164 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 7. (Counts as of 2026-11-21, milestone 5.)
-- **UI:** 92 tests.
+- **Rust core:** 183 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 12. (Counts as of 2026-11-21, milestone 6.)
+- **UI:** 102 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -836,5 +863,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 4. Later milestones:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
-   - Updates
+   - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
    - Polish, signed updates and a code-signed installer

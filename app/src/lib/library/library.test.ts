@@ -470,6 +470,8 @@ describe("LibraryPage", () => {
     const button = screen.getByRole("button", { name: "Refresh library" }) as HTMLButtonElement;
     await fireEvent.click(button);
     expect(await screen.findByText("Refreshing…")).toBeTruthy();
+    expect(screen.getByText("Fishy Client checks every game with Epic, so this takes a few seconds.")).toBeTruthy();
+    expect(button.title).toBe("Check Epic for new games and updates. It checks every game, so it takes a few seconds.");
     expect(button.disabled).toBe(true);
     finish(withUpdate([game("Kelp Runner")], {}));
     await waitFor(() => expect(button.disabled).toBe(false));

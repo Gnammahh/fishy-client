@@ -134,7 +134,7 @@
         <span class="count">{windowsGames.length} {windowsGames.length === 1 ? "game" : "games"}</span>
       {/if}
       {#if !offline && $library.status !== "offline"}
-        <button class="refresh" aria-label="Refresh library" title="Check Epic for new games and updates" disabled={refreshing} onclick={refreshAll}
+        <button class="refresh" aria-label="Refresh library" title="Check Epic for new games and updates. It checks every game, so it takes a few seconds." disabled={refreshing} onclick={refreshAll}
           >Refresh</button
         >
       {/if}
@@ -147,7 +147,10 @@
       <PixelButton variant="ghost" onclick={refreshLibrary}>Try again</PixelButton>
     </div>
   {:else if $library.updating}
-    <p class="updating" role="status">Refreshing…</p>
+    <p class="updating" role="status">
+      <span>Refreshing…</span>
+      <span class="why">Fishy Client checks every game with Epic, so this takes a few seconds.</span>
+    </p>
   {/if}
 
   {#if $library.status === "loading"}
@@ -357,6 +360,10 @@
   .refresh:focus-visible {
     outline: 2px solid var(--orange);
     outline-offset: 2px;
+  }
+  .why {
+    margin-left: 6px;
+    opacity: 0.7;
   }
   .updating {
     color: var(--text-2);

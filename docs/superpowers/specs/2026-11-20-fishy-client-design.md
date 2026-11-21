@@ -784,6 +784,14 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - Checked in the browser preview with fake data: the badge, Update, the warning box, Updating… on the card and on the Downloads page (Pause only), and Settings.
 - **Not yet:** Epic's "delta manifests" (an extra size saving), separate DLC updates, and checking for updates on a timer while the app stays open.
 - **Refresh button** (added 2026-11-21 at your request): in the Library header, it fetches the library again (which re-checks for updates) and re-reads the installed games, without reloading the app. The Library's own note now says "Refreshing…" so it isn't confused with a game's "Updating…". 3 UI tests.
+- **Why Refresh takes a few seconds** (measured 2026-11-21 with your account, optimized build):
+  - your library list: 0.9 s (191 items)
+  - Epic's Windows list with the newest versions: 0.35 s
+  - **the details of each game: 4.4 s (164 separate lookups)**
+  - about 5.8 s in total, and slower in `tauri dev`
+  - Allowing more lookups at once didn't help, so Epic's server sets the pace.
+  - A faster way (only looking up new games or games whose version changed, as Legendary does) would bring it to about 1–1.5 s. You chose to keep it as it is for now.
+  - The Library now says so next to "Refreshing…", and on the Refresh button's hover tip.
 - **Small things noticed:** updating a game while it's running fails with the folder message ("Couldn't write to…") instead of "close the game first".
 - **Tests now:** Rust 195 (core 183 + app 12), UI 105. New: 19 core, 5 app, 13 UI.
 

@@ -31,4 +31,33 @@ describe("reducedMotion", () => {
     expect(values.at(-1)).toBe(false);
     unsub();
   });
+
+  it("setting_on_forces_reduced_motion", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: (_: string, fn: Listener) => (listener = fn),
+      removeEventListener: () => (listener = null),
+    })) as unknown as typeof window.matchMedia;
+    const { reducedMotion } = await import("./motion");
+    const { settings, DEFAULT_SETTINGS } = await import("./settings/settings");
+    const values: boolean[] = [];
+    const unsub = reducedMotion.subscribe((v) => values.push(v));
+    expect(values.at(-1)).toBe(false);
+    settings.set({ ...DEFAULT_SETTINGS, reduce_motion: true });
+    expect(values.at(-1)).toBe(true);
+    unsub();
+  });
+
+  it("setting_off_follows_windows", async () => {
+    const { reducedMotion } = await import("./motion");
+    const { settings, DEFAULT_SETTINGS } = await import("./settings/settings");
+    settings.set({ ...DEFAULT_SETTINGS, reduce_motion: false });
+    const values: boolean[] = [];
+    const unsub = reducedMotion.subscribe((v) => values.push(v));
+    expect(values.at(-1)).toBe(true); // Windows asks for it
+    listener!({ matches: false });
+    expect(values.at(-1)).toBe(false);
+    unsub();
+  });
 });

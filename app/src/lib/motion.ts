@@ -1,9 +1,10 @@
-import { readable } from "svelte/store";
+import { derived, readable } from "svelte/store";
+import { settings } from "./settings/settings";
 
 const QUERY = "(prefers-reduced-motion: reduce)";
 
-/** True when the user (or Windows "Animation effects: Off") asks for reduced motion. Updates live. */
-export const reducedMotion = readable<boolean>(
+/** True when Windows "Animation effects: Off" asks for reduced motion. Updates live. */
+const windowsAsks = readable<boolean>(
   typeof window !== "undefined" && window.matchMedia ? window.matchMedia(QUERY).matches : false,
   (set) => {
     if (typeof window === "undefined" || !window.matchMedia) return;
@@ -14,3 +15,6 @@ export const reducedMotion = readable<boolean>(
     return () => mq.removeEventListener("change", onChange);
   },
 );
+
+/** Calm animations when Windows asks for it or the Reduce motion setting is on (spec §6f.1). */
+export const reducedMotion = derived([windowsAsks, settings], ([$windows, $settings]) => $windows || $settings.reduce_motion);

@@ -892,6 +892,28 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Small things noticed:** updating a game while it's running fails with the folder message ("Couldn't write to…") instead of "close the game first".
 - **Tests now:** Rust 195 (core 183 + app 12), UI 105. New: 19 core, 5 app, 13 UI.
 
+**Milestone 7, Polish (started 2026-11-21 on branch `feat/polish`):** split into five sub-projects (§6f). Sub-project 1, **Settings, logs and your data**, is built:
+- **Log files** in `%APPDATA%\FishyClient\logs`, one per day, kept 7 days. Every line passes through a tested scrubber that replaces anything secret-shaped with `[redacted]` (tokens, sign-in codes, `Authorization:` values, long random strings), while game folders stay readable. Logged: start, sign-in worked or failed (no details), Library refresh times, install/update/pause/resume/cancel/uninstall, and each error's plain message.
+- **Settings is now three sections:**
+  - **Downloads:** Default install folder (Change… / Use default), Limit download speed (MB/s, changes apply to a running download), and the two update switches.
+  - **Appearance and startup:** Reduce motion (calms every fish animation, not only when Windows asks), Start with Windows (reads the real Windows setting).
+  - **Account:** your Epic name, **Log out** (moved here; the sidebar's Account page is gone), **Open logs folder**, **Delete all my data…**.
+- **Delete all my data** asks first, with a tick box (off by default) to also delete installed games and unfinished downloads. It stops downloads, logs out, turns off Start with Windows and empties `%APPDATA%\FishyClient`. If a download won't stop within a minute, nothing is deleted.
+- If the saved install folder's drive is missing, the Install box uses `%USERPROFILE%\Games` and says so.
+- Checked in the browser preview with fake data: all three Settings sections, the speed box, the Delete box (ticked and not), Delete leading to Login; no console errors.
+- **Independent code review: "with fixes", no critical findings.** The 4 important ones were fixed test-first (Reduce motion reaching the ocean and sidebar fish; a first unfinished download offered for deletion; no download can start or keep writing during the delete; a failed Start with Windows turn-off is reported). 6 minor ones are listed under "Small things deferred".
+- **Tests now:** Rust 228 (core 205 + app 23), UI 136. New: 22 core, 11 app, 31 UI.
+
+### Still to check by hand (milestone 7, sub-project 1)
+- [ ] A log file appears in `%APPDATA%\FishyClient\logs`, and **Open logs folder** opens it
+- [ ] After signing in and refreshing, the log has no secrets: `Select-String -Path "$env:APPDATA\FishyClient\logs\*.log" -Pattern "eg1~|access_token=[^\[]"` finds nothing
+- [ ] **Limit download speed** visibly slows a download, and turning it off speeds it up again
+- [ ] A changed **Default install folder** is used by the Install box
+- [ ] **Reduce motion** stops the ocean and the sidebar fish
+- [ ] **Start with Windows** stays as set after restarting the app (and the app starts after signing out of Windows and back in)
+- [ ] **Delete all my data**, unticked: you're logged out, `%APPDATA%\FishyClient` is empty apart from today's empty log, `cmdkey /list | findstr /i fishy` prints nothing, and game folders still exist
+- [ ] The two left from milestone 6: the Play warning's tick box, and settings staying as set after a restart
+
 ### Still to check by hand (milestone 6)
 - [x] A game shows **Update available**, and **Update** finishes and brings it back to "Installed". Checked on 2026-11-21 with Bendy marked as an older version (2.0.0-test); it went back to 2.1.0 with nothing left in `downloads\`. A real Epic patch is still to be seen.
 - [ ] Play on an outdated game shows the warning; the tick box stops it showing again
@@ -922,6 +944,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - Your password goes to Epic's page only; Fishy Client never sees it.
 - Tokens are stored only in Credential Manager, never in files or the page code, and they print as `[redacted]` anywhere they could leak.
 - **No tracking or analytics.** The app talks only to Epic.
+- **Log files never contain secrets:** no tokens, sign-in codes, Epic's error text, account ID, email or name. A scrubber masks anything secret-shaped on every line as a second safety net. Logs stay on your PC.
 - The sign-in window is **private**, so Epic's website never remembers you after Log out (this matters on shared PCs). It also has **no access** to the app's internals.
 - A sign-in code is accepted **only right after Epic's own final page**, so no other page can sign you into a different account.
 - **Pop-ups** (Google/Apple/Steam sign-in) are allowed; they also have no access to the app.
@@ -936,8 +959,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 183 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 12. (Counts as of 2026-11-21, milestone 6.)
-- **UI:** 105 tests.
+- **Rust core:** 205 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 23. (Counts as of 2026-11-21, milestone 7 sub-project 1.)
+- **UI:** 136 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -960,14 +983,22 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - Animations keep redrawing when nothing moves.
 - Check the 24/48 px icon sizes for blur.
 - Two rare race/storage edge cases, noted in `crates/fishy-core/src/auth/manager.rs`.
+- From the Polish 1 review (minor):
+  - The log scrubber's path rule also keeps a long string just before an escaped quote (`\"`); camelCase key names (`accessToken`…) aren't masked by name. Nothing logs like that today.
+  - 32-character Epic app names and forward-slash paths show as `[redacted]` in logs (safe, just less readable).
+  - Turning the speed limit off waits out pieces already scheduled (up to ~16 s at 1 MB/s).
+  - The 1–1000 MB/s range is only checked by the Settings page, not by the Rust side.
+  - Old logs are deleted only at startup.
+  - A wrong number stays in the speed box until a valid one is typed.
 
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
 2. ~~Back up to a private GitHub repository.~~ Done on 2026-11-20 (`gh` installed and signed in as Gnammahh). To back up new work: `git push`.
 3. ~~Milestone 3, Library.~~ Built and checked with your real library on 2026-11-20 (the saved library is deleted on Log out).
-   - Still open from this list: log files with secrets filtered out, and a "delete all my data" button (they fit best with Settings).
+   - ~~Still open from this list: log files with secrets filtered out, and a "delete all my data" button.~~ Built in milestone 7 (Polish 1).
 4. Later milestones:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish, signed updates and a code-signed installer
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21, hand check above. Next: 2 friendlier error screens, 3 Library filters and sort, 4 small fixes, 5 installer (`.msi`).
+   - Later: signed updates and a code-signed installer

@@ -841,7 +841,7 @@ A small change to the existing Library screen, so it was designed in chat (no se
 
 #### Tests
 - A Rust test reads `tauri.conf.json` and checks the bundle: target `msi` only, the fixed upgrade code, the product name and publisher.
-- Build check: the `.msi` is built, then unpacked with `msiexec /a` into a temporary folder (this doesn't install anything) to check it holds `Fishy Client.exe`.
+- Build check: the `.msi` is built, then unpacked with `msiexec /a` into a temporary folder (this doesn't install anything) to check it holds `fishy-client.exe` (in `Program Files\Fishy Client\`).
 - Hand check (yours): install, start from the Start menu, sign in still works, uninstall from Installed apps.
 
 ---
@@ -1069,6 +1069,14 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 **Polish 5, Small fixes, built 2026-11-22** (designed in chat, no plan): long downloads say hours (`~10 h left`); a download piece can't unpack past its stated size; faster startup with paused downloads; closing the Install box frees its file list; two games never share a folder ("Name (2)"); the space check counts other downloads on the same drive (failed ones don't); the speed limit: off or higher applies at once, the same limit saved again changes nothing, the 1–1000 range is checked in Rust too and a bad saved value loads as no limit, a wrong number goes back; logs: camelCase token keys and values before `\"` are masked, old logs are trimmed daily, a screen error is one line; sign-in: each refresh try gives up after 8 s, a refresh finishing after the sign-in changed isn't saved, an expired sign-in leaves a clean Library; running games: the check resets after a crash (dev builds), Delete all my data won't delete games that are running or starting, no update is tried after a game closes while offline, Fishy Client only comes back if still minimized; a real same-moment test for `installed.json`. Fresh review: 5 more fixes made test-first. **Tests now:** Rust 293 (core 256 + app 37), UI 162.
 
+**Polish 6, Installer (§6f.6), built 2026-11-22:** `npm.cmd run tauri build` (from `app/`) makes `targeteleaseundle\msi\Fishy Client_0.1.0_x64_en-US.msi` (4.6 MB, about 3 minutes; the first build also downloads Microsoft's WiX tools). Checked without installing: unpacked with `msiexec /a`, it holds `Program Files\Fishy Clientishy-client.exe`; its details read Fishy Client / Fishy Client / 0.1.0, the fixed upgrade code and the GitHub link. A Rust test guards the bundle settings. **Tests now:** Rust 294 (core 256 + app 38), UI 162.
+
+### Still to check by hand (milestone 7, sub-project 6)
+- [ ] Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
+- [ ] Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works
+- [ ] If Start with Windows was on: turn it off and on again in Settings (so it points at the installed program)
+- [ ] Optional: **Settings → Apps → Installed apps → Fishy Client → Uninstall** removes the program; your games and settings stay
+
 ### Still to check by hand (milestone 7, sub-project 5)
 - [ ] A download shows hours when it's long (for example with a speed limit of 1 MB/s on a big game: `~… h … min left`)
 - [ ] Settings → Limit download speed: type `abc` in MB/s and click away: the message shows and the box goes back to the saved number
@@ -1191,5 +1199,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes, built 2026-11-22, hand check above. Next: 6 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes and 6 Installer, built 2026-11-22, hand checks above. That's all of Polish. Next: your hand checks, then merging `feat/polish` into `master`; later, version 1.0.0 and a code-signed installer.
    - Later: signed updates and a code-signed installer

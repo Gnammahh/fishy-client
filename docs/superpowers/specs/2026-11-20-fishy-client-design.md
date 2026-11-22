@@ -1072,8 +1072,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 **Polish 6, Installer (§6f.6), built 2026-11-22:** `npm.cmd run tauri build` (from `app/`) makes `target\release\bundle\msi\Fishy Client_0.1.0_x64_en-US.msi` (4.6 MB, about 3 minutes; the first build also downloads Microsoft's WiX tools). Checked without installing: unpacked with `msiexec /a`, it holds `Program Files\Fishy Client\fishy-client.exe`; its details read Fishy Client / Fishy Client / 0.1.0, the fixed upgrade code and the GitHub link. A Rust test guards the bundle settings. **Tests now:** Rust 294 (core 256 + app 38), UI 162.
 
 ### Still to check by hand (milestone 7, sub-project 6)
-- [ ] Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
-- [ ] Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works
+- [x] (2026-11-22) Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
+- [ ] (signed in: yes, 2026-11-22) Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works
 - [ ] If Start with Windows was on: turn it off and on again in Settings (so it points at the installed program)
 - [ ] Optional: **Settings → Apps → Installed apps → Fishy Client → Uninstall** removes the program; your games and settings stay
 

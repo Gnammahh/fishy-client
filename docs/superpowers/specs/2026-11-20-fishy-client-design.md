@@ -866,7 +866,7 @@ For a friend who already has games installed with Epic's own launcher: Fishy Cli
   - An add-on has a `MainGameAppName` different from its own `AppName`.
 - The game's file list: `<InstallLocation>\.egstore\<InstallationGuid>.manifest` (Epic's normal manifest format, §6c).
   - If it's missing or can't be parsed, Epic's current manifest is downloaded with the normal install calls (§6c). Files that differ from it then count as damaged and are downloaded.
-- **Read-only:** Fishy Client never changes, moves or deletes anything in Epic's folder or `.egstore`. Unreadable `.item` files are skipped.
+- **Read-only here:** importing never changes, moves or deletes anything in Epic's folder or `.egstore`. Unreadable `.item` files are skipped. (Writing to Epic's list is §6h, behind its own switch.)
 
 ### How a game is added
 1. Get the manifest (the `.egstore` copy, else download it) and parse it.

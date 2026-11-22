@@ -85,9 +85,14 @@ pub(crate) fn network(e: reqwest::Error) -> AuthError {
     AuthError::Network(e.without_url().to_string())
 }
 
-/// Turns any non-2xx or `errorCode` body into `Rejected`. Empty 2xx bodies become `Value::Null`.
+/// Turns any non-2xx or `errorCode` body into `Rejected`, except Epic's own server errors (5xx),
+/// which count as a connection problem (retried, and never "your sign-in was refused").
+/// Empty 2xx bodies become `Value::Null`.
 pub(crate) async fn read_json(res: Response) -> Result<Value, AuthError> {
     let status = res.status();
+    if status.is_server_error() {
+        return Err(AuthError::Network(format!("http_{}", status.as_u16())));
+    }
     let text = res.text().await.map_err(network)?;
     let json: Value = if text.trim().is_empty() {
         Value::Null
@@ -156,6 +161,32 @@ mod tests {
             .await;
         let s = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~OLD")).await.unwrap();
         assert_eq!(s.refresh_token.expose(), "eg1~R");
+    }
+
+    #[tokio::test]
+    async fn server_errors_count_as_network() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(503).set_body_json(serde_json::json!({
+                "errorCode": "errors.com.epicgames.common.server_error"
+            })))
+            .mount(&server)
+            .await;
+        let e = EpicClient::with_base_url(&server.uri()).exchange_code("abc").await.unwrap_err();
+        assert!(matches!(e, AuthError::Network(_)), "{e:?}");
+    }
+
+    #[tokio::test]
+    async fn a_401_with_an_error_code_is_still_rejected() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "errorCode": "errors.com.epicgames.account.auth_token.invalid_refresh_token"
+            })))
+            .mount(&server)
+            .await;
+        let e = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~OLD")).await.unwrap_err();
+        assert!(matches!(e, AuthError::Rejected { .. }), "{e:?}");
     }
 
     #[tokio::test]

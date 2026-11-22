@@ -4,6 +4,7 @@ pub mod install;
 pub mod launch;
 pub mod library;
 pub mod logs;
+pub mod retry;
 pub mod settings;
 pub mod wipe;
 

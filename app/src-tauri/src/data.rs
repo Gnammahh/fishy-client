@@ -74,6 +74,7 @@ pub(crate) fn delete_message(failed: usize) -> Option<String> {
 pub async fn delete_all_data(
     app: tauri::AppHandle,
     also_games: bool,
+    also_epic: bool,
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
@@ -115,7 +116,8 @@ pub async fn delete_all_data(
     install.downloads.limiter.set(None); // the saved limit is deleted too
     // 3 and 5. Games (if ticked), then everything in %APPDATA%\FishyClient.
     let store = install.downloads.store.clone();
-    let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games))
+    let epic = fishy_core::epic_import::epic_manifests_dir().filter(|_| also_games && also_epic);
+    let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games, epic.as_deref()))
         .await
         .unwrap_or(1)
         + usize::from(autostart_failed)

@@ -995,8 +995,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 **Polish 3, Library filters and sort (§6f.3), built 2026-11-22:** an **Updates** tab (only when updates are waiting) and a **Sort** menu next to the search box (A–Z, Z–A, Recently installed, Size on disk), remembered after a restart. Checked in the browser preview with fake data: the Updates tab, Z–A on every tab, no console errors. **Tests now:** Rust 263, UI 154 (10 new).
 
 ### Still to check by hand (milestone 7, sub-project 3)
-- [ ] The **Sort** menu reorders your real Library (try Size on disk: Bendy first), and the choice is still set after restarting the app
-- [ ] With an update waiting (mark Bendy outdated as in the milestone 6 check), the **Updates (1)** tab shows only Bendy
+- [x] (2026-11-22) The **Sort** menu reorders your real Library (try Size on disk: Bendy first), and the choice is still set after restarting the app
+- [ ] Optional, not tried: with an update waiting (mark Bendy outdated as in the milestone 6 check), the **Updates (1)** tab shows only Bendy
 
 ### Still to check by hand (milestone 7, sub-project 2)
 - [x] (2026-11-22) With Wi-Fi off, **Refresh** shows "Couldn't load your library from Epic. Check your internet, then press Try again." (after about 1.5 s of retries); with Wi-Fi back, **Try again** works

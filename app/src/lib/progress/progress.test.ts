@@ -58,7 +58,7 @@ describe("progress", () => {
     const total = 7.4 * GiB;
     expect(statusText("paused", 3.1 * GiB, total, 0)).toBe("Paused at 42%. 3.1 GB of 7.4 GB downloaded.");
     expect(statusText("verifying", 0.7 * total, total, 0)).toBe("Checking installed files, 70% done.");
-    expect(statusText("error", 0.42 * total, total, 0)).toBe("Download stopped: the connection to the download server dropped.");
+    expect(statusText("error", 0.42 * total, total, 0)).toBe("Download stopped: the connection to the download server dropped. Check your internet, then press Retry.");
     expect(statusText("done", total, total, 0)).toBe("Installed. 7.4 GB on disk.");
     expect(statusText("downloading", GiB, 2 * GiB, 0)).toBe("50% · 1.0 GB / 2.0 GB · 0.0 B/s · —");
   });

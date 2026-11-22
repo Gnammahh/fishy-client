@@ -303,7 +303,7 @@ mod tests {
             .await;
         let m = AuthManager::new(EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)), BrokenStore(StoreError::Backend("denied".into())), now);
         let err = m.complete_login("abc").await.unwrap_err();
-        assert_eq!(err.to_string(), "Couldn't save your sign-in to Windows Credential Manager.");
+        assert_eq!(err.to_string(), "Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again.");
     }
 
     #[tokio::test]

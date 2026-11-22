@@ -29,6 +29,9 @@ pub enum InstallError {
     /// Epic has no Windows download for this library entry.
     #[error("no download")]
     NoDownload,
+    /// Windows says a game file is in use, usually because the game is running (spec §6f.2).
+    #[error("files in use: {0}")]
+    FilesInUse(String),
     /// The saved sign-in is gone (spec §6f.2); the app sends the user back to Login.
     #[error("sign-in expired")]
     Expired,
@@ -37,7 +40,7 @@ pub enum InstallError {
 impl InstallError {
     pub fn user_message(&self) -> String {
         match self {
-            Self::Network(_) => "Download stopped: the connection to the download server dropped.".into(),
+            Self::Network(_) => "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.".into(),
             Self::Rejected(_) => "That sign-in didn't work. Please try again.".into(),
             Self::Unsupported | Self::BadManifest(_) => "This game uses a download format Fishy Client can't install yet.".into(),
             Self::BadChunk(_) | Self::DamagedFile(_) => "A downloaded file was damaged. Press Retry to download it again.".into(),
@@ -47,7 +50,8 @@ impl InstallError {
             }
             Self::InUse => "Couldn't delete some files. Close the game and try again.".into(),
             Self::Stopped => "Download paused.".into(),
-            Self::NotInstalled => "That game isn't installed.".into(),
+            Self::NotInstalled => "That game isn't installed any more. Refresh your Library.".into(),
+            Self::FilesInUse(title) => format!("Some of {title}'s files are in use. Close the game, then press Retry."),
             Self::Expired => "Your sign-in has expired. Please sign in again.".into(),
             Self::NoDownload => {
                 "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one.".into()
@@ -95,7 +99,12 @@ mod tests {
         let gb = 1024u64 * 1024 * 1024;
         let no_space = InstallError::NoSpace { drive: "C:".into(), needed: 12 * gb + 300 * 1024 * 1024, free: 4 * gb + 100 * 1024 * 1024 };
         assert_eq!(no_space.user_message(), "Not enough space on C:. Needs 12.3 GB, 4.1 GB free.");
-        assert_eq!(InstallError::Network("x".into()).user_message(), "Download stopped: the connection to the download server dropped.");
+        assert_eq!(
+            InstallError::Network("x".into()).user_message(),
+            "Download stopped: the connection to the download server dropped. Check your internet, then press Retry."
+        );
+        assert_eq!(InstallError::NotInstalled.user_message(), "That game isn't installed any more. Refresh your Library.");
+        assert_eq!(InstallError::FilesInUse("Bendy".into()).user_message(), "Some of Bendy's files are in use. Close the game, then press Retry.");
         assert_eq!(InstallError::Unsupported.user_message(), "This game uses a download format Fishy Client can't install yet.");
         assert_eq!(
             InstallError::Io { folder: r"C:\Games\Fish".into(), detail: "denied".into() }.user_message(),

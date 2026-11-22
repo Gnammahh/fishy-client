@@ -30,7 +30,7 @@ export type LibraryView = {
   latestVersions: Record<string, string>;
 };
 
-const LIBRARY_ERROR = "Couldn't load your library from Epic.";
+const LIBRARY_ERROR = "Couldn't load your library from Epic. Check your internet, then press Try again.";
 const initial: LibraryView = { status: "loading", games: [], updating: false, error: "", latestVersions: {} };
 const versionsOf = (c: CachedLibrary | null) => (c?.latest_versions && typeof c.latest_versions === "object" ? c.latest_versions : {});
 

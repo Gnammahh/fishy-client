@@ -47,8 +47,17 @@ impl Default for RunOptions {
     }
 }
 
-/// A write error; a full disk becomes the "Not enough space" message.
-pub fn write_error(install_path: &Path, e: std::io::Error, needed: u64, free: u64) -> InstallError {
+/// Windows "sharing violation" (32) or "lock violation" (33): another program, usually the
+/// game itself, has the file open.
+pub fn files_in_use(e: &std::io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(32 | 33))
+}
+
+/// A write error: a file in use becomes "close the game", a full disk "Not enough space".
+pub fn write_error(install_path: &Path, title: &str, e: std::io::Error, needed: u64, free: u64) -> InstallError {
+    if files_in_use(&e) {
+        return InstallError::FilesInUse(title.to_string());
+    }
     if e.kind() == std::io::ErrorKind::StorageFull {
         return InstallError::NoSpace { drive: super::space::drive_label(install_path), needed, free };
     }
@@ -132,11 +141,18 @@ async fn rebuild_from_downloads(
     manifest: &Manifest,
     entry: &FileEntry,
     path: &Path,
+    title: &str,
     stop: &CancellationToken,
     limiter: Option<&SpeedLimiter>,
     mut on_bytes: impl FnMut(u64),
 ) -> Result<[u8; 20], InstallError> {
-    let io = |e: std::io::Error| InstallError::Io { folder: path.display().to_string(), detail: e.to_string() };
+    let io = |e: std::io::Error| {
+        if files_in_use(&e) {
+            InstallError::FilesInUse(title.to_string())
+        } else {
+            InstallError::Io { folder: path.display().to_string(), detail: e.to_string() }
+        }
+    };
     let mut out = std::io::BufWriter::new(std::fs::File::create(path).map_err(io)?);
     let mut hasher = Sha1::new();
     let mut fetched: HashMap<Guid, Vec<u8>> = HashMap::new();
@@ -213,7 +229,7 @@ pub async fn run_job(
     let mut uses = plan.uses.clone();
     // Chunks already taken from the stream; if one isn't cached any more it's fetched again.
     let mut seen: std::collections::HashSet<Guid> = std::collections::HashSet::new();
-    let io_err = |e: std::io::Error| write_error(&job.install_path, e, needed, (opts.free_space)(&job.install_path).unwrap_or(0));
+    let io_err = |e: std::io::Error| write_error(&job.install_path, &job.title, e, needed, (opts.free_space)(&job.install_path).unwrap_or(0));
 
     for &index in &plan.files {
         if stop.is_cancelled() {
@@ -291,7 +307,7 @@ pub async fn run_job(
                 downloaded += bytes;
                 on_progress(Progress { downloaded: downloaded.min(total), total });
             };
-            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &stop, opts.limiter.as_deref(), add).await?;
+            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &job.title, &stop, opts.limiter.as_deref(), add).await?;
         }
         if sha != entry.sha1 {
             return Err(InstallError::DamagedFile(entry.filename.clone()));
@@ -574,12 +590,26 @@ mod tests {
     }
 
     #[test]
+    fn a_file_in_use_says_close_the_game() {
+        let p = Path::new(r"C:\Games\Bendy");
+        for code in [32, 33] {
+            assert_eq!(write_error(p, "Bendy", std::io::Error::from_raw_os_error(code), 0, 0), InstallError::FilesInUse("Bendy".into()));
+        }
+    }
+
+    #[test]
+    fn access_denied_still_names_the_folder() {
+        let p = Path::new(r"C:\Games\Bendy");
+        assert!(matches!(write_error(p, "Bendy", std::io::Error::from_raw_os_error(5), 0, 0), InstallError::Io { .. }));
+    }
+
+    #[test]
     fn a_full_disk_is_reported_as_no_space() {
         let p = Path::new(r"C:\Games\Tide");
         let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
-        assert_eq!(write_error(p, full, 500, 3), InstallError::NoSpace { drive: "C:".into(), needed: 500, free: 3 });
+        assert_eq!(write_error(p, "Fish", full, 500, 3), InstallError::NoSpace { drive: "C:".into(), needed: 500, free: 3 });
         let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
-        assert!(matches!(write_error(p, denied, 500, 3), InstallError::Io { .. }));
+        assert!(matches!(write_error(p, "Fish", denied, 500, 3), InstallError::Io { .. }));
     }
 
     #[tokio::test]

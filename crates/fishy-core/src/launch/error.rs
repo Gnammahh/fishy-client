@@ -28,10 +28,10 @@ impl LaunchError {
             Self::Rejected(code) => format!("Epic wouldn't let {title} start ({code}). Try again later."),
             Self::MissingProgram => format!("Couldn't find {title}'s program file. Uninstall and install it again."),
             Self::NeedsAdmin => format!("Windows wouldn't start {title}: it needs administrator rights."),
-            Self::Spawn(reason) => format!("Windows wouldn't start {title}: {reason}."),
+            Self::Spawn(reason) => format!("Windows wouldn't start {title}: {reason}. Restart your PC and try again."),
             Self::ThirdParty(store) => format!("{title} starts through {store}, which Fishy Client can't do yet."),
             Self::NotInLibrary => "Refresh your Library, then try again.".into(),
-            Self::NotInstalled => "That game isn't installed.".into(),
+            Self::NotInstalled => "That game isn't installed any more. Refresh your Library.".into(),
         }
     }
 }
@@ -53,12 +53,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn messages_say_what_to_do_next() {
+        assert_eq!(LaunchError::NotInstalled.user_message("Reef"), "That game isn't installed any more. Refresh your Library.");
+        assert_eq!(LaunchError::Spawn("x".into()).user_message("Reef"), "Windows wouldn't start Reef: x. Restart your PC and try again.");
+    }
+
+    #[test]
     fn messages_match_the_spec() {
         let t = "Bad Cheese";
         assert_eq!(LaunchError::Network.user_message(t), "Couldn't reach Epic to sign the game in. Check your internet.");
         assert_eq!(LaunchError::MissingProgram.user_message(t), "Couldn't find Bad Cheese's program file. Uninstall and install it again.");
         assert_eq!(LaunchError::NeedsAdmin.user_message(t), "Windows wouldn't start Bad Cheese: it needs administrator rights.");
-        assert_eq!(LaunchError::Spawn("Access is denied".into()).user_message(t), "Windows wouldn't start Bad Cheese: Access is denied.");
+        assert_eq!(LaunchError::Spawn("Access is denied".into()).user_message(t), "Windows wouldn't start Bad Cheese: Access is denied. Restart your PC and try again.");
         assert_eq!(LaunchError::ThirdParty("the EA app".into()).user_message(t), "Bad Cheese starts through the EA app, which Fishy Client can't do yet.");
         assert_eq!(LaunchError::NotInLibrary.user_message(t), "Refresh your Library, then try again.");
         assert_eq!(LaunchError::Rejected("errors.x".into()).user_message(t), "Epic wouldn't let Bad Cheese start (errors.x). Try again later.");

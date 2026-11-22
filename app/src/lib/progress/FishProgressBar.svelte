@@ -58,7 +58,7 @@
     downloading: "",
     paused: "Download paused.",
     verifying: "Checking installed files.",
-    error: "Download stopped: the connection to the download server dropped.",
+    error: "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.",
     done: "Download finished.",
   };
   const announcement = $derived(ANNOUNCE[dlState]);

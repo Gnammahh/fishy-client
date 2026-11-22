@@ -57,7 +57,7 @@ export function statusText(state: DownloadState, downloaded: number, total: numb
     case "verifying":
       return `Checking installed files, ${percent(downloaded, total)}% done.`;
     case "error":
-      return "Download stopped: the connection to the download server dropped.";
+      return "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.";
     case "done":
       return `Installed. ${formatBytes(knownTotal(total) ? total : downloaded)} on disk.`;
   }

@@ -11,12 +11,26 @@ pub enum AuthError {
     #[error("That sign-in didn't work. Please try again.")]
     Rejected { code: String },
     /// Epic answered with something we couldn't understand.
-    #[error("Epic sent an unexpected reply. Please try again.")]
+    #[error("Epic sent a reply Fishy Client didn't understand. Try again in a few minutes.")]
     Unexpected(String),
     /// Windows Credential Manager refused to store the session.
-    #[error("Couldn't save your sign-in to Windows Credential Manager.")]
+    #[error("Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again.")]
     Storage(String),
     /// Epic refused the saved sign-in (or there is none): it has been forgotten (spec §6f.2).
     #[error("Your sign-in has expired. Please sign in again.")]
     Expired,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn messages_say_what_to_do_next() {
+        assert_eq!(AuthError::Unexpected("x".into()).to_string(), "Epic sent a reply Fishy Client didn't understand. Try again in a few minutes.");
+        assert_eq!(
+            AuthError::Storage("x".into()).to_string(),
+            "Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again."
+        );
+    }
 }

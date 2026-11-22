@@ -5,7 +5,7 @@
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import { downloads, installed, pause, resume, cancel, type DownloadItem } from "./installs";
 
-  const GENERIC_ERROR = "Download stopped: the connection to the download server dropped.";
+  const GENERIC_ERROR = "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.";
 
   const current = $derived($downloads.find((d) => d.state === "downloading") ?? $downloads.find((d) => d.state !== "queued"));
   const queued = $derived($downloads.filter((d) => d.state === "queued"));

@@ -95,7 +95,7 @@ describe("LibraryPage", () => {
       },
     });
     render(LibraryPage, { name: "FishFan" });
-    expect(await screen.findByText("Couldn't load your library from Epic.")).toBeTruthy();
+    expect(await screen.findByText("Couldn't load your library from Epic. Check your internet, then press Try again.")).toBeTruthy();
     fail = false;
     await fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Back Again")).toBeTruthy();
@@ -110,7 +110,7 @@ describe("LibraryPage", () => {
       },
     });
     render(LibraryPage, { name: "FishFan" });
-    expect(await screen.findByText("Couldn't load your library from Epic.")).toBeTruthy();
+    expect(await screen.findByText("Couldn't load your library from Epic. Check your internet, then press Try again.")).toBeTruthy();
     expect(screen.getByText("Still Here")).toBeTruthy();
   });
 

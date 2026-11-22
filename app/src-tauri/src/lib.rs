@@ -109,7 +109,8 @@ pub struct AppLibrary {
     cache: LibraryCache,
 }
 
-const LIBRARY_ERROR: &str = "Couldn't load your library from Epic.";
+const LIBRARY_ERROR: &str = "Couldn't load your library from Epic. Check your internet, then press Try again.";
+const BROWSER_ERROR: &str = "Couldn't open your browser. Use Sign in with Epic instead.";
 
 /// The last saved library (instant, no network), if any.
 #[tauri::command]
@@ -342,7 +343,7 @@ async fn uninstall_game(app: tauri::AppHandle, app_name: String, install: tauri:
 
 #[tauri::command]
 fn open_login_in_browser() -> Result<(), String> {
-    login_window::open_in_browser().map_err(|_| "Couldn't open your browser.".to_string())
+    login_window::open_in_browser().map_err(|_| BROWSER_ERROR.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -411,4 +412,15 @@ pub fn run() {
 
 fn chrono_now() -> fishy_core::chrono::DateTime<fishy_core::chrono::Utc> {
     fishy_core::chrono::Utc::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn library_and_browser_messages_say_what_to_do() {
+        assert_eq!(LIBRARY_ERROR, "Couldn't load your library from Epic. Check your internet, then press Try again.");
+        assert_eq!(BROWSER_ERROR, "Couldn't open your browser. Use Sign in with Epic instead.");
+    }
 }

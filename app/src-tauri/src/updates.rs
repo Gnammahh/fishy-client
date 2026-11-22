@@ -10,7 +10,7 @@ use fishy_core::settings::{Settings, SettingsStore};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-const UPDATE_FETCH_ERROR: &str = "Couldn't get the update from Epic. Try again later.";
+const UPDATE_FETCH_ERROR: &str = "Couldn't get the update from Epic. Check your internet, then try again.";
 
 pub struct AppSettings {
     pub store: SettingsStore,
@@ -112,6 +112,11 @@ pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>, in
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_fetch_error_says_what_to_do() {
+        assert_eq!(UPDATE_FETCH_ERROR, "Couldn't get the update from Epic. Check your internet, then try again.");
+    }
 
     #[test]
     fn update_errors_are_plain() {

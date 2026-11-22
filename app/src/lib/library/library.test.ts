@@ -3,7 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/sv
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
 import { filterGames, sortGames, resetLibrary, type Game } from "./library";
-import { downloads, installed, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
+import { downloads, installed, running, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
 import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
 const installedGame = (app_name: string): InstalledGame => ({
@@ -78,6 +78,18 @@ describe("sortGames", () => {
 
   it("size_on_disk_puts_the_biggest_installed_game_first_then_a_to_z", () => {
     expect(titles(sortGames(games, "size", installedList))).toEqual(["Kelp Runner", "Brine & Bones", "abyssal Lanterns", "Coral Kart"]);
+  });
+
+  it("sorts_recently_played_then_other_installed_then_the_rest", () => {
+    const list = [game("Abalone"), game("Barnacle"), game("coral"), game("Dory")];
+    const ins2 = [
+      { ...installedGame("Abalone"), last_played: "2026-11-01T00:00:00Z" },
+      installedGame("coral"),
+      { ...installedGame("Dory"), last_played: "2026-11-20T00:00:00Z" },
+    ];
+    const copy = [...list];
+    expect(titles(sortGames(list, "played", ins2))).toEqual(["Dory", "Abalone", "coral", "Barnacle"]);
+    expect(list).toEqual(copy);
   });
 
   it("does_not_change_the_list_it_was_given", () => {
@@ -466,6 +478,27 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan" });
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
   });
+  it("auto_update_skips_running_games_and_queues_them_when_closed", async () => {
+    const started: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "2" }),
+      settings_get: () => ({ auto_update: true, warn_outdated_play: true }),
+      installed_list: () => [installedGame("KelpRunner")],
+      update_start: (args) => {
+        started.push(args);
+        return { items: [] };
+      },
+    });
+    running.set(["KelpRunner"]);
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Kelp Runner")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(started).toEqual([]);
+    running.set([]);
+    await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
+  });
+
   // ---- Refresh button ----
 
   it("refresh_fetches_the_library_and_installed_list_again", async () => {

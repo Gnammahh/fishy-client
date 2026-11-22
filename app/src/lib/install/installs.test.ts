@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { get } from "svelte/store";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { downloads, installed, initInstalls, statusFor, uninstall, resetInstalls, type DownloadItem, type InstalledGame } from "./installs";
+import { downloads, installed, running, initInstalls, statusFor, uninstall, resetInstalls, type DownloadItem, type InstalledGame } from "./installs";
 
 const item = (app_name: string, state: DownloadItem["state"]): DownloadItem => ({
   app_name,
@@ -49,6 +49,7 @@ describe("initInstalls", () => {
       (cmd) => {
         if (cmd === "downloads_state") return { items: [item("B", "downloading")] };
         if (cmd === "installed_list") return installedNow;
+        if (cmd === "running_list") return ["A"];
       },
       { shouldMockEvents: true },
     );
@@ -63,6 +64,12 @@ describe("initInstalls", () => {
     await emit("installed-changed", null);
     await new Promise((r) => setTimeout(r, 0));
     expect(get(installed).map((g) => g.app_name)).toEqual(["A", "B"]);
+
+    expect(get(running)).toEqual(["A"]);
+    await emit("running-changed", ["B"]);
+    expect(get(running)).toEqual(["B"]);
+    await emit("running-changed", "nonsense");
+    expect(get(running)).toEqual([]);
     stop();
   });
 });

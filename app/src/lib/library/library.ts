@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { InstalledGame } from "$lib/install/installs";
 import type { LibrarySort } from "$lib/settings/settings";
-import { writable } from "svelte/store";
-import { autoUpdate } from "$lib/install/installs";
-import { loadSettings } from "$lib/settings/settings";
+import { get, writable } from "svelte/store";
+import { autoUpdate, running } from "$lib/install/installs";
+import { loadSettings, settings } from "$lib/settings/settings";
 
 /** Mirrors the Rust `Game` (fishy-core library). */
 export type Game = {
@@ -54,6 +54,12 @@ export function sortGames(games: Game[], sort: LibrarySort, installed: Installed
   if (sort === "az") return list.sort(byTitle);
   if (sort === "za") return list.sort((a, b) => byTitle(b, a));
   const info = new Map(installed.map((i) => [i.app_name, i]));
+  if (sort === "played") {
+    // Played games newest first, then other installed games, then the rest; ties A-Z.
+    const rank = (g: Game) => (info.get(g.app_name)?.last_played ? 0 : info.has(g.app_name) ? 1 : 2);
+    const when = (g: Game) => Date.parse(info.get(g.app_name)?.last_played ?? "") || 0;
+    return list.sort((a, b) => rank(a) - rank(b) || when(b) - when(a) || byTitle(a, b));
+  }
   const key = (g: Game): number | null => {
     const i = info.get(g.app_name);
     if (!i) return null;
@@ -77,6 +83,14 @@ export function filterGames(games: Game[], query: string): Game[] {
 
 let current: LibraryView = { ...initial };
 library.subscribe((v) => (current = v));
+
+// An update skipped while its game ran is queued once the game closes (spec §6f.4).
+let lastRunning: string[] = [];
+running.subscribe((now) => {
+  const closed = lastRunning.some((a) => !now.includes(a));
+  lastRunning = now;
+  if (closed && get(settings).auto_update) void autoUpdate(current.latestVersions);
+});
 
 /** Shows the saved library at once (if any), then refreshes it from Epic, unless offline. */
 export async function loadLibrary(offline = false) {

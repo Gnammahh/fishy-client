@@ -26,6 +26,8 @@ export type InstalledGame = {
   launch_parameters: string;
   install_size: number;
   installed_at: string;
+  /** When Play last started it (spec §6f.4); missing for games not played since. */
+  last_played?: string | null;
 };
 export type InstallOptions = {
   install_path: string;
@@ -43,13 +45,17 @@ export type GameStatus = "installed" | "downloading" | "queued" | "paused" | "er
 
 export const downloads = writable<DownloadItem[]>([]);
 export const installed = writable<InstalledGame[]>([]);
+/** Code names of games started by Play that are still open (spec §6f.4). */
+export const running = writable<string[]>([]);
 
 /** Forget everything in memory (between tests). */
 export function resetInstalls() {
   downloads.set([]);
   installed.set([]);
+  running.set([]);
 }
 
+const asNames = (v: unknown) => (Array.isArray(v) ? v.filter((n): n is string => typeof n === "string") : []);
 const asItems = (v: DownloadsView | null | undefined) => (v && Array.isArray(v.items) ? v.items : []);
 
 /** Re-reads the installed games from disk. */
@@ -75,6 +81,12 @@ export async function initInstalls(): Promise<() => void> {
   };
   const stopDownloads = await safeListen("downloads-changed", (p) => downloads.set(asItems(p as DownloadsView)));
   const stopInstalled = await safeListen("installed-changed", () => void refreshInstalled());
+  const stopRunning = await safeListen("running-changed", (p) => running.set(asNames(p)));
+  try {
+    running.set(asNames(await invoke<string[]>("running_list")));
+  } catch {
+    /* nothing running */
+  }
   try {
     downloads.set(asItems(await invoke<DownloadsView>("downloads_state")));
   } catch {
@@ -84,6 +96,7 @@ export async function initInstalls(): Promise<() => void> {
   return () => {
     stopDownloads();
     stopInstalled();
+    stopRunning();
   };
 }
 
@@ -167,7 +180,8 @@ export async function startUpdate(appName: string): Promise<string | null> {
   }
 }
 
-/** Auto-update: queues every installed game that has a newer version and no download yet. */
+/** Auto-update: queues every installed game that has a newer version and no download yet.
+ * A running game waits; it's queued when it closes (spec §6f.4). */
 export async function autoUpdate(latest: Record<string, string>) {
   let list: InstalledGame[] = [];
   try {
@@ -176,7 +190,7 @@ export async function autoUpdate(latest: Record<string, string>) {
   } catch {
     return;
   }
-  const busy = new Set(get(downloads).map((d) => d.app_name));
+  const busy = new Set([...get(downloads).map((d) => d.app_name), ...get(running)]);
   for (const g of list) {
     if (!busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
   }

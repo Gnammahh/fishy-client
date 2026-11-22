@@ -12,9 +12,12 @@ export type Settings = {
   reduce_motion: boolean;
   /** The Library's order (spec §6f.3). */
   library_sort: LibrarySort;
+  /** What happens to the window after Play (spec §6f.4). */
+  when_game_starts: WhenGameStarts;
 };
 
-export type LibrarySort = "az" | "za" | "installed" | "size";
+export type LibrarySort = "az" | "za" | "installed" | "size" | "played";
+export type WhenGameStarts = "keep" | "minimize";
 
 export const DEFAULT_SETTINGS: Settings = {
   auto_update: false,
@@ -23,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   speed_limit_mbps: null,
   reduce_motion: false,
   library_sort: "az",
+  when_game_starts: "keep",
 };
 const SAVE_ERROR = "Couldn't save your settings.";
 

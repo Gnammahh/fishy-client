@@ -1,5 +1,6 @@
 mod data;
 mod downloads;
+mod epic_import;
 mod login_window;
 mod play;
 mod running;
@@ -444,7 +445,10 @@ pub fn run() {
             data::autostart_get,
             data::autostart_set,
             data::default_install_folder,
-            data::log_ui_error
+            data::log_ui_error,
+            epic_import::epic_import_scan,
+            epic_import::epic_import_add,
+            epic_import::epic_import_repair
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

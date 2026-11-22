@@ -7,6 +7,7 @@
   import InstallDialog from "$lib/install/InstallDialog.svelte";
   import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
   import EpicImportNote from "$lib/import/EpicImportNote.svelte";
+  import { formatBytes } from "$lib/progress/progress";
   import {
     downloads,
     hasUpdate,
@@ -66,6 +67,8 @@
     if (tab === "updates" && withUpdates.length === 0) tab = "all";
   });
   const isRunning = (g: Game) => $running.includes(g.app_name);
+  /** The installed size for the "⋯" menu (spec §6g.2). */
+  const sizeOf = (g: Game) => $installed.find((i) => i.app_name === g.app_name)?.install_size ?? null;
   const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
   const jobOf = (g: Game) => $downloads.find((d) => d.app_name === g.app_name);
   const UPDATE_LABELS: Partial<Record<GameStatus, string>> = {
@@ -289,6 +292,7 @@
     >
     {#if menuFor === game.app_name}
       <div class="menu" role="menu">
+        {#if sizeOf(game) !== null}<p class="size" role="none">Size: {formatBytes(sizeOf(game) ?? 0)}</p>{/if}
         <button
           role="menuitem"
           disabled={isRunning(game)}
@@ -572,6 +576,13 @@
     border: 2px solid rgba(79, 227, 209, 0.5);
     display: grid;
     min-width: 130px;
+  }
+  .menu .size {
+    margin: 0;
+    padding: 8px 12px 4px;
+    font-size: 13px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
   }
   .menu button {
     font: inherit;

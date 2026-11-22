@@ -280,6 +280,18 @@ describe("LibraryPage", () => {
     expect(screen.queryByRole("button", { name: /^Install / })).toBeNull();
   });
 
+  it("menu_shows_installed_size", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+    });
+    installed.set([{ ...installedGame("KelpRunner"), install_size: 13207024435 }]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
+    const menu = screen.getByRole("menu");
+    expect(menu.textContent).toMatch(/^\s*Size: 12\.3 GB\s*Uninstall/);
+  });
+
   it("uninstall_asks_first_then_calls_the_backend", async () => {
     const calls = mockCommands({
       library_cached: () => null,

@@ -71,8 +71,10 @@ pub async fn delete_all_data(
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
+    running: tauri::State<'_, crate::running::AppRunning>,
 ) -> Result<DeleteReport, String> {
     tracing::info!("delete all my data (games too: {also_games})");
+    games_free_to_delete(also_games, &running.names())?;
     // 1. Stop every download and forget prepared Install boxes.
     let jobs = install.downloads.stop_for_wipe(std::time::Duration::from_secs(60)).await.map_err(|_| {
         tracing::warn!("{STOP_ERROR}");
@@ -113,6 +115,16 @@ pub(crate) fn cut(s: &str, max_chars: usize) -> &str {
     s.char_indices().nth(max_chars).map_or(s, |(i, _)| &s[..i])
 }
 
+const GAMES_RUNNING: &str = "Close your running games first, then try again.";
+
+/// Deleting the games too isn't possible while one of them runs (its files are in use).
+fn games_free_to_delete(also_games: bool, running: &[String]) -> Result<(), String> {
+    if also_games && !running.is_empty() {
+        return Err(GAMES_RUNNING.to_string());
+    }
+    Ok(())
+}
+
 /// A bug in a screen (spec §6f.2). The text goes through the log's secret scrubber like
 /// every other line.
 #[tauri::command]
@@ -140,6 +152,14 @@ pub fn open_logs_folder() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn games_are_not_deleted_while_one_runs() {
+        let kelp = vec!["kelp".to_string()];
+        assert_eq!(games_free_to_delete(true, &kelp), Err(GAMES_RUNNING.to_string()));
+        assert_eq!(games_free_to_delete(false, &kelp), Ok(()), "settings only: the game keeps running");
+        assert_eq!(games_free_to_delete(true, &[]), Ok(()));
+    }
 
     #[test]
     fn a_screen_error_is_one_line() {

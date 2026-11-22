@@ -28,6 +28,10 @@ impl AppRunning {
         self.watch.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    pub fn names(&self) -> Vec<String> {
+        self.lock().list.names()
+    }
+
     pub fn contains(&self, app_name: &str) -> bool {
         self.lock().list.contains(app_name)
     }
@@ -62,7 +66,7 @@ fn should_restore(now_empty: bool, minimized_by_us: bool) -> bool {
 /// The running games' code names, for the Library when it opens.
 #[tauri::command]
 pub fn running_list(running: tauri::State<'_, AppRunning>) -> Vec<String> {
-    running.lock().list.names()
+    running.names()
 }
 
 /// Play started the game: watch it, tell the UI, and minimize if the setting says so.

@@ -38,6 +38,12 @@ pub enum InstallError {
     /// Windows won't let Fishy Client create folders there without admin rights (spec §6g.3).
     #[error("no write access in {folder}")]
     NoWriteAccess { folder: String },
+    /// No in Windows' permission prompt (spec §6k).
+    #[error("permission declined")]
+    PermissionDeclined,
+    /// The admin copy couldn't create the folder, or it still isn't writable (spec §6k).
+    #[error("couldn't create {folder}")]
+    FolderFailed { folder: String },
 }
 
 impl InstallError {
@@ -56,6 +62,8 @@ impl InstallError {
             Self::NotInstalled => "That game isn't installed any more. Refresh your Library.".into(),
             Self::FilesInUse(title) => format!("Some of {title}'s files are in use. Close the game, then press Retry."),
             Self::Expired => "Your sign-in has expired. Please sign in again.".into(),
+            Self::PermissionDeclined => "Fishy Client needs your permission to use that folder. Pick a different folder.".into(),
+            Self::FolderFailed { folder } => format!("Couldn't create {folder}. Pick a different folder."),
             Self::NoWriteAccess { folder } => {
                 format!("Fishy Client can't create folders in {folder} without administrator rights. Pick a different folder.")
             }
@@ -122,6 +130,14 @@ mod tests {
         assert_eq!(
             InstallError::NoWriteAccess { folder: r"C:\Program Files\Epic Games".into() }.user_message(),
             r"Fishy Client can't create folders in C:\Program Files\Epic Games without administrator rights. Pick a different folder."
+        );
+        assert_eq!(
+            InstallError::PermissionDeclined.user_message(),
+            "Fishy Client needs your permission to use that folder. Pick a different folder."
+        );
+        assert_eq!(
+            InstallError::FolderFailed { folder: r"D:\Games\Tide".into() }.user_message(),
+            r"Couldn't create D:\Games\Tide. Pick a different folder."
         );
         assert_eq!(InstallError::Rejected("x".into()).user_message(), "That sign-in didn't work. Please try again.");
         assert_eq!(

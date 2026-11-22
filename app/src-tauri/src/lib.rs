@@ -185,6 +185,8 @@ struct InstallOptions {
     enough_space: bool,
     /// False when Windows won't let Fishy Client create the folder (spec §6g.3).
     folder_ok: bool,
+    /// Windows will ask for permission once to create the folder (spec §6k).
+    needs_permission: bool,
     error: Option<String>,
     note: Option<String>,
 }
@@ -219,13 +221,69 @@ fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &up
     (unique_folder(folder_for(&root, p.folder.as_deref(), &game.title), &downloads.taken_folders(&game.app_name)), note)
 }
 
-/// Can Fishy Client create the install folder? Places like `C:\Program Files` need admin rights.
-async fn folder_check(path: &std::path::Path) -> Result<(), InstallError> {
-    let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&path))
-        .await
-        .unwrap_or(Ok(()))
-        .map_err(|folder| InstallError::NoWriteAccess { folder: folder.display().to_string() })
+/// The admin copy may create this game folder (spec §6k path rules).
+fn permission_possible(path: &std::path::Path) -> bool {
+    let windows = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    fishy_core::install::elevate::check_new_folder(path, &windows).is_ok()
+}
+
+/// The Install box's folder fields: (folder_ok, needs_permission, error). A folder Fishy Client
+/// can't create itself asks Windows for permission when that's safe, else says why not.
+fn folder_fields(res: Result<(), PathBuf>, safe: bool) -> (bool, bool, Option<String>) {
+    match res {
+        Ok(()) => (true, false, None),
+        Err(_) if safe => (false, true, None),
+        Err(folder) => (false, false, Some(InstallError::NoWriteAccess { folder: folder.display().to_string() }.user_message())),
+    }
+}
+
+/// After Windows' permission: the folder must now be writable, or nothing is queued.
+fn after_permission(writable: bool, folder: &str) -> Result<(), InstallError> {
+    if writable {
+        Ok(())
+    } else {
+        Err(InstallError::FolderFailed { folder: folder.to_string() })
+    }
+}
+
+/// Makes sure the game folder can be written, asking Windows for permission once if needed.
+async fn ensure_folder(path: &std::path::Path) -> Result<(), InstallError> {
+    let p = path.to_path_buf();
+    let res = tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&p)).await.unwrap_or(Ok(()));
+    let Err(folder) = res else { return Ok(()) };
+    if !permission_possible(path) {
+        return Err(InstallError::NoWriteAccess { folder: folder.display().to_string() });
+    }
+    info!("install: asking for permission to create a game folder");
+    let p = path.to_path_buf();
+    #[cfg(windows)]
+    let asked = tokio::task::spawn_blocking(move || fishy_core::install::elevate::ask_for_folder(&p)).await.unwrap_or(fishy_core::install::elevate::Asked::Failed);
+    #[cfg(not(windows))]
+    let asked = { let _ = p; fishy_core::install::elevate::Asked::Failed };
+    let shown = path.display().to_string();
+    match asked {
+        fishy_core::install::elevate::Asked::Created => {
+            let p = path.to_path_buf();
+            let writable = tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&p.join("probe")).is_ok()).await.unwrap_or(false);
+            if writable {
+                info!("install: game folder created with permission");
+            }
+            after_permission(writable, &shown)
+        }
+        fishy_core::install::elevate::Asked::Declined => {
+            info!("install: permission declined");
+            Err(InstallError::PermissionDeclined)
+        }
+        fishy_core::install::elevate::Asked::Failed => Err(InstallError::FolderFailed { folder: shown }),
+    }
+}
+
+/// `%ProgramFiles%\Epic Games`, when Epic's launcher has made it (spec §6k).
+#[tauri::command]
+fn epic_folder() -> Option<String> {
+    let base = std::env::var_os("ProgramFiles")?;
+    let dir = PathBuf::from(base).join("Epic Games");
+    dir.is_dir().then(|| dir.display().to_string())
 }
 
 /// Everything the Install box shows: folder, sizes and free space.
@@ -254,15 +312,18 @@ async fn install_options(
     // Games already waiting in the queue on the same drive need their space too.
     let reserved = reserved_on_drive(&path, &install.downloads.left_to_write(&game.app_name));
     let space = check_space(&path, install_size + reserved, free);
-    let folder = folder_check(&path).await;
+    let check_path = path.clone();
+    let res = tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&check_path)).await.unwrap_or(Ok(()));
+    let (folder_ok, needs_permission, folder_error) = folder_fields(res, permission_possible(&path));
     Ok(InstallOptions {
         install_path: path.display().to_string(),
         download_size: p.manifest.chunks.iter().map(|c| c.file_size).sum(),
         install_size,
         free_space: free,
         enough_space: space.is_ok(),
-        folder_ok: folder.is_ok(),
-        error: folder.err().or(space.err()).map(|e| e.user_message()),
+        folder_ok: folder_ok || needs_permission,
+        needs_permission,
+        error: folder_error.or(space.err().map(|e| e.user_message())),
         note,
     })
 }
@@ -299,7 +360,6 @@ async fn install_start(
         }
     };
     let (path, _) = install_path(&game, parent, &p, &settings, downloads);
-    folder_check(&path).await.map_err(refused)?;
     let install_size = p.manifest.install_size();
     let reserved = reserved_on_drive(&path, &downloads.left_to_write(&game.app_name));
     check_space(&path, install_size + reserved, free_space(&path).unwrap_or(0)).map_err(refused)?;
@@ -319,6 +379,8 @@ async fn install_start(
     if install.checking.is_busy(&game.app_name) || downloads.has_job(&game.app_name) {
         return Err(epic_import::being_checked(&game.title));
     }
+    // Last, so Windows' permission prompt only appears for an install that will really start.
+    ensure_folder(&path).await.map_err(refused)?;
     downloads
         .store
         .save_job(&job, &p.bytes)
@@ -477,7 +539,8 @@ pub fn run() {
             app_update::app_update_install,
             epic_import::epic_import_scan,
             epic_import::epic_import_add,
-            epic_import::epic_import_repair
+            epic_import::epic_import_repair,
+            epic_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -527,6 +590,25 @@ mod tests {
         assert_eq!(updater["endpoints"], serde_json::json!(["https://github.com/Gnammahh/fishy-client/releases/latest/download/latest.json"]));
         assert_eq!(updater["windows"]["installMode"], "passive");
         assert!(updater["pubkey"].as_str().is_some_and(|k| !k.is_empty() && k != "REPLACE_WITH_PUBLIC_KEY"));
+    }
+
+    #[test]
+    fn folder_fields_ask_for_permission_when_it_is_safe() {
+        let no = || Err(std::path::PathBuf::from(r"C:\Program Files\Epic Games"));
+        assert_eq!(folder_fields(Ok(()), true), (true, false, None));
+        assert_eq!(folder_fields(no(), true), (false, true, None));
+        let (ok, ask, msg) = folder_fields(no(), false);
+        assert_eq!((ok, ask), (false, false));
+        assert!(msg.unwrap().contains("without administrator rights"));
+    }
+
+    #[test]
+    fn after_permission_refuses_when_still_not_writable() {
+        assert!(after_permission(true, r"D:\Games\Tide").is_ok());
+        assert_eq!(
+            after_permission(false, r"D:\Games\Tide").unwrap_err().user_message(),
+            r"Couldn't create D:\Games\Tide. Pick a different folder."
+        );
     }
 
     #[test]

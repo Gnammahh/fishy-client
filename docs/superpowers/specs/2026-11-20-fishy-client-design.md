@@ -202,7 +202,7 @@ We follow the protocol that the open-source **Legendary** project already worked
 | **Launch** | Get a short-lived *exchange code* from Epic and start the game's `.exe` with the launch arguments Epic's launcher uses (auth type, exchange code, app name, user ID, locale and so on, exactly as in Legendary). |
 | **Update** | Compare the installed version with the latest one. Download a new manifest, work out which chunks changed, and fetch only those. |
 
-**Where data lives:** settings and the cache go in `%APPDATA%\FishyClient\`, and logs in `%LOCALAPPDATA%\FishyClient\logs\`. The installed-games list is a JSON file in the settings folder.
+**Where data lives:** settings and the cache go in `%APPDATA%\FishyClient\`, and logs in `%APPDATA%\FishyClient\logs\`. The installed-games list is a JSON file in the settings folder.
 
 **Note on licensing:** Legendary is licensed under GPL-3.0. Because we're porting its logic closely, Fishy Client will also be **GPL-3.0**. That's fine for an open-source project and avoids any licensing problems.
 
@@ -1148,6 +1148,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - Epic's error messages, which can quote tokens, are never stored.
 - **Security policy (CSP) is on.** The unused "open links" plugin was removed, and the Tauri version is pinned to 2.12.
 - **Running games (§6f.4):** the paths of other programs on your PC are only compared in memory to spot a game's folder. They're never logged, saved or sent.
+- **README "Privacy" section (2026-11-22):** lists every Epic address contacted, everything stored on the PC and how to delete it, for users of the installer. Known gap, written there: Delete all my data doesn't empty the WebView2 cache in `%LOCALAPPDATA%\com.fishyclient.app\` (cached cover images).
 - **Dependency check:** 0 known problems in what ships. The warnings come from a development-only tool and are left as is.
 
 ### Bugs found while testing for real, and fixed

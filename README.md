@@ -2,31 +2,89 @@
 
 A lightweight, open-source launcher for your Epic Games library, written in Rust with a fish-themed pixel-art UI.
 
-> Work in progress. The current build shows the UI foundation (ocean background, fish loader, fish download bar, app icon) with fake data. Epic login, library, install and launch come next.
+It signs you in, shows your games, installs them, updates them (downloading only what changed) and starts them. Windows 10/11 only.
 
-## Signing in
+## Install
 
-Fishy Client signs in through Epic's own login page, shown in a small app window. Your password goes to Epic, never to Fishy Client. The session is stored in Windows Credential Manager (entries named `FishyClient`), and **Log out** removes it.
+Download `Fishy Client_<version>_x64_en-US.msi` and double-click it. It installs to `C:\Program Files\Fishy Client\` with a Start menu shortcut.
 
-Epic doesn't offer an official login for third-party launchers. Like Legendary and Heroic, Fishy Client signs in by identifying itself as the Epic Games Launcher. Epic could change this at any time, which would break signing in until Fishy Client is updated.
+The installer isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info → Run anyway**.
 
-Fishy Client has no analytics or tracking. It only talks to Epic.
+Uninstalling (Settings → Apps → Installed apps) removes the program but keeps your games, settings and sign-in. To remove those too, use **Settings → Delete all my data** in Fishy Client first.
+
+## Before you use it
+
+- **Epic doesn't officially allow third-party launchers.** Fishy Client signs in by identifying itself as the Epic Games Launcher, the same way [Legendary](https://github.com/derrod/legendary) and [Heroic](https://heroicgameslauncher.com/) do. They have been used for years without known bans for normal use, but the risk isn't zero, and Epic could change something that breaks signing in until Fishy Client is updated. Use your own library only; a second Epic account is the zero-risk option.
+- **Some games won't work:** Fortnite, some anti-cheat games (Easy Anti-Cheat, BattlEye) that need the official launcher, and games that start through Ubisoft Connect, the EA app or Rockstar's launcher.
+- No Epic overlay, so no in-game friends or achievement pop-ups.
+
+## Privacy
+
+Fishy Client has **no telemetry, analytics or tracking**, and no server of its own. Nothing about you is sent to the people who make it.
+
+### Signing in
+- You sign in on **Epic's own login page**, in a private app window. Your password goes to Epic only; Fishy Client never sees it.
+- Fishy Client never reads or copies browser cookies, and the login window has no access to the app.
+- The sign-in (Epic's access and refresh tokens, your display name and account ID) is stored in **Windows Credential Manager**, in entries named `FishyClient`. Never in a file. **Log out** removes it and ends the session at Epic.
+
+### What is sent, and to whom
+Only to Epic, always over HTTPS with normal certificate checks:
+
+| Address | Why |
+|---|---|
+| `www.epicgames.com` | the login page |
+| `account-public-service-prod03.ol.epicgames.com` | signing in, keeping you signed in, logging out, the one-time code a game needs to start |
+| `library-service.live.use1a.on.epicgames.com`, `catalog-public-service-prod06.ol.epicgames.com` | your list of games, their titles and cover art |
+| `launcher-public-service-prod06.ol.epicgames.com` | where to download a game and its newest version |
+| `ecommerceintegration-public-service-ecomprod02.ol.epicgames.com` | an ownership token, only for the few games that need one to start |
+| Epic's download servers (addresses Epic gives for each game) | the game files themselves |
+
+Each downloaded piece is checked against Epic's file list, so a changed file is never installed. Fishy Client doesn't update itself, so there's no update server that could be attacked.
+
+When a game starts, Fishy Client passes it your Epic display name, account ID, language and a one-time code, the same as Epic's launcher does. While the game is starting, other programs on your PC could read these from its command line (the same limit Epic's launcher and Legendary have).
+
+### What is stored on your PC
+| Where | What |
+|---|---|
+| Windows Credential Manager, `FishyClient` | your sign-in (see above) |
+| `%APPDATA%\FishyClient\settings.json` | your settings |
+| `%APPDATA%\FishyClient\library.json` | your list of games, so the Library shows at once |
+| `%APPDATA%\FishyClient\installed.json` | your installed games: folder, version, size, install date and when you last pressed Play (for the "Recently played" sort) |
+| `%APPDATA%\FishyClient\manifests\`, `downloads\` | file lists for installed games, and downloads in progress |
+| `%APPDATA%\FishyClient\logs\` | logs, kept for 7 days |
+| `%TEMP%\FishyClient\` | an ownership token file for the few games that need one; deleted when Fishy Client starts |
+| `%LOCALAPPDATA%\com.fishyclient.app\` | the app window's own browser cache (for example cover images), made by Microsoft WebView2 |
+| the Registry `Run` key | only if you turn on **Start with Windows** |
+
+**Logs** never contain your tokens, sign-in codes, Epic's error messages, account ID, email or name, and a filter masks anything secret-looking as a second safety net. They do contain file paths, which can include your Windows user name (for example `C:\Users\you\Games\…`). Logs never leave your PC.
+
+**Running games:** after you press Play, Fishy Client checks every 5 seconds which programs are open, so it can show "Running". It only compares their file paths with the game's folder, in memory. They are never logged, saved or sent. The check stops when the game closes.
+
+**Your files:** Fishy Client only reads and writes the folders you pick for games, plus the places above. It doesn't scan your drives, read save files or browser profiles, or collect hardware details.
+
+### Deleting everything
+**Settings → Delete all my data** logs you out, removes your sign-in from Credential Manager, deletes everything in `%APPDATA%\FishyClient` and turns off Start with Windows. You choose whether your installed games are deleted too.
+
+It doesn't yet empty the WebView2 cache in `%LOCALAPPDATA%\com.fishyclient.app\`. To remove it, close Fishy Client and delete that folder.
 
 ## Develop
 
-Requirements: Rust (rustup), Microsoft C++ Build Tools, Node.js.
+Requirements: Rust (rustup), Microsoft C++ Build Tools, Node.js. In PowerShell, use `npm.cmd` (PowerShell blocks plain `npm` on some PCs).
 
 ```powershell
 cd app
-npm install
-npm run tauri dev   # opens the app window
-npm test            # runs the UI unit tests
-npm run dev         # UI only, in a browser: add ?mock=signedout, signedin or offline
+npm.cmd install
+npm.cmd run tauri dev     # opens the app window
+npm.cmd test              # UI unit tests
+npm.cmd run dev           # UI only, in a browser: add ?mock=signedout, signedin or offline
+npm.cmd run tauri build   # builds the .msi into target\release\bundle\msi\
 ```
 
 ```powershell
-cargo test -p fishy-core   # Rust core tests (from the repo root)
+cargo test --workspace   # Rust tests (from the repo root)
 ```
+
+The full design and progress log is in [docs/superpowers/specs/2026-11-20-fishy-client-design.md](docs/superpowers/specs/2026-11-20-fishy-client-design.md).
 
 ## License
 

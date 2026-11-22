@@ -1,6 +1,7 @@
 //! Epic Games logic for Fishy Client. No UI code lives here.
 pub mod auth;
 pub mod epic_import;
+pub mod epic_sync;
 pub mod install;
 pub mod launch;
 pub mod library;

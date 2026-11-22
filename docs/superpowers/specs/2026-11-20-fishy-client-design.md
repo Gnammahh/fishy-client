@@ -909,7 +909,7 @@ Windows lets only administrator programs create folders in places like `C:\Progr
 - If that fails: Install is greyed out and the box says "Fishy Client can't create folders in *C:\Program Files\Epic Games* without administrator rights. Pick a different folder." (*folder* is the nearest existing one). **Change folder** works as usual.
 - Pressing Install (and auto-updates) checks again and refuses with the same message.
 - Importing games already in Epic's folders (§6g) is not affected: Epic gives users full control of each game folder.
-- **Tests:** Rust: `can_create_in` true for a temp folder, true for a not-yet-existing folder under it (checks the parent), false for a read-only folder, and the test folder is gone afterwards. UI: the message is shown and Install is disabled when `folder_ok` is false.
+- **Tests:** Rust: `can_create_in` true for a temp folder, true for a not-yet-existing folder under it (checks the parent), false when the nearest existing thing is a file, and the test folder is gone afterwards. UI: the message is shown and Install is disabled when `folder_ok` is false.
 
 ---
 

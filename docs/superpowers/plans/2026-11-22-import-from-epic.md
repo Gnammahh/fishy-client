@@ -174,7 +174,7 @@
   - `InstallOptions.folder_ok: bool`; when false, `error` holds the message above (it wins over the space message).
 
 - [ ] **Step 1: Failing tests**
-  - space.rs: `can_create_in_temp_folder`, `can_create_in_missing_child_checks_parent`, `cannot_create_in_read_only_folder` (set the folder read-only with `std::fs::set_permissions`; on Windows a read-only folder attribute doesn't block creation, so use an ACL-free approach: point at a path under an existing *file*, which fails to create, and assert `Err`), `test_folder_is_removed`.
+  - space.rs: `can_create_in_temp_folder`, `can_create_in_missing_child_checks_parent`, `cannot_create_under_a_file` (path under an existing file → `Err`; a read-only folder attribute doesn't block creating on Windows, so this is the portable failing case), `test_folder_is_removed`.
   - error.rs: `no_write_access_message` with `C:\Program Files\Epic Games`.
   - InstallDialog.test.ts: `folder_not_ok_disables_install_and_shows_message`.
 - [ ] **Step 2:** `cargo test -p fishy-core can_create` and `npm.cmd test -- InstallDialog` → FAIL.

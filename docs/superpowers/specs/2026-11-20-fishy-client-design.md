@@ -935,6 +935,48 @@ The idea: games installed with Fishy Client (Bendy, for example) would also show
 - The notes live in `app/src/lib/notes/releaseNotes.ts`, built into the app (no internet). Each release adds its entry at the top; a test checks the top entry matches `package.json`'s version.
 - **Tests:** UI: the notes match the version, every entry has a date and lines, the box lists versions newest first and closes, the sidebar button shows the version and opens it, it opens once for a new version and saves `notes_seen`, not for a seen one. Rust: old settings without `notes_seen`.
 
+## 6j. Fishy Client updates itself (version 1.1.0, approved 2026-11-22)
+
+After installing 1.1.0 by hand once, new versions of Fishy Client arrive by themselves (with the user's OK). Until now the app never updated itself (README "no update server").
+
+### What the user sees
+- At start-up, if **Settings → Check for Fishy Client updates** is on (default **on**), Fishy Client asks GitHub in the background whether a newer version exists. It is checked once per start, never while running.
+- A newer version shows a bar at the top of the app: **"Fishy Client 1.2.0 is available."** with **What's new**, **Update now** and **Later**.
+  - **What's new** shows that version's notes (from `latest.json`).
+  - **Update now:** if a game is running, "Close *Title* first." Otherwise game downloads are paused (they show as Paused after the restart, as when the app is closed), the installer is downloaded with a progress line ("Downloading the update… 42%"), its signature is checked, it installs (Windows' small installer window, no questions) and Fishy Client starts again.
+  - **Later** hides the bar until the next start.
+- **Errors:** a failed check is silent (logged only). A failed download or a bad signature shows "Couldn't download the update. Try again later." and the bar stays.
+
+### How it works
+- Tauri's official `tauri-plugin-updater` (v2), plus `tauri-plugin-process` for the restart. The check and install run in Rust; the page only shows the bar.
+- `tauri.conf.json`: `bundle.createUpdaterArtifacts: true` (the build also writes `<msi>.sig`); `plugins.updater.endpoints: ["https://github.com/Gnammahh/fishy-client/releases/latest/download/latest.json"]`, `plugins.updater.pubkey: <public key>`, `plugins.updater.windows.installMode: "passive"`.
+- `latest.json` (Tauri's static format): `{ "version", "notes", "pub_date", "platforms": { "windows-x86_64": { "signature", "url" } } }`, where `url` is the Release's `.msi` download address and `signature` the contents of the `.sig` file.
+- **Signing key:** made once with `npm.cmd run tauri signer generate -- --ci -w %USERPROFILE%\.fishy-client-keys\fishy-client.key` (no password, your choice). The private key stays in that folder, never in the repository, with a backup you keep (USB stick or password manager). The public key goes into `tauri.conf.json`. A release build gets `TAURI_SIGNING_PRIVATE_KEY` set to the key file's **path**, so the key's contents are never read into a terminal or a log. **If the key is lost, installed copies can't be updated automatically any more**; users would install by hand once.
+- An installer whose signature doesn't match the built-in public key is refused by the plugin.
+- `settings.json` gains `check_app_updates: bool`, default **true**; old files read as true.
+
+### Making a release (written down in `docs/RELEASING.md`)
+1. Bump the version (`app/package.json`, `tauri.conf.json`, `app/src-tauri/Cargo.toml`, the bundle test) and add the notes at the top of `releaseNotes.ts` (§6i).
+2. `npm.cmd run tauri build` with the signing key path set.
+3. `node scripts/make-latest-json.mjs` writes `latest.json` from the version, the top notes entry, the `.sig` file and the Release URL.
+4. Create the GitHub Release `v<version>` with the `.msi` and `latest.json` attached.
+
+### Privacy
+- The check sends nothing but a normal download request to github.com (GitHub sees the IP address, as for any download). No account details, no game list.
+- README "What is sent, and to whom" gains github.com ("checking for and downloading Fishy Client updates; turn it off in Settings"). The line "Fishy Client doesn't update itself" is replaced.
+- Logs: "app update: 1.2.0 available", "app update: installing 1.2.0", "app update: check failed" — no URLs with tokens (there are none) and no paths.
+
+### Before the first release (the user's steps)
+1. Force-push the cleaned history (`master`, `feat/polish`): GitHub still has 2 old commits with the Windows user name.
+2. Make the repository public; set its default branch to `master`.
+3. Keep the backup of the signing key.
+
+### Tests
+- **Rust:** a pure `newer_than(current, offered) -> bool` (semver: 1.2.0 > 1.1.0, 1.1.0 = 1.1.0 not newer, 1.10.0 > 1.9.0); the setting off means no check; `settings.json` default and old files; the bundle test checks `createUpdaterArtifacts`, the endpoint and `installMode`.
+- **Script:** `make-latest-json` writes the expected JSON from a sample `.sig` and notes.
+- **UI (vitest):** the bar with version and three buttons; What's new shows the notes; Later hides it; Update now calls the install command and shows progress; "Close *Title* first."; the error line; the Settings switch.
+- **By hand:** publish 1.1.0, then a small 1.1.1; an installed 1.1.0 offers 1.1.1, installs it and restarts as 1.1.1.
+
 ---
 
 ## 7. Error handling

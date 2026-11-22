@@ -11,6 +11,8 @@ use tokio::time::Instant;
 /// several downloads at once share the rate.
 pub struct SpeedLimiter {
     state: Mutex<Bucket>,
+    /// Wakes pieces that are waiting when the limit changes, so a change applies at once.
+    changed: tokio::sync::Notify,
 }
 
 struct Bucket {
@@ -21,7 +23,7 @@ struct Bucket {
 
 impl SpeedLimiter {
     pub fn new() -> Self {
-        Self { state: Mutex::new(Bucket { rate: None, tokens: 0.0, last: Instant::now() }) }
+        Self { state: Mutex::new(Bucket { rate: None, tokens: 0.0, last: Instant::now() }), changed: tokio::sync::Notify::new() }
     }
 
     /// Bytes per second, or None for no limit. Starts again from an empty bucket.
@@ -30,6 +32,9 @@ impl SpeedLimiter {
         b.rate = bytes_per_sec.filter(|&r| r > 0);
         b.tokens = 0.0;
         b.last = Instant::now();
+        drop(b);
+        // Waiting pieces go now; the new limit applies from the next one.
+        self.changed.notify_waiters();
     }
 
     /// Waits until `bytes` more may be downloaded.
@@ -45,7 +50,10 @@ impl SpeedLimiter {
             if b.tokens < 0.0 { Duration::from_secs_f64(-b.tokens / rate) } else { Duration::ZERO }
         };
         if !wait.is_zero() {
-            tokio::time::sleep(wait).await;
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {}
+                _ = self.changed.notified() => {}
+            }
         }
     }
 }
@@ -109,6 +117,23 @@ mod tests {
         l.take(3_000_000).await; // 1 s banked, 2 s to wait
         let secs = start.elapsed().as_secs_f64();
         assert!((1.9..=2.1).contains(&secs), "{secs}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn turning_the_limit_off_frees_pieces_already_waiting() {
+        let l = std::sync::Arc::new(SpeedLimiter::new());
+        l.set(Some(1_000_000));
+        l.take(1_000_000).await;
+        let start = Instant::now();
+        let waiting = {
+            let l = l.clone();
+            tokio::spawn(async move { l.take(16_000_000).await })
+        };
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        l.set(None);
+        waiting.await.unwrap();
+        let secs = start.elapsed().as_secs_f64();
+        assert!(secs < 1.1, "waited {secs} s after the limit was turned off");
     }
 
     #[test]

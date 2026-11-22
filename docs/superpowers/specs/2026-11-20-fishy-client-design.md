@@ -919,6 +919,54 @@ Windows lets only administrator programs create folders in places like `C:\Progr
 
 ---
 
+## 6h. Show games in Epic's launcher (version 1.1), approved 2026-11-22 on branch `feat/import`
+
+The other direction of §6g: games installed with Fishy Client (Bendy, for example) show as installed in Epic's launcher too, so it doesn't download them again. This is the first feature that writes into Epic's files, so it is a setting.
+
+### What the user sees
+- **Settings:** a switch **Show my games in Epic's launcher**, **on by default**, with the line "Epic's launcher sees games installed with Fishy Client. Changes show the next time Epic's launcher starts."
+- Nothing else on screen changes.
+
+### When it writes (only while the switch is on)
+- **At start-up**, and **when the switch is turned on:** every installed game is added to or updated in Epic's list. Games installed before this version (Bendy) get added this way.
+- **After an install, an update or an import** finishes: that game's entry.
+- **After an uninstall** in Fishy Client: that game's entry and Fishy Client's `.egstore` files are removed.
+- **Switch off:** nothing is written or removed, and entries already added stay as they are (your choice, 2026-11-22).
+- **Epic's launcher not installed** (`%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests` missing): nothing happens. The folder is never created.
+
+### What is written (format checked against Legendary `core.py` `egl_export` and `models/egl.py` `EGLManifest.from_lgd_game`, 2026-11-22)
+- `Manifests\<GUID>.item`, JSON with 4-space indent and sorted keys, UTF-8 without a BOM:
+  - from the record (`installed.json`): `AppName`, `DisplayName` (title), `AppVersionString` (version), `InstallLocation`, `InstallSize`, `LaunchCommand`, `LaunchExecutable`
+  - from the saved Library: `CatalogNamespace`, `CatalogItemId`, `bCanRunOffline`, `OwnershipToken` (`"true"`/`"false"`). A game missing from the saved Library is skipped.
+  - `InstallationGuid` = GUID; `MainGameAppName` = AppName; `ManifestLocation` = `<folder>/.egstore`; `StagingLocation` = `<folder>/.egstore/bps`; `BuildLabel` `"Live"`; `FormatVersion` 0; `bIsIncompleteInstall` false; `bNeedsValidation` false; `bIsApplication`, `bIsExecutable`, `bRequiresAuth` true; `bIsManaged` false; `AppCategories` `["public","games","applications"]`; `BaseURLs`, `InstallTags`, `InstallComponents`, `ChunkDbs`, `CompatibleApps`, `PrereqIds`, `ProcessNames` empty lists; `MandatoryAppFolderName`, `FullAppName`, `HostInstallationGuid`, `InstallSessionId`, `MainWindowProcessName`, `TechnicalType`, `VaultThumbnailUrl`, `VaultTitleText` empty strings.
+- `<folder>\.egstore\<GUID>.manifest`: a copy of the saved manifest (`manifests\<app>.manifest`).
+- `<folder>\.egstore\<GUID>.mancpn`: `{"AppName", "CatalogItemId", "CatalogNamespace", "FormatVersion": 0}`, same JSON style.
+- **Which GUID:**
+  - If an `.item` in Epic's folder has the same `AppName` and the same `InstallLocation` (compared without caring about case or `/` vs `\`), it is updated in place with its own GUID. Imported games (§6g) work this way: Epic's own entry gets the new version after a Fishy Client update.
+  - If Epic has the same game in a **different** folder, Epic's copy is left alone and nothing is written for that game.
+  - Otherwise a new GUID: 32 uppercase hex characters (a random UUID without dashes, as Legendary does).
+- Files are written next to the target, then renamed, so Epic never reads half a file.
+- **Nothing else** in Epic's folders is changed. `LauncherInstalled.dat` is not touched (Legendary doesn't either).
+
+### Removing (uninstall, switch on)
+- The `.item` with that `AppName` and this game's folder is deleted.
+- In the game folder, `.egstore\<GUID>.manifest` and `.egstore\<GUID>.mancpn` are deleted, then `.egstore` if it's empty, then the game folder if it's empty. Epic's other files in `.egstore` stay.
+
+### Errors and privacy
+- A failure never stops or fails an install, update, import or uninstall. It is logged as "epic sync: couldn't update Epic's list for 1 game" (or "N games"), with app names only, never paths.
+- The `.item` holds the game's folder, which can contain the Windows user name. It stays on the PC, in Epic's own folder, as Epic's own entries do.
+- `settings.json` gains `show_in_epic: bool`, default **true**; old files without it read as true.
+
+### Known limits
+- If Epic's launcher is open while the list changes, it notices only when it next starts.
+- Delete all my data doesn't remove the entries (the switch's "leave them" rule); uninstalling a game with the switch on does.
+
+### Tests
+- **Rust (tempfile):** writes a new `.item` + `.manifest` + `.mancpn` with the fields above; updates an existing entry for the same folder in place (same GUID, new version); skips a game Epic has in another folder; skips a game missing from the saved Library; does nothing when Epic's folder is missing; removal deletes only its own files and keeps Epic's other `.egstore` files; settings default and old `settings.json` read `show_in_epic` as true.
+- **UI (vitest):** the switch shows on by default and saving it calls `settings_set` with `show_in_epic`.
+
+---
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

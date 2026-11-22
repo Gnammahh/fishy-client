@@ -980,9 +980,9 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Tests now:** Rust 263 (core 235 + app 28), UI 144. New: 30 core, 5 app, 8 UI.
 
 ### Still to check by hand (milestone 7, sub-project 2)
-- [ ] With Wi-Fi off, **Refresh** shows "Couldn't load your library from Epic. Check your internet, then press Try again." (after about 1.5 s of retries); with Wi-Fi back, **Try again** works
-- [ ] The log shows `retrying …` lines from that refresh
-- [ ] Updating a game while it's running says "Some of *Title*'s files are in use. Close the game, then press Retry." (start Bendy, mark it outdated as in the milestone 6 check, press Update); after closing the game, **Retry** finishes the update
+- [x] (2026-11-22) With Wi-Fi off, **Refresh** shows "Couldn't load your library from Epic. Check your internet, then press Try again." (after about 1.5 s of retries); with Wi-Fi back, **Try again** works
+- [x] (2026-11-22) The log shows `retrying …` lines from that refresh
+- [ ] Waits for a real Epic patch (a faked older version changes no files, so nothing is replaced; covered by a test that locks a file the way a running game does): updating a game while it's running says "Some of *Title*'s files are in use. Close the game, then press Retry." (start Bendy, mark it outdated as in the milestone 6 check, press Update); after closing the game, **Retry** finishes the update
 - [ ] With Wi-Fi off at startup you stay signed in (the "Couldn't reach Epic" banner shows), and nothing is signed out when it comes back
 
 ### Still to check by hand (milestone 7, sub-project 1)

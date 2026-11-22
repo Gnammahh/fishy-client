@@ -144,10 +144,25 @@
 - [ ] **Step 4:** `npm.cmd test` and `npm.cmd run check` → PASS/clean.
 - [ ] **Step 5:** Commit `feat(import): Library note to add games from Epic's launcher`.
 
+### Task 5b: Game size in the "⋯" menu (spec §6g.2)
+
+**Files:**
+- Modify: `app/src/lib/library/LibraryPage.svelte` (the `.menu` at the `menuFor` block)
+- Test: `app/src/lib/library/library.test.ts`
+
+**Interfaces:**
+- Consumes: `formatBytes` from `$lib/progress/progress`; `InstalledGame.install_size` from `$installed`.
+
+- [ ] **Step 1: Failing test** `menu_shows_installed_size`: installed record with `install_size: 13207024435`, open "⋯" → text `Size: ${formatBytes(13207024435)}` is shown above Uninstall.
+- [ ] **Step 2:** `npm.cmd test -- library` → FAIL.
+- [ ] **Step 3:** Add `<p class="size" role="none">Size: {formatBytes(size)}</p>` as the menu's first line (not a menuitem).
+- [ ] **Step 4:** `npm.cmd test` and `npm.cmd run check` → PASS.
+- [ ] **Step 5:** Commit `feat: game size in the ⋯ menu`.
+
 ### Task 6: Docs, review, push, hand check
 
 - [ ] README: "What is stored / read" — add a row or line: Fishy Client **reads** (never changes) `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\` and each Epic game's `.egstore` folder, only when the Library opens, to offer **Add them**. Update "Your files" sentence accordingly. Add a short "Games from Epic's launcher" usage note with the shared-folder limits.
-- [ ] Spec §12: progress-log entry (version 1.1 import), new test counts, privacy line, hand-check list: note appears with the right count; Add them on a game with all files → Installed and Play starts; rename one small game file → missing line, Download them fetches only it; Cancel keeps files; Epic's launcher still sees the game.
+- [ ] Spec §12: progress-log entry (version 1.1 import), new test counts, privacy line, hand-check list: note appears with the right count; Add them on a game with all files → Installed and Play starts; rename one small game file → missing line, Download them fetches only it; Cancel keeps files; Epic's launcher still sees the game; the ⋯ menu shows the size.
 - [ ] Fresh whole-branch review (superpowers:requesting-code-review), fix findings test-first.
 - [ ] `git push -u origin feat/import` (only this branch).
 - [ ] Start `npm.cmd run tauri dev` in `app/` in a terminal tab for the user's hand check.

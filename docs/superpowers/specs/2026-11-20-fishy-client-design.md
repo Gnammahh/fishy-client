@@ -897,6 +897,12 @@ For a friend who already has games installed with Epic's own launcher: Fishy Cli
 - **Rust (wiremock):** missing `.egstore` manifest downloaded; a repair downloads only the missing file.
 - **UI (vitest):** the note and its count, × hides it, Add them, "Checking…", each result line, Download them.
 
+### 6g.2 Game size in the "⋯" menu (asked for 2026-11-22)
+- The "⋯" menu of an **installed** game shows a line above Uninstall: "Size: 12.3 GB" (the record's `install_size`, formatted like the Install box). It's plain text, not a button.
+- Not-installed games have no "⋯" menu; their sizes are in the Install box (§6c).
+- Imported games get their size from the manifest like any install.
+- **Test (vitest):** the menu of an installed game shows "Size: …" with the formatted `install_size`.
+
 ---
 
 ## 7. Error handling

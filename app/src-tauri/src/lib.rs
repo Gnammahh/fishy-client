@@ -10,7 +10,7 @@ use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, Keyr
 use downloads::{Downloads, DownloadsView};
 use fishy_core::install::client::{InstallClient, ManifestInfo};
 use fishy_core::install::manifest::{parse_manifest, Manifest};
-use fishy_core::install::space::{check_space, folder_for, free_space, install_root};
+use fishy_core::install::space::{check_space, folder_for, free_space, install_root, reserved_on_drive, unique_folder};
 use fishy_core::install::store::{InstallStore, InstalledGame, JobInfo};
 use fishy_core::install::uninstall::uninstall;
 use fishy_core::install::InstallError;
@@ -185,7 +185,7 @@ async fn prepare(game: &Game, auth: &AppAuth, library: &AppLibrary, install: &Ap
 
 /// The parent picked in the Install box, else the saved default folder (spec §6f.1). The note
 /// is set when the saved default couldn't be used.
-fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &updates::AppSettings) -> (PathBuf, Option<String>) {
+fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &updates::AppSettings, downloads: &Downloads) -> (PathBuf, Option<String>) {
     let (root, note) = match parent.filter(|s| !s.trim().is_empty()) {
         Some(picked) => (PathBuf::from(picked), None),
         None => {
@@ -194,7 +194,8 @@ fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &up
             (root, note)
         }
     };
-    (folder_for(&root, p.folder.as_deref(), &game.title), note)
+    // Two games never share a folder: the second gets "Name (2)".
+    (unique_folder(folder_for(&root, p.folder.as_deref(), &game.title), &downloads.taken_folders(&game.app_name)), note)
 }
 
 /// Everything the Install box shows: folder, sizes and free space.
@@ -217,10 +218,12 @@ async fn install_options(
             return Err(e.user_message());
         }
     };
-    let (path, note) = install_path(&game, parent, &p, &settings);
+    let (path, note) = install_path(&game, parent, &p, &settings, &install.downloads);
     let install_size = p.manifest.install_size();
     let free = free_space(&path).unwrap_or(0);
-    let space = check_space(&path, install_size, free);
+    // Games already waiting in the queue on the same drive need their space too.
+    let reserved = reserved_on_drive(&path, &install.downloads.left_to_write(&game.app_name));
+    let space = check_space(&path, install_size + reserved, free);
     Ok(InstallOptions {
         install_path: path.display().to_string(),
         download_size: p.manifest.chunks.iter().map(|c| c.file_size).sum(),
@@ -260,9 +263,10 @@ async fn install_start(
             return Err(refused(e));
         }
     };
-    let (path, _) = install_path(&game, parent, &p, &settings);
+    let (path, _) = install_path(&game, parent, &p, &settings, downloads);
     let install_size = p.manifest.install_size();
-    check_space(&path, install_size, free_space(&path).unwrap_or(0)).map_err(refused)?;
+    let reserved = reserved_on_drive(&path, &downloads.left_to_write(&game.app_name));
+    check_space(&path, install_size + reserved, free_space(&path).unwrap_or(0)).map_err(refused)?;
     let job = JobInfo {
         app_name: game.app_name.clone(),
         title: game.title.clone(),

@@ -78,7 +78,8 @@ async fn queue_update(
     let old = downloads.store.installed_manifest(&app_name).ok().and_then(|b| parse_manifest(&b).ok());
     let plan = build_update_plan(&manifest, old.as_ref(), &HashSet::new()).map_err(update_error)?;
     let path = installed.install_path.clone();
-    check_space(&path, plan.space_needed, free_space(&path).unwrap_or(0)).map_err(update_error)?;
+    let reserved = fishy_core::install::space::reserved_on_drive(&path, &downloads.left_to_write(&app_name));
+    check_space(&path, plan.space_needed + reserved, free_space(&path).unwrap_or(0)).map_err(update_error)?;
     let job = JobInfo {
         app_name: app_name.clone(),
         title: installed.title.clone(),

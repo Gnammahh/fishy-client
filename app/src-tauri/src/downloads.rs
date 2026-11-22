@@ -87,6 +87,24 @@ pub struct Inner {
 }
 
 impl Inner {
+    /// Bytes the other downloads still have to write, with their folders (spec §6c space check).
+    pub fn left_to_write(&self, except: &str) -> Vec<(std::path::PathBuf, u64)> {
+        self.jobs
+            .iter()
+            .filter(|j| j.info.app_name != except && j.state != JobState::Removing)
+            .map(|j| {
+                let to_download = j.info.download_size.saturating_sub(j.downloaded);
+                let bytes = if j.info.update_from.is_some() || j.info.download_size == 0 {
+                    to_download
+                } else {
+                    // An install writes install_size in all, in step with what's downloaded.
+                    (j.info.install_size as u128 * to_download as u128 / j.info.download_size as u128) as u64
+                };
+                (j.info.install_path.clone(), bytes)
+            })
+            .collect()
+    }
+
     /// Running job first, then the queue in order, then paused and failed ones.
     /// Something is still writing (a running download, or a cancel deleting its files).
     pub fn busy(&self) -> bool {
@@ -244,6 +262,18 @@ impl Downloads {
 
     pub fn view(&self) -> DownloadsView {
         self.lock().view()
+    }
+
+    /// See `Inner::left_to_write`.
+    pub fn left_to_write(&self, except: &str) -> Vec<(std::path::PathBuf, u64)> {
+        self.lock().left_to_write(except)
+    }
+
+    /// Folders taken by installed games and other downloads.
+    pub fn taken_folders(&self, except: &str) -> Vec<std::path::PathBuf> {
+        let mut taken: Vec<_> = self.store.installed().into_iter().filter(|g| g.app_name != except).map(|g| g.install_path).collect();
+        taken.extend(self.lock().jobs.iter().filter(|j| j.info.app_name != except).map(|j| j.info.install_path.clone()));
+        taken
     }
 
     pub fn has_job(&self, app: &str) -> bool {
@@ -491,6 +521,18 @@ mod tests {
             update_from: None,
         };
         Job::new(info, Arc::new(Manifest::new(ManifestMeta::default(), vec![], vec![])), state)
+    }
+
+    #[test]
+    fn space_left_to_write_skips_the_asking_game() {
+        let mut half = job("a", JobState::Paused);
+        half.downloaded = 500; // half of 1000: an install still needs half of its 2000
+        let mut upd = job("b", JobState::Queued);
+        upd.info.update_from = Some("1".into());
+        upd.downloaded = 200; // an update needs what's left to download: 800
+        let inner = Inner { jobs: vec![half, upd, job("c", JobState::Paused)], wiping: false };
+        let left: Vec<u64> = inner.left_to_write("c").into_iter().map(|(_, b)| b).collect();
+        assert_eq!(left, vec![1000, 800]);
     }
 
     #[test]

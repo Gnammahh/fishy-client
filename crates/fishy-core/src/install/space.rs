@@ -52,6 +52,25 @@ pub fn drive_label(path: &Path) -> String {
     }
 }
 
+/// `path`, or "path (2)", "path (3)"… when another game already uses that folder (capital letters
+/// ignored), so two games never share one.
+pub fn unique_folder(path: PathBuf, taken: &[PathBuf]) -> PathBuf {
+    let key = |p: &Path| p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase();
+    let used = |p: &Path| taken.iter().any(|t| key(t) == key(p));
+    if !used(&path) {
+        return path;
+    }
+    let base = path.as_os_str().to_string_lossy().trim_end_matches(['\\', '/']).to_string();
+    (2..).map(|n| PathBuf::from(format!("{base} ({n})"))).find(|p| !used(p)).expect("an unused number")
+}
+
+/// Space other downloads still need on the same drive as `path`: (their folder, bytes still to
+/// write).
+pub fn reserved_on_drive(path: &Path, others: &[(PathBuf, u64)]) -> u64 {
+    let drive = drive_label(path);
+    others.iter().filter(|(p, _)| drive_label(p) == drive).map(|(_, bytes)| bytes).sum()
+}
+
 pub fn check_space(path: &Path, needed: u64, free: u64) -> Result<(), InstallError> {
     if needed > free {
         return Err(InstallError::NoSpace { drive: drive_label(path), needed, free });
@@ -62,6 +81,20 @@ pub fn check_space(path: &Path, needed: u64, free: u64) -> Result<(), InstallErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_another_game_uses_gets_a_number() {
+        let taken = vec![PathBuf::from(r"C:\Games\Tide"), PathBuf::from(r"c:\games\tide (2)")];
+        assert_eq!(unique_folder(PathBuf::from(r"C:\Games\Tide"), &taken), PathBuf::from(r"C:\Games\Tide (3)"));
+        assert_eq!(unique_folder(PathBuf::from(r"C:\Games\Reef"), &taken), PathBuf::from(r"C:\Games\Reef"));
+    }
+
+    #[test]
+    fn only_downloads_on_the_same_drive_count() {
+        let others = vec![(PathBuf::from(r"C:\Games\Tide"), 5), (PathBuf::from(r"c:\Other\Reef"), 7), (PathBuf::from(r"D:\Games\Kelp"), 100)];
+        assert_eq!(reserved_on_drive(Path::new(r"C:\Games\New"), &others), 12);
+        assert_eq!(reserved_on_drive(Path::new(r"E:\Games\New"), &others), 0);
+    }
 
     /// A drive letter with nothing behind it on this PC.
     fn missing_drive() -> String {

@@ -499,7 +499,7 @@
   }
   /* Not installed: a bit grey, back to full colour on hover or keyboard focus (spec §6g.4). */
   .not-installed .cover {
-    filter: grayscale(0.75) brightness(0.75);
+    filter: grayscale(0.9) brightness(0.65);
   }
   .not-installed .title {
     color: var(--text-2);

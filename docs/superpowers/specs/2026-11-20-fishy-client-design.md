@@ -32,7 +32,7 @@ Fishy Client is a lightweight, open-source replacement for the Epic Games Launch
 - Importing games already installed by Epic's launcher
 
 ### Known limits, the same ones Heroic and Legendary have
-- **Fortnite** isn't supported.
+- **Fortnite: not tested with Fishy Client.** Tools built on Legendary report that it starts on Windows (the "doesn't work" reports are mostly from Linux, where its anti-cheat can't run). It's the game Epic watches most closely, so if you want to try it, use a second account first.
 - **Some anti-cheat games** (Easy Anti-Cheat, BattlEye) may refuse to start or go online without the official launcher.
 - **Ubisoft, EA and Rockstar games** also need that company's own launcher installed.
 - No Epic overlay, so no in-game friends or achievement pop-ups.
@@ -1169,10 +1169,10 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 
 ### Known limits and risks
 - **Ban risk: low, not zero.** Epic doesn't officially allow third-party launchers. Legendary and Heroic use the same method and have been used for years without known bans for normal use.
-  - Avoid online anti-cheat games (Fortnite etc.).
+  - Be careful with online anti-cheat games, Fortnite most of all (not tested; try it on a second account first).
   - Use only your own library.
   - A secondary account is the zero-risk option.
-- Fortnite and some anti-cheat games won't work, the same as with Heroic.
+- Some anti-cheat games may not work, the same as with Heroic. Fortnite is untested; Legendary-based tools report it starts on Windows (checked online 2026-11-22).
 - **PowerShell on this PC blocks npm's script shortcut,** so use `npm.cmd` (for example `npm.cmd run tauri dev`).
 
 ### Small things deferred

@@ -24,7 +24,7 @@ Uninstalling (Settings → Apps → Installed apps) removes the program but keep
 - Only use it with **your own account** and **games you own**. Don't share your sign-in.
 
 ### Some games won't work
-- **Fortnite** isn't supported.
+- **Fortnite: not tested with Fishy Client.** Tools built on Legendary report that it starts on Windows (the "doesn't work" reports are mostly from Linux, where its anti-cheat can't run). It's the game Epic watches most closely, so if you want to try it, use a second account first.
 - **Online games with anti-cheat** (Easy Anti-Cheat, BattlEye) may refuse to start or go online without Epic's own launcher. **Don't try to force them** (for example by changing their files): that's the kind of thing anti-cheat systems ban for.
 - Games that start through **Ubisoft Connect, the EA app or Rockstar's launcher** aren't supported yet.
 - There's **no Epic overlay**: no in-game friends list or achievement pop-ups.

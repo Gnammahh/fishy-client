@@ -294,6 +294,23 @@ describe("LibraryPage", () => {
     expect((await card("Tidepool Odyssey")).classList.contains("not-installed")).toBe(false);
   });
 
+  it("third_party_card_says_installs_through_store", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({
+        updated_at: "x",
+        games: [{ ...game("Battlefront II"), installable: false, launch: { third_party_store: "Origin" } }, { ...game("Phone Fish"), installable: false }],
+      }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Battlefront II")).toBeTruthy();
+    expect(screen.getByText("Installs through the EA app")).toBeTruthy();
+    expect(screen.getByText("Fishy Client can't install or start this game. Use Epic's launcher or the EA app.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Install Battlefront/ })).toBeNull();
+    expect(screen.queryByText("Phone Fish")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Not on Windows (1)" })).toBeTruthy();
+  });
+
   it("menu_shows_installed_size", async () => {
     mockCommands({
       library_cached: () => null,

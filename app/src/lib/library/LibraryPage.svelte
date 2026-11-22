@@ -23,7 +23,7 @@
   } from "$lib/install/installs";
   import { settings, saveSettings, type LibrarySort } from "$lib/settings/settings";
   import { retry as recheckSignIn } from "$lib/auth/auth";
-  import { library, loadLibrary, refreshLibrary, filterGames, sortGames, type Game } from "./library";
+  import { library, loadLibrary, refreshLibrary, filterGames, sortGames, otherStore, type Game } from "./library";
 
   let { name, offline = false }: { name: string; offline?: boolean } = $props();
   let query = $state("");
@@ -48,8 +48,9 @@
   const status = (g: Game): GameStatus => statusFor(g.app_name, $downloads, $installed);
   const installedCount = $derived($library.games.filter((g) => $installed.some((i) => i.app_name === g.app_name)).length);
   // Games Epic has no Windows download for (mostly phone games) live in their own tab.
-  const windowsGames = $derived($library.games.filter((g) => g.installable));
-  const elsewhere = $derived($library.games.filter((g) => !g.installable));
+  // Games another store installs (EA app) are Windows games too (spec §6l).
+  const windowsGames = $derived($library.games.filter((g) => g.installable || otherStore(g) !== null));
+  const elsewhere = $derived($library.games.filter((g) => !g.installable && otherStore(g) === null));
   // Installed games with a newer version from Epic (spec §6f.3).
   const withUpdates = $derived(windowsGames.filter((g) => hasUpdate(g.app_name, $installed, $library.latestVersions)));
   const shown = $derived(
@@ -235,7 +236,12 @@
             </div>
             <span class="title">{game.title}</span>
             <div class="row">
-              {#if s === "none" && !game.installable}
+              {#if s === "none" && otherStore(game)}
+                <div class="store">
+                  <span class="store-name">Installs through {otherStore(game)}</span>
+                  <span class="store-hint">Fishy Client can't install or start this game. Use Epic's launcher or {otherStore(game)}.</span>
+                </div>
+              {:else if s === "none" && !game.installable}
                 <!-- nothing to install: one explanation sits under the grid -->
               {:else if s === "none"}
                 <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
@@ -496,6 +502,18 @@
   }
   .cover {
     position: relative;
+  }
+  .store {
+    display: grid;
+    gap: 2px;
+  }
+  .store-name {
+    font-size: 13px;
+    color: var(--text);
+  }
+  .store-hint {
+    font-size: 12px;
+    color: var(--text-2);
   }
   /* Not installed: a bit grey, back to full colour on hover or keyboard focus (spec §6g.4). */
   .not-installed .cover {

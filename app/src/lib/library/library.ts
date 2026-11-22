@@ -14,7 +14,19 @@ export type Game = {
   cover_url: string | null;
   /** False when Epic has no Windows download for it. */
   installable: boolean;
+  /** From the catalog (spec §6d): set when another store's app installs and starts it. */
+  launch?: { third_party_store?: string | null };
 };
+
+/** The other store that installs this game (spec §6l), or null. Same names as Play's message. */
+export function otherStore(g: Game): string | null {
+  const raw = g.launch?.third_party_store;
+  if (g.installable || !raw) return null;
+  const key = raw.toLowerCase();
+  if (key === "origin" || key === "the ea app") return "the EA app";
+  if (key === "ubisoftconnect" || key === "uplay") return "Ubisoft Connect";
+  return raw;
+}
 
 /** `latest_versions`: Epic's newest build version per app name (spec §6e). */
 export type CachedLibrary = { updated_at: string; games: Game[]; latest_versions?: Record<string, string> };

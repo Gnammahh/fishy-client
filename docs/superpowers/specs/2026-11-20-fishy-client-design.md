@@ -1078,9 +1078,9 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - [ ] Optional: **Settings → Apps → Installed apps → Fishy Client → Uninstall** removes the program; your games and settings stay
 
 ### Still to check by hand (milestone 7, sub-project 5)
-- [ ] A download shows hours when it's long (for example with a speed limit of 1 MB/s on a big game: `~… h … min left`)
-- [ ] Settings → Limit download speed: type `abc` in MB/s and click away: the message shows and the box goes back to the saved number
-- [ ] Changing the Sort menu while a limited download runs doesn't make it jump faster
+- [x] (2026-11-22) A download shows hours when it's long (for example with a speed limit of 1 MB/s on a big game: `~… h … min left`)
+- [x] (2026-11-22) Settings → Limit download speed: type `abc` in MB/s and click away: the message shows and the box goes back to the saved number
+- [x] (2026-11-22) Changing the Sort menu while a limited download runs doesn't make it jump faster
 
 ### Still to check by hand (milestone 7, sub-project 4)
 - [x] (2026-11-22) Play a game: the card shows **Starting…**, then **Running**, with Update and Uninstall greyed out and "Close *Title* first."
@@ -1200,5 +1200,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes and 6 Installer, built 2026-11-22, hand checks above. That's all of Polish. Next: your hand checks, then merging `feat/polish` into `master`; later, version 1.0.0 and a code-signed installer.
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes and 6 Installer, built 2026-11-22 and hand-checked (the installer installs and runs). That's all of Polish. Next: your hand checks, then merging `feat/polish` into `master`; later, version 1.0.0 and a code-signed installer.
    - Later: signed updates and a code-signed installer

@@ -30,7 +30,7 @@ describe("SettingsPage", () => {
     await fireEvent.click(auto);
     await waitFor(() =>
       expect(saved).toEqual([
-        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false },
+        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false, library_sort: "az" },
       ]),
     );
   });

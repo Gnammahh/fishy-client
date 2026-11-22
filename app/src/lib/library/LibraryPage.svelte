@@ -18,13 +18,13 @@
     type GameStatus,
     type PlayError,
   } from "$lib/install/installs";
-  import { settings, saveSettings } from "$lib/settings/settings";
+  import { settings, saveSettings, type LibrarySort } from "$lib/settings/settings";
   import { retry as recheckSignIn } from "$lib/auth/auth";
-  import { library, loadLibrary, refreshLibrary, filterGames, type Game } from "./library";
+  import { library, loadLibrary, refreshLibrary, filterGames, sortGames, type Game } from "./library";
 
   let { name, offline = false }: { name: string; offline?: boolean } = $props();
   let query = $state("");
-  let tab = $state<"all" | "installed" | "elsewhere">("all");
+  let tab = $state<"all" | "installed" | "updates" | "elsewhere">("all");
   let installing = $state<Game | null>(null);
   let menuFor = $state<string | null>(null);
   let confirmUninstall = $state<Game | null>(null);
@@ -47,14 +47,21 @@
   // Games Epic has no Windows download for (mostly phone games) live in their own tab.
   const windowsGames = $derived($library.games.filter((g) => g.installable));
   const elsewhere = $derived($library.games.filter((g) => !g.installable));
+  // Installed games with a newer version from Epic (spec §6f.3).
+  const withUpdates = $derived(windowsGames.filter((g) => hasUpdate(g.app_name, $installed, $library.latestVersions)));
   const shown = $derived(
-    filterGames(tab === "elsewhere" ? elsewhere : windowsGames, query).filter(
-      (g) => tab !== "installed" || $installed.some((i) => i.app_name === g.app_name),
+    sortGames(
+      filterGames(tab === "elsewhere" ? elsewhere : tab === "updates" ? withUpdates : windowsGames, query).filter(
+        (g) => tab !== "installed" || $installed.some((i) => i.app_name === g.app_name),
+      ),
+      $settings.library_sort,
+      $installed,
     ),
   );
-  // If a refresh empties the "Not on Windows" tab while it's open, go back to All.
+  // If a refresh or a finished update empties the tab that's open, go back to All.
   $effect(() => {
     if (tab === "elsewhere" && elsewhere.length === 0) tab = "all";
+    if (tab === "updates" && withUpdates.length === 0) tab = "all";
   });
   const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
   const jobOf = (g: Game) => $downloads.find((d) => d.app_name === g.app_name);
@@ -131,6 +138,13 @@
       {#if $library.status === "ready" && $library.games.length > 0}
         <label class="sr-only" for="library-search">Search your library</label>
         <input id="library-search" type="search" placeholder="Search your library" bind:value={query} autocomplete="off" />
+        <label class="sr-only" for="library-sort">Sort</label>
+        <select id="library-sort" value={$settings.library_sort} onchange={(e) => saveSettings({ library_sort: e.currentTarget.value as LibrarySort })}>
+          <option value="az">A–Z</option>
+          <option value="za">Z–A</option>
+          <option value="installed">Recently installed</option>
+          <option value="size">Size on disk</option>
+        </select>
         <span class="count">{windowsGames.length} {windowsGames.length === 1 ? "game" : "games"}</span>
       {/if}
       {#if !offline && $library.status !== "offline"}
@@ -178,6 +192,11 @@
       <button role="tab" aria-selected={tab === "installed"} class:active={tab === "installed"} onclick={() => (tab = "installed")}>
         Installed ({installedCount})
       </button>
+      {#if withUpdates.length > 0}
+        <button role="tab" aria-selected={tab === "updates"} class:active={tab === "updates"} onclick={() => (tab = "updates")}>
+          Updates ({withUpdates.length})
+        </button>
+      {/if}
       {#if elsewhere.length > 0}
         <button role="tab" aria-selected={tab === "elsewhere"} class:active={tab === "elsewhere"} onclick={() => (tab = "elsewhere")}>
           Not on Windows ({elsewhere.length})
@@ -339,6 +358,24 @@
   input[type="search"]:focus-visible {
     outline: none;
     border-color: var(--orange);
+  }
+  /* The Sort menu, styled like the search box (spec §6f.3). */
+  #library-sort {
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text);
+    border: 2px solid rgba(79, 227, 209, 0.35);
+    padding: 7px 8px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #library-sort:focus-visible {
+    outline: none;
+    border-color: var(--orange);
+  }
+  #library-sort option {
+    background: var(--panel);
+    color: var(--text);
   }
   .count,
   .refresh {

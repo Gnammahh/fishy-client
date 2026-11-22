@@ -10,7 +10,11 @@ export type Settings = {
   /** MB/s, 1 to 1000; null means no limit. */
   speed_limit_mbps: number | null;
   reduce_motion: boolean;
+  /** The Library's order (spec §6f.3). */
+  library_sort: LibrarySort;
 };
+
+export type LibrarySort = "az" | "za" | "installed" | "size";
 
 export const DEFAULT_SETTINGS: Settings = {
   auto_update: false,
@@ -18,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   install_folder: null,
   speed_limit_mbps: null,
   reduce_motion: false,
+  library_sort: "az",
 };
 const SAVE_ERROR = "Couldn't save your settings.";
 

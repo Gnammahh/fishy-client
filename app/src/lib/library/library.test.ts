@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/svelte";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
-import { filterGames, resetLibrary, type Game } from "./library";
+import { filterGames, sortGames, resetLibrary, type Game } from "./library";
 import { downloads, installed, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
 import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
@@ -52,6 +52,39 @@ afterEach(() => {
   resetLibrary();
   resetInstalls();
   resetSettings();
+});
+
+describe("sortGames", () => {
+  const ins = (app_name: string, installed_at: string, install_size: number): InstalledGame => ({
+    ...installedGame(app_name),
+    installed_at,
+    install_size,
+  });
+  const games = [game("Coral Kart"), game("abyssal Lanterns"), game("Kelp Runner"), game("Brine & Bones")];
+  const installedList = [ins("KelpRunner", "2026-11-01T00:00:00Z", 5), ins("BrineBones", "2026-11-20T00:00:00Z", 2)];
+  const titles = (gs: Game[]) => gs.map((g) => g.title);
+
+  it("a_to_z_ignores_letter_case", () => {
+    expect(titles(sortGames(games, "az", installedList))).toEqual(["abyssal Lanterns", "Brine & Bones", "Coral Kart", "Kelp Runner"]);
+  });
+
+  it("z_to_a", () => {
+    expect(titles(sortGames(games, "za", installedList))).toEqual(["Kelp Runner", "Coral Kart", "Brine & Bones", "abyssal Lanterns"]);
+  });
+
+  it("recently_installed_puts_installed_games_first_newest_on_top_then_a_to_z", () => {
+    expect(titles(sortGames(games, "installed", installedList))).toEqual(["Brine & Bones", "Kelp Runner", "abyssal Lanterns", "Coral Kart"]);
+  });
+
+  it("size_on_disk_puts_the_biggest_installed_game_first_then_a_to_z", () => {
+    expect(titles(sortGames(games, "size", installedList))).toEqual(["Kelp Runner", "Brine & Bones", "abyssal Lanterns", "Coral Kart"]);
+  });
+
+  it("does_not_change_the_list_it_was_given", () => {
+    const copy = [...games];
+    sortGames(games, "za", installedList);
+    expect(games).toEqual(copy);
+  });
 });
 
 describe("filterGames", () => {
@@ -482,5 +515,74 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan", offline: true });
     await screen.findByText("Kelp Runner");
     expect(screen.queryByRole("button", { name: "Refresh library" })).toBeNull();
+  });
+});
+
+describe("Updates tab and Sort menu", () => {
+  const withUpdate = (games: Game[], latest: Record<string, string>) => ({ updated_at: "x", games, latest_versions: latest });
+
+  it("the_updates_tab_shows_only_games_with_an_update_waiting", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Kelp Runner"), game("Coral Kart"), game("Reef Raiders")], { KelpRunner: "2", CoralKart: "1" }),
+    });
+    installed.set([installedGame("KelpRunner"), installedGame("CoralKart")]);
+    render(LibraryPage, { name: "FishFan" });
+    const tab = await screen.findByRole("tab", { name: "Updates (1)" });
+    await fireEvent.click(tab);
+    await waitFor(() => expect(screen.queryByText("Coral Kart")).toBeNull());
+    expect(screen.getByText("Kelp Runner")).toBeTruthy();
+    expect(screen.queryByText("Reef Raiders")).toBeNull();
+  });
+
+  it("there_is_no_updates_tab_without_updates", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "1" }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    expect(screen.queryByRole("tab", { name: /Updates/ })).toBeNull();
+  });
+
+  it("when_the_last_update_is_done_the_updates_tab_goes_back_to_all", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Kelp Runner"), game("Coral Kart")], { KelpRunner: "2" }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("tab", { name: "Updates (1)" }));
+    installed.set([{ ...installedGame("KelpRunner"), version: "2" }]);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "All" }).getAttribute("aria-selected")).toBe("true"));
+    expect(screen.getByText("Coral Kart")).toBeTruthy();
+  });
+
+  it("the_sort_menu_orders_the_cards_and_saves_the_choice", async () => {
+    const saved: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Coral Kart"), game("Abyssal Lanterns"), game("Kelp Runner")], {}),
+      settings_set: (a: { value: unknown }) => {
+        saved.push(a.value);
+        return a.value;
+      },
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    const cardTitles = () => Array.from(document.querySelectorAll(".card .title")).map((e) => e.textContent?.trim());
+    expect(cardTitles()).toEqual(["Abyssal Lanterns", "Coral Kart", "Kelp Runner"]);
+    await fireEvent.change(screen.getByRole("combobox", { name: "Sort" }), { target: { value: "za" } });
+    await waitFor(() => expect(cardTitles()).toEqual(["Kelp Runner", "Coral Kart", "Abyssal Lanterns"]));
+    await waitFor(() => expect(saved.at(-1)).toMatchObject({ library_sort: "za" }));
+  });
+
+  it("the_saved_sort_is_used_and_works_with_search", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Kelp Runner"), game("Kelp Kart"), game("Coral Kart")], {}),
+      settings_get: () => ({ ...DEFAULT_SETTINGS, library_sort: "za" }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Coral Kart");
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Sort" }) as HTMLSelectElement).value).toBe("za"));
+    await fireEvent.input(screen.getByRole("searchbox"), { target: { value: "kelp" } });
+    const cardTitles = () => Array.from(document.querySelectorAll(".card .title")).map((e) => e.textContent?.trim());
+    await waitFor(() => expect(cardTitles()).toEqual(["Kelp Runner", "Kelp Kart"]));
   });
 });

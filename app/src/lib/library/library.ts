@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { InstalledGame } from "$lib/install/installs";
+import type { LibrarySort } from "$lib/settings/settings";
 import { writable } from "svelte/store";
 import { autoUpdate } from "$lib/install/installs";
 import { loadSettings } from "$lib/settings/settings";
@@ -39,6 +41,32 @@ export const library = writable<LibraryView>({ ...initial });
 /** Forget the in-memory library (used on Log out, and between tests). */
 export function resetLibrary() {
   library.set({ ...initial });
+}
+
+const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+
+/**
+ * The Library's order (spec §6f.3). "installed" and "size" put installed games first (newest or
+ * biggest at the top), then the rest A–Z. Returns a new list.
+ */
+export function sortGames(games: Game[], sort: LibrarySort, installed: InstalledGame[]): Game[] {
+  const list = [...games];
+  if (sort === "az") return list.sort(byTitle);
+  if (sort === "za") return list.sort((a, b) => byTitle(b, a));
+  const info = new Map(installed.map((i) => [i.app_name, i]));
+  const key = (g: Game): number | null => {
+    const i = info.get(g.app_name);
+    if (!i) return null;
+    return sort === "installed" ? Date.parse(i.installed_at) || 0 : i.install_size;
+  };
+  return list.sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka !== null && kb !== null && ka !== kb) return kb - ka;
+    if (ka !== null && kb === null) return -1;
+    if (ka === null && kb !== null) return 1;
+    return byTitle(a, b);
+  });
 }
 
 /** Case-insensitive title search; an empty query shows everything. */

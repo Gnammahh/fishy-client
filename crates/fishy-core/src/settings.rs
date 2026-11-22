@@ -15,11 +15,20 @@ pub struct Settings {
     pub speed_limit_mbps: Option<u32>,
     /// Calm animations even when Windows doesn't ask for it.
     pub reduce_motion: bool,
+    /// The Library's order (spec §6f.3): "az", "za", "installed" or "size".
+    pub library_sort: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { auto_update: false, warn_outdated_play: true, install_folder: None, speed_limit_mbps: None, reduce_motion: false }
+        Self {
+            auto_update: false,
+            warn_outdated_play: true,
+            install_folder: None,
+            speed_limit_mbps: None,
+            reduce_motion: false,
+            library_sort: "az".into(),
+        }
     }
 }
 
@@ -76,6 +85,7 @@ mod tests {
         assert_eq!(s.install_folder, None);
         assert_eq!(s.speed_limit_mbps, None);
         assert!(!s.reduce_motion);
+        assert_eq!(s.library_sort, "az");
         assert!(s.auto_update && !s.warn_outdated_play);
     }
 
@@ -89,6 +99,7 @@ mod tests {
             install_folder: Some(r"D:\Games".into()),
             speed_limit_mbps: Some(25),
             reduce_motion: true,
+            library_sort: "size".into(),
         };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);

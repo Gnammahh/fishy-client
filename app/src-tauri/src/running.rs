@@ -90,14 +90,33 @@ pub fn started(app: &AppHandle, app_name: &str, folder: &Path, minimize: bool) {
     }
 }
 
+/// Resets the watch if the loop stops without finishing normally (a crash), so the next Play
+/// starts a fresh check instead of never being watched.
+struct ResetIfStopped<'a> {
+    running: &'a AppRunning,
+    finished: bool,
+}
+
+impl Drop for ResetIfStopped<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let mut w = self.running.lock();
+            w.list = RunningList::default();
+            w.watching = false;
+            w.minimized_by_us = false;
+        }
+    }
+}
+
 /// Every 5 seconds: drop the games with nothing open. Ends when the list is empty.
 async fn watch(app: AppHandle) {
+    let state = app.state::<AppRunning>();
+    let mut guard = ResetIfStopped { running: state.inner(), finished: false };
     loop {
         tokio::time::sleep(CHECK_EVERY).await;
         let taken_at = std::time::Instant::now();
         // If the check itself fails, everything counts as closed, so no card stays stuck.
         let paths = tauri::async_runtime::spawn_blocking(|| OpenPrograms::new().paths()).await.unwrap_or_default();
-        let state = app.state::<AppRunning>();
         let (closed, names, restore, done) = {
             let mut w = state.lock();
             let closed = w.list.check(&paths, taken_at);
@@ -119,6 +138,7 @@ async fn watch(app: AppHandle) {
             bring_back(&app);
         }
         if done {
+            guard.finished = true;
             return;
         }
     }
@@ -126,7 +146,8 @@ async fn watch(app: AppHandle) {
 
 /// Windows may refuse the focus and flash the taskbar button instead; that's fine.
 fn bring_back(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
+    // Only if it's still minimized: if you brought it back yourself, it stays where you put it.
+    if let Some(window) = app.get_webview_window("main").filter(|w| w.is_minimized().unwrap_or(false)) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -153,6 +174,22 @@ mod tests {
         assert!(r.begin_launch("kelp").is_some(), "allowed again after a failure");
         r.lock().list.add("kelp", std::path::Path::new(r"C:\Games\Kelp"));
         assert!(r.begin_launch("kelp").is_none(), "running");
+    }
+
+    #[test]
+    fn a_crashed_check_resets_the_watch() {
+        let r = AppRunning::default();
+        {
+            let mut w = r.lock();
+            w.list.add("kelp", std::path::Path::new(r"C:\Games\Kelp"));
+            w.watching = true;
+        }
+        {
+            let _guard = ResetIfStopped { running: &r, finished: false };
+            // the loop panics here
+        }
+        let w = r.lock();
+        assert!(!w.watching && w.list.is_empty(), "the next Play starts a fresh check");
     }
 
     #[test]

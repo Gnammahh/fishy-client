@@ -149,12 +149,15 @@ impl InstallStore {
 
     /// Files listed in resume.txt that still exist in the install folder.
     pub fn finished_files(&self, job: &JobInfo) -> HashSet<String> {
+        self.finished_names(job).into_iter().filter(|name| file_path(&job.install_path, name).is_ok_and(|p| p.is_file())).collect()
+    }
+
+    /// The names in resume.txt, without checking the files are still there (cheap: for the rough
+    /// "already downloaded" figure shown at startup).
+    pub fn finished_names(&self, job: &JobInfo) -> HashSet<String> {
         let Ok(dir) = self.job_dir(&job.app_name) else { return HashSet::new() };
         let text = std::fs::read_to_string(dir.join("resume.txt")).unwrap_or_default();
-        text.lines()
-            .filter_map(|line| line.split_once(':').map(|(_, name)| name.to_string()))
-            .filter(|name| file_path(&job.install_path, name).is_ok_and(|p| p.is_file()))
-            .collect()
+        text.lines().filter_map(|line| line.split_once(':').map(|(_, name)| name.to_string())).collect()
     }
 
     /// Appends `<sha1 hex>:<file name>` to resume.txt and flushes it.
@@ -288,6 +291,7 @@ mod tests {
         assert_eq!(store.finished_files(&j), HashSet::from(["a.txt".to_string(), "sub/b.txt".to_string()]));
         std::fs::remove_file(game.join("sub").join("b.txt")).unwrap();
         assert_eq!(store.finished_files(&j), HashSet::from(["a.txt".to_string()]));
+        assert_eq!(store.finished_names(&j).len(), 2, "names only, no file checks");
     }
 
     #[test]

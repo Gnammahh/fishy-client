@@ -244,7 +244,9 @@ impl Downloads {
                     // Without the old manifest the update still works, it just downloads everything.
                     job.old = store.installed_manifest(&job.info.app_name).ok().and_then(|b| parse_manifest(&b).ok()).map(Arc::new);
                 }
-                let finished = store.finished_files(&job.info);
+                // Names only: checking every file of every paused download slowed startup. The run
+                // itself checks the files for real.
+                let finished = store.finished_names(&job.info);
                 // Rough "already downloaded" for the bar, until the job runs and reports for real.
                 let done = fishy_core::install::plan::build_update_plan(&job.manifest, job.old.as_deref(), &finished)
                     .map(|p| p.download_size)

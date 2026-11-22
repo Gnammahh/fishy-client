@@ -30,9 +30,28 @@ describe("SettingsPage", () => {
     await fireEvent.click(auto);
     await waitFor(() =>
       expect(saved).toEqual([
-        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false, library_sort: "az", when_game_starts: "keep", notes_seen: null },
+        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false, library_sort: "az", when_game_starts: "keep", notes_seen: null, check_app_updates: true },
       ]),
     );
+  });
+
+  it("app_update_switch_is_on_and_saves", async () => {
+    const saved: { check_app_updates?: boolean }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "settings_get") return { auto_update: false, warn_outdated_play: true };
+      if (cmd === "settings_set") {
+        saved.push((args as { value: { check_app_updates?: boolean } }).value);
+        return (args as { value: unknown }).value;
+      }
+      return null;
+    });
+    await loadSettings();
+    render(SettingsPage);
+    const sw = screen.getByRole("switch", { name: "Check for Fishy Client updates" }) as HTMLInputElement;
+    expect(sw.checked).toBe(true);
+    expect(screen.getByText("Fishy Client asks GitHub at start-up whether a newer version exists. Only a normal download request is sent.")).toBeTruthy();
+    await fireEvent.click(sw);
+    await waitFor(() => expect(saved[0]?.check_app_updates).toBe(false));
   });
 
   it("a_failed_save_says_so_and_keeps_the_old_value", async () => {

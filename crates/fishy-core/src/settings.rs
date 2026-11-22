@@ -21,6 +21,8 @@ pub struct Settings {
     pub when_game_starts: String,
     /// The app version whose "What's new" notes were last shown; they open once when it changes.
     pub notes_seen: Option<String>,
+    /// Ask GitHub at start-up whether a newer Fishy Client exists (spec §6j). On by default.
+    pub check_app_updates: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +36,7 @@ impl Default for Settings {
             library_sort: "az".into(),
             when_game_starts: "keep".into(),
             notes_seen: None,
+            check_app_updates: true,
         }
     }
 }
@@ -88,6 +91,13 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_app_updates_defaults_to_on() {
+        assert!(Settings::default().check_app_updates);
+        let old: Settings = serde_json::from_str(r#"{"auto_update":false}"#).unwrap();
+        assert!(old.check_app_updates);
+    }
 
     #[test]
     fn notes_seen_is_none_in_old_files() {
@@ -156,6 +166,7 @@ mod tests {
             library_sort: "size".into(),
             when_game_starts: "minimize".into(),
             notes_seen: Some("1.1.0".into()),
+            check_app_updates: false,
         };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);

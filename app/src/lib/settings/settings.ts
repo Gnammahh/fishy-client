@@ -16,6 +16,8 @@ export type Settings = {
   when_game_starts: WhenGameStarts;
   /** The version whose "What's new" notes were last shown (null: never). */
   notes_seen: string | null;
+  /** Ask GitHub at start-up for a newer Fishy Client (spec §6j). */
+  check_app_updates: boolean;
 };
 
 export type LibrarySort = "az" | "za" | "installed" | "size" | "played";
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   library_sort: "az",
   when_game_starts: "keep",
   notes_seen: null,
+  check_app_updates: true,
 };
 const SAVE_ERROR = "Couldn't save your settings.";
 

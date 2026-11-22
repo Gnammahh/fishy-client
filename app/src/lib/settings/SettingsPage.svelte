@@ -42,7 +42,7 @@
   }
 
   /** A switch saved in settings.json; on failure it goes back to what's really saved. */
-  async function toggle(key: "auto_update" | "warn_outdated_play" | "reduce_motion", e: Event, where: "downloads" | "appearance") {
+  async function toggle(key: "auto_update" | "warn_outdated_play" | "reduce_motion" | "check_app_updates", e: Event, where: "downloads" | "appearance") {
     const box = e.currentTarget as HTMLInputElement;
     const wanted = box.checked;
     const err = (await saveSettings({ [key]: wanted })) ?? "";
@@ -168,6 +168,20 @@
     <span>
       <span class="name" id="warn-name">Warn before playing a game with an update waiting</span>
       <span class="hint" id="warn-hint">Some online games won't start until they're updated.</span>
+    </span>
+  </label>
+  <label class="row">
+    <input
+      type="checkbox"
+      role="switch"
+      aria-labelledby="appupd-name"
+      aria-describedby="appupd-hint"
+      checked={$settings.check_app_updates}
+      onchange={(e) => toggle("check_app_updates", e, "downloads")}
+    />
+    <span>
+      <span class="name" id="appupd-name">Check for Fishy Client updates</span>
+      <span class="hint" id="appupd-hint">Fishy Client asks GitHub at start-up whether a newer version exists. Only a normal download request is sent.</span>
     </span>
   </label>
   {#if downloadsError}<p class="error" role="alert">{downloadsError}</p>{/if}

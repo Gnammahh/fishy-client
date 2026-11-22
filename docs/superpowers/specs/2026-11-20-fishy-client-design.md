@@ -610,7 +610,7 @@ Polish is split into five sub-projects, built in this order. Each gets its own d
    - Play, Update and Uninstall wait while it runs
    - a setting "When a game starts": **Keep Fishy Client open** (as now) or **Minimize it, and bring it back when the game closes**; downloads keep going either way
    - fully closing Fishy Client on Play was considered and rejected: nothing would be left to reopen it, and downloads would stop
-5. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12)
+5. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12), plus the deferred minors from Polish 1, 2 and 4 (built 2026-11-22; what was fixed and what was left is in §12)
 6. Installer (`.msi`), last, so it packages everything above
 
 ### 6f.1 Settings, logs and your data
@@ -1045,6 +1045,13 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 **Polish 4, Running games (§6f.4), built 2026-11-22:** after Play the card says **Running** while any program from the game's folder is open (checked every 5 s, only while a game runs); Play, Update and Uninstall are greyed out with "Close *Title* first."; a setting **When a game starts** (Keep open / Minimize and bring back); play times saved in `installed.json`, and a **Recently played** sort. Built from a plan (`docs/superpowers/plans/2026-11-22-running-games.md`), then a fresh whole-branch review: three fixes made test-first (games running as administrator or with anti-cheat now count, a second Play can't start a game twice, a game started during a check isn't dropped). Checked in the browser preview with fake data. **Tests now:** Rust 275 (core 244 + app 31), UI 159.
 
+**Polish 5, Small fixes, built 2026-11-22** (designed in chat, no plan): long downloads say hours (`~10 h left`); a download piece can't unpack past its stated size; faster startup with paused downloads; closing the Install box frees its file list; two games never share a folder ("Name (2)"); the space check counts other downloads on the same drive (failed ones don't); the speed limit: off or higher applies at once, the same limit saved again changes nothing, the 1–1000 range is checked in Rust too and a bad saved value loads as no limit, a wrong number goes back; logs: camelCase token keys and values before `\"` are masked, old logs are trimmed daily, a screen error is one line; sign-in: each refresh try gives up after 8 s, a refresh finishing after the sign-in changed isn't saved, an expired sign-in leaves a clean Library; running games: the check resets after a crash (dev builds), Delete all my data won't delete games that are running or starting, no update is tried after a game closes while offline, Fishy Client only comes back if still minimized; a real same-moment test for `installed.json`. Fresh review: 5 more fixes made test-first. **Tests now:** Rust 293 (core 256 + app 37), UI 162.
+
+### Still to check by hand (milestone 7, sub-project 5)
+- [ ] A download shows hours when it's long (for example with a speed limit of 1 MB/s on a big game: `~… h … min left`)
+- [ ] Settings → Limit download speed: type `abc` in MB/s and click away: the message shows and the box goes back to the saved number
+- [ ] Changing the Sort menu while a limited download runs doesn't make it jump faster
+
 ### Still to check by hand (milestone 7, sub-project 4)
 - [x] (2026-11-22) Play a game: the card shows **Starting…**, then **Running**, with Update and Uninstall greyed out and "Close *Title* first."
 - [x] (2026-11-22) Close the game: within about 5 seconds the card shows **Play** again
@@ -1119,8 +1126,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 244 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 31. (Counts as of 2026-11-22, milestone 7 sub-project 4.)
-- **UI:** 159 tests.
+- **Rust core:** 256 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 37. (Counts as of 2026-11-22, milestone 7 sub-project 5.)
+- **UI:** 162 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -1138,32 +1145,20 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **PowerShell on this PC blocks npm's script shortcut,** so use `npm.cmd` (for example `npm.cmd run tauri dev`).
 
 ### Small things deferred
-- "~600 min left" should say hours.
 - Pixels may look slightly uneven at 125%/150% Windows display scaling.
 - Animations keep redrawing when nothing moves.
 - Check the 24/48 px icon sizes for blur.
 - Two rare race/storage edge cases, noted in `crates/fishy-core/src/auth/manager.rs`.
-- From the Polish 1 review (minor):
-  - The log scrubber's path rule also keeps a long string just before an escaped quote (`\"`); camelCase key names (`accessToken`…) aren't masked by name. Nothing logs like that today.
-  - 32-character Epic app names and forward-slash paths show as `[redacted]` in logs (safe, just less readable).
-  - Turning the speed limit off waits out pieces already scheduled (up to ~16 s at 1 MB/s).
-  - The 1–1000 MB/s range is only checked by the Settings page, not by the Rust side.
-  - Old logs are deleted only at startup.
-  - A wrong number stays in the speed box until a valid one is typed.
-- From the Polish 2 review (minor):
-  - Sign-in refresh retries wait inside the sign-in lock, so on a network that goes silent (no answer at all) Log out, Play or Try again can wait up to about a minute.
-  - A Library refresh already running when the sign-in expires could still save the old account's games (the same rare race Log out has).
-  - If a refresh reply is lost, the retry uses an already-used refresh token and signs you out a little sooner than otherwise.
-  - A screen error with several lines is logged as several lines.
-  - The log scrubber can't hide names or emails if a screen error ever quotes them (none do today).
-  - After an expired refresh, the Library view can stay in "loading" with an error until you sign in again.
-
-- From the Polish 4 review (minor):
-  - If the running check ever crashed, later games wouldn't be watched until a restart.
-  - Delete all my data clears the UI's running list but not the Rust one (the card shows Play; Play is still refused), and "also delete games" doesn't check for running games.
-  - The auto-update after a game closes also runs offline (it fails quietly).
-  - The play-time/install write test runs one after the other, not at the same time.
-  - When a game closes, Fishy Client comes to the front even if you'd already brought it back yourself.
+- Left as is in Polish 5 (your choice, 2026-11-22): writing game files on several processor cores (the internet is almost always the limit); the "Finished" note on Downloads; 32-character game names showing as `[redacted]` in logs (they look exactly like one-time codes); a lost sign-in reply signing you out a little sooner (Epic's rule); names in screen errors (none today). Pause or Cancel after the last file is written finishes the install (better than pausing at 100%).
+- From the Polish 5 review (minor):
+  - Cancelling the Install box while it's still loading keeps its file list until restart.
+  - The space reserved for queued updates is an estimate (download size, not space needed).
+  - A refresh dropped because you switched accounts mid-refresh can show an error banner on the new account's Library (needs a log-out and log-in within one refresh).
+  - After Offline, a refresh finishing for a different account is still saved (needs a log-out and log-in mid-refresh).
+  - The daily log trim keeps 6 dated files after a same-day restart, not 7.
+  - The log filter doesn't mask short values in escaped JSON (`\"accessToken\":\"…\"`); long ones are masked.
+  - A very slow connection (over 8 s per sign-in try) now shows Offline where 20 s would have worked.
+  - The crash reset of the running check only works in dev builds (a crash ends the shipped app).
 
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
@@ -1174,5 +1169,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. Next: 5 small fixes, 6 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes, built 2026-11-22, hand check above. Next: 6 installer (`.msi`).
    - Later: signed updates and a code-signed installer

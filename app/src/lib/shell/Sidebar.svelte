@@ -2,10 +2,11 @@
   import icon from "../../../src-tauri/icons/32x32.png";
   import PixelSprite from "$lib/pixel/PixelSprite.svelte";
   import { FISH_MOUTH_CLOSED } from "$lib/pixel/sprites";
+  import { APP_VERSION } from "$lib/notes/releaseNotes";
 
   export type Page = "library" | "downloads" | "settings";
 
-  let { page, onselect }: { page: Page; onselect: (p: Page) => void } = $props();
+  let { page, onselect, onnotes = () => {} }: { page: Page; onselect: (p: Page) => void; onnotes?: () => void } = $props();
 
   const ITEMS: { id: Page; label: string }[] = [
     { id: "library", label: "Library" },
@@ -41,6 +42,7 @@
       {item.label}
     </button>
   {/each}
+  <button type="button" class="notes" onclick={onnotes}>What's new · v{APP_VERSION}</button>
 </nav>
 
 <style>
@@ -63,6 +65,16 @@
   .side > :not(.school) {
     position: relative;
     z-index: 1;
+  }
+  /* At the bottom of the column (spec: "What's new"). */
+  .notes {
+    margin-top: auto;
+    font-size: 12px !important;
+    color: var(--text-2) !important;
+  }
+  .notes:hover,
+  .notes:focus-visible {
+    color: var(--aqua) !important;
   }
   .school {
     position: absolute;

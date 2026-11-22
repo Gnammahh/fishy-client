@@ -4,7 +4,9 @@
   import LibraryPage from "$lib/library/LibraryPage.svelte";
   import DownloadsPage from "$lib/install/DownloadsPage.svelte";
   import SettingsPage from "$lib/settings/SettingsPage.svelte";
-  import { loadSettings } from "$lib/settings/settings";
+  import { loadSettings, saveSettings } from "$lib/settings/settings";
+  import WhatsNewBox from "$lib/notes/WhatsNewBox.svelte";
+  import { APP_VERSION, shouldAutoOpen } from "$lib/notes/releaseNotes";
   import { initInstalls } from "$lib/install/installs";
   import { onMount } from "svelte";
   import { retry, type AuthState } from "$lib/auth/auth";
@@ -13,13 +15,20 @@
   let { state: auth }: { state: Exclude<AuthState, { kind: "SignedOut" }> } = $props();
 
   let page = $state<Page>("library");
+  let notesOpen = $state(false);
 
   // Downloads and the installed list, kept up to date by the backend's events.
   onMount(() => {
     let stop: (() => void) | undefined;
     let gone = false;
     initInstalls().then((s) => (gone ? s() : (stop = s)));
-    loadSettings();
+    // The notes open by themselves once per new version, then only from the sidebar.
+    loadSettings().then((s) => {
+      if (!gone && shouldAutoOpen(s.notes_seen)) {
+        notesOpen = true;
+        saveSettings({ notes_seen: APP_VERSION });
+      }
+    });
     return () => {
       gone = true;
       stop?.();
@@ -38,7 +47,7 @@
 </script>
 
 <div class="shell">
-  <Sidebar {page} onselect={(p) => (page = p)} />
+  <Sidebar {page} onselect={(p) => (page = p)} onnotes={() => (notesOpen = true)} />
   <main>
     {#if auth.kind === "Offline"}
       <div class="banner" role="status">
@@ -56,6 +65,7 @@
     {/if}
   </main>
 </div>
+{#if notesOpen}<WhatsNewBox onclose={() => (notesOpen = false)} />{/if}
 
 <style>
   .shell {

@@ -14,6 +14,8 @@ export type Settings = {
   library_sort: LibrarySort;
   /** What happens to the window after Play (spec §6f.4). */
   when_game_starts: WhenGameStarts;
+  /** The version whose "What's new" notes were last shown (null: never). */
+  notes_seen: string | null;
 };
 
 export type LibrarySort = "az" | "za" | "installed" | "size" | "played";
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reduce_motion: false,
   library_sort: "az",
   when_game_starts: "keep",
+  notes_seen: null,
 };
 const SAVE_ERROR = "Couldn't save your settings.";
 

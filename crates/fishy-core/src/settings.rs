@@ -19,6 +19,8 @@ pub struct Settings {
     pub library_sort: String,
     /// What Fishy Client does after Play (spec §6f.4): "keep" or "minimize".
     pub when_game_starts: String,
+    /// The app version whose "What's new" notes were last shown; they open once when it changes.
+    pub notes_seen: Option<String>,
 }
 
 impl Default for Settings {
@@ -31,6 +33,7 @@ impl Default for Settings {
             reduce_motion: false,
             library_sort: "az".into(),
             when_game_starts: "keep".into(),
+            notes_seen: None,
         }
     }
 }
@@ -85,6 +88,13 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_seen_is_none_in_old_files() {
+        let old: Settings = serde_json::from_str(r#"{"auto_update":false}"#).unwrap();
+        assert_eq!(old.notes_seen, None);
+        assert_eq!(Settings::default().notes_seen, None);
+    }
 
     #[test]
     fn settings_default_when_missing_or_damaged() {
@@ -145,6 +155,7 @@ mod tests {
             reduce_motion: true,
             library_sort: "size".into(),
             when_game_starts: "minimize".into(),
+            notes_seen: Some("1.1.0".into()),
         };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);

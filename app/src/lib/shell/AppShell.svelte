@@ -6,6 +6,8 @@
   import SettingsPage from "$lib/settings/SettingsPage.svelte";
   import { loadSettings, saveSettings } from "$lib/settings/settings";
   import WhatsNewBox from "$lib/notes/WhatsNewBox.svelte";
+  import UpdateBar from "$lib/appupdate/UpdateBar.svelte";
+  import { checkForUpdate } from "$lib/appupdate/appUpdate";
   import { APP_VERSION, shouldAutoOpen } from "$lib/notes/releaseNotes";
   import { initInstalls } from "$lib/install/installs";
   import { onMount } from "svelte";
@@ -22,6 +24,7 @@
     let stop: (() => void) | undefined;
     let gone = false;
     initInstalls().then((s) => (gone ? s() : (stop = s)));
+    checkForUpdate(); // once per start (spec §6j); the Rust side skips it when switched off
     // The notes open by themselves once per new version, then only from the sidebar.
     loadSettings().then((s) => {
       if (!gone && shouldAutoOpen(s.notes_seen)) {
@@ -49,6 +52,7 @@
 <div class="shell">
   <Sidebar {page} onselect={(p) => (page = p)} onnotes={() => (notesOpen = true)} />
   <main>
+    <UpdateBar />
     {#if auth.kind === "Offline"}
       <div class="banner" role="status">
         <span>Couldn't reach Epic. Check your internet connection.</span>

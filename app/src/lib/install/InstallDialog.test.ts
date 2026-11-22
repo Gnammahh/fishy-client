@@ -44,6 +44,14 @@ describe("InstallDialog", () => {
     expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("says_only_fishy_client_will_know_the_game", async () => {
+    mock({ install_options: () => options() });
+    render(InstallDialog, { game, onclose: () => {} });
+    expect(
+      await screen.findByText("Only Fishy Client will know about this game. Epic's launcher can't see it and would download it again."),
+    ).toBeTruthy();
+  });
+
   it("says_when_the_default_folder_isnt_available", async () => {
     const note = "Your default folder isn't available, so this uses C:\\Users\\you\\Games.";
     mock({ install_options: () => options({ note }) });

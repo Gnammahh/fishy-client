@@ -90,6 +90,7 @@
         <dt>Free space</dt>
         <dd>{formatBytes(options.free_space)}</dd>
       </dl>
+      <p class="only-here">Only Fishy Client will know about this game. Epic's launcher can't see it and would download it again.</p>
       {#if options.note}<p class="note">{options.note}</p>{/if}
       {#if options.error}<p class="error" role="alert">{options.error}</p>{/if}
       {#if startError}<p class="error" role="alert">{startError}</p>{/if}
@@ -152,6 +153,12 @@
     align-items: center;
     gap: 12px;
     color: var(--text-2);
+  }
+  /* Epic's launcher can't be told about games installed here (spec §6h). */
+  .only-here {
+    color: var(--text-2);
+    font-size: 13px;
+    margin: 0;
   }
   .note {
     color: var(--orange);

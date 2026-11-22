@@ -31,6 +31,7 @@ If Epic's launcher already installed some of your games, the Library shows "3 ga
 
 - The game stays in Epic's folder, so both launchers see it. Uninstalling it in Fishy Client deletes its files, and Epic's launcher then shows it as broken. Updating it in one launcher can make the other ask for an update or a repair.
 - Games Epic installed with only some optional parts (Fortnite, for example) can't be added yet. Keep using Epic's launcher for those.
+- **It only works one way.** Games you install with Fishy Client don't show in Epic's launcher: Epic only accepts games it downloaded itself, and its Install box won't use a folder that already has files in it. If you want a game in both launchers, install it with Epic's launcher and then press **Add them** in Fishy Client.
 - New games can't go into `C:\Program Files\Epic Games`: Windows only lets programs with administrator rights create folders there. Use your own Games folder (the default) or something like `D:\Games`.
 
 ## Warnings: please read before using Fishy Client

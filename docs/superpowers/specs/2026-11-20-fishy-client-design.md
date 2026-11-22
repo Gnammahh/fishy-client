@@ -871,7 +871,7 @@ For a friend who already has games installed with Epic's own launcher: Fishy Cli
 1. Get the manifest (the `.egstore` copy, else download it) and parse it.
 2. **Check:** every file in the manifest must exist in the install folder with the manifest's size. File names go through the same safety check as installs (§6c), so a bad manifest can't point outside the folder. No SHA-1: hashing a 30 GB game takes minutes, and Legendary's import doesn't hash either.
 3. **All good:** write the download folder's `job.json`, manifest and `resume.txt` (every file), then finish it as an install (§6c): the record gets the manifest's version, executable and launch command, the manifest is saved under `manifests\`, the download folder is deleted.
-4. **Some bad:** the same `job.json`, manifest and `resume.txt`, but `resume.txt` lists only the good files. The download is left **Paused** with a message, and **Download them** resumes it. The existing resume rules (§6c) skip the listed files, so only the bad ones are downloaded. `job.json` gains `imported: bool` (default false), so Cancel deletes no game files.
+4. **Some bad:** nothing is written yet; the line with **Download them** is shown. **Download them** checks again, then saves the download folder with `resume.txt` listing only the good files and queues it. The existing resume rules (§6c) skip the listed files, so only the bad ones are downloaded. `job.json` gains `imported: bool` (default false), so Cancel deletes no game files.
 5. The CDN addresses (`base_urls`) come from the manifest-info call, which needs the sign-in; it's made only when files must be downloaded (step 4) or the manifest is missing.
 
 ### Sharing the folder with Epic's launcher (known limits)

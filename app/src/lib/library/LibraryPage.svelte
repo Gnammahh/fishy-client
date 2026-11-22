@@ -12,6 +12,7 @@
     installed,
     play,
     refreshInstalled,
+    running,
     startUpdate,
     statusFor,
     uninstall,
@@ -63,6 +64,7 @@
     if (tab === "elsewhere" && elsewhere.length === 0) tab = "all";
     if (tab === "updates" && withUpdates.length === 0) tab = "all";
   });
+  const isRunning = (g: Game) => $running.includes(g.app_name);
   const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
   const jobOf = (g: Game) => $downloads.find((d) => d.app_name === g.app_name);
   const UPDATE_LABELS: Partial<Record<GameStatus, string>> = {
@@ -144,6 +146,7 @@
           <option value="za">Z–A</option>
           <option value="installed">Recently installed</option>
           <option value="size">Size on disk</option>
+          <option value="played">Recently played</option>
         </select>
         <span class="count">{windowsGames.length} {windowsGames.length === 1 ? "game" : "games"}</span>
       {/if}
@@ -231,11 +234,13 @@
               {:else if s === "installed"}
                 {#if starting.includes(game.app_name)}
                   <button class="play" aria-label="Starting {game.title}" disabled>Starting…</button>
+                {:else if isRunning(game)}
+                  <button class="play" aria-label="{game.title} is running" disabled>Running</button>
                 {:else}
                   <button class="play" aria-label="Play {game.title}" onclick={() => askPlay(game)}>Play</button>
                 {/if}
                 {#if outdated(game)}
-                  <button class="update" aria-label="Update {game.title}" onclick={() => doUpdate(game)}>Update</button>
+                  <button class="update" aria-label="Update {game.title}" disabled={isRunning(game)} onclick={() => doUpdate(game)}>Update</button>
                 {/if}
                 {@render moreMenu(game)}
               {:else}
@@ -244,6 +249,7 @@
                 {#if updating}{@render moreMenu(game)}{/if}
               {/if}
             </div>
+            {#if s === "installed" && isRunning(game)}<p class="note small">Close {game.title} first.</p>{/if}
             {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
             {#if playError?.app === game.app_name}
               <div class="play-error" role="alert">
@@ -280,6 +286,7 @@
       <div class="menu" role="menu">
         <button
           role="menuitem"
+          disabled={isRunning(game)}
           onclick={() => {
             menuFor = null;
             confirmUninstall = game;
@@ -524,9 +531,15 @@
     color: var(--orange);
     border-color: var(--orange);
   }
-  .play:disabled {
+  .play:disabled,
+  .update:disabled,
+  .menu button:disabled {
     opacity: 0.7;
     cursor: default;
+  }
+  /* "Close Kelp Runner first." under a running game (spec §6f.4). */
+  .note {
+    color: var(--text-2);
   }
   .play-error .actions {
     display: flex;
@@ -565,7 +578,7 @@
     text-align: left;
     cursor: pointer;
   }
-  .menu button:hover,
+  .menu button:hover:not(:disabled),
   .menu button:focus-visible {
     background: rgba(79, 227, 209, 0.15);
     outline: none;

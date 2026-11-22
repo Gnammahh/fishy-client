@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { settings, saveSettings, type Settings } from "./settings";
+  import { settings, saveSettings, type Settings, type WhenGameStarts } from "./settings";
   import { openLogsFolder, parseSpeed, defaultInstallFolder, getAutostart, setAutostart } from "./data";
   import { signOut } from "$lib/auth/auth";
   import { downloads, installed, pickFolder } from "$lib/install/installs";
@@ -49,6 +49,13 @@
     if (where === "downloads") downloadsError = err;
     else appearanceError = err;
     if (err) box.checked = !wanted;
+  }
+
+  /** On a failed save the menu goes back to what's really saved. */
+  async function changeGameStarts(e: Event) {
+    const box = e.currentTarget as HTMLSelectElement;
+    appearanceError = (await saveSettings({ when_game_starts: box.value as WhenGameStarts })) ?? "";
+    if (appearanceError) box.value = $settings.when_game_starts;
   }
 
   async function save(patch: Partial<Settings>) {
@@ -192,6 +199,16 @@
       <span class="hint" id="startup-hint">Opens Fishy Client when you sign in to Windows.</span>
     </span>
   </label>
+  <div class="row static">
+    <span>
+      <label class="name" for="game-starts">When a game starts</label>
+      <span class="hint">Downloads keep going either way.</span>
+      <select id="game-starts" value={$settings.when_game_starts} onchange={changeGameStarts}>
+        <option value="keep">Keep Fishy Client open</option>
+        <option value="minimize">Minimize it, and bring it back when the game closes</option>
+      </select>
+    </span>
+  </div>
   {#if appearanceError}<p class="error" role="alert">{appearanceError}</p>{/if}
 
   <h3>Account</h3>
@@ -292,6 +309,19 @@
   }
   .static {
     cursor: default;
+  }
+  /* Styled like the Library's Sort menu. */
+  select {
+    margin-top: 6px;
+    align-self: flex-start;
+    max-width: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    color: var(--text);
+    border: 2px solid rgba(79, 227, 209, 0.35);
+    padding: 7px 8px;
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
   }
   .row .buttons {
     flex-direction: row;

@@ -125,15 +125,21 @@ function devDownloads() {
           if (!offline && new URLSearchParams(location.search).get("play") === "fail") {
             throw { message: "Couldn't reach Epic to sign the game in. Check your internet.", can_offline: true, signed_out: false };
           }
+          // The game "runs" for 15 seconds (spec §6f.4).
+          const app = String((args as { appName?: string }).appName);
+          setTimeout(() => emit("running-changed", [app]), 500);
+          setTimeout(() => emit("running-changed", []), 15000);
           return null;
         }
+        case "running_list":
+          return [];
       }
       return undefined;
     },
   };
 }
 
-let devSettings = { auto_update: false, warn_outdated_play: true, install_folder: null as string | null, speed_limit_mbps: null as number | null, reduce_motion: false };
+let devSettings = { auto_update: false, warn_outdated_play: true, install_folder: null as string | null, speed_limit_mbps: null as number | null, reduce_motion: false, library_sort: "az", when_game_starts: "keep" };
 let devAutostart = false;
 
 export function installDevMock(start: string) {

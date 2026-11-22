@@ -152,3 +152,28 @@ describe("Appearance and startup", () => {
     expect(sw.checked).toBe(false);
   });
 });
+
+describe("When a game starts", () => {
+  it("when_a_game_starts_saves_and_shows_the_saved_value_after_a_failed_save", async () => {
+    const saved = await show();
+    const box = screen.getByRole("combobox", { name: "When a game starts" }) as HTMLSelectElement;
+    expect(box.value).toBe("keep");
+    expect(Array.from(box.options).map((o) => o.textContent?.trim())).toEqual([
+      "Keep Fishy Client open",
+      "Minimize it, and bring it back when the game closes",
+    ]);
+    await fireEvent.change(box, { target: { value: "minimize" } });
+    await waitFor(() => expect(saved.at(-1)?.when_game_starts).toBe("minimize"));
+
+    cleanup();
+    await show({}, {
+      settings_set: () => {
+        throw "nope";
+      },
+    });
+    const again = screen.getByRole("combobox", { name: "When a game starts" }) as HTMLSelectElement;
+    await fireEvent.change(again, { target: { value: "minimize" } });
+    expect(await screen.findByText("Couldn't save your settings.")).toBeTruthy();
+    await waitFor(() => expect(again.value).toBe("keep"));
+  });
+});

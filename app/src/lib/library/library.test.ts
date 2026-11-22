@@ -605,6 +605,42 @@ describe("Updates tab and Sort menu", () => {
     await waitFor(() => expect(saved.at(-1)).toMatchObject({ library_sort: "za" }));
   });
 
+  it("sort_menu_offers_recently_played", async () => {
+    const saved: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Kelp Runner")], {}),
+      settings_set: (a: { value: unknown }) => {
+        saved.push(a.value);
+        return a.value;
+      },
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    const sort = screen.getByRole("combobox", { name: "Sort" }) as HTMLSelectElement;
+    expect(Array.from(sort.options).map((o) => o.textContent)).toContain("Recently played");
+    await fireEvent.change(sort, { target: { value: "played" } });
+    await waitFor(() => expect(saved.at(-1)).toMatchObject({ library_sort: "played" }));
+  });
+
+  it("a_running_game_shows_running_and_greys_out_its_buttons", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "2" }) });
+    installed.set([installedGame("KelpRunner")]);
+    running.set(["KelpRunner"]);
+    render(LibraryPage, { name: "FishFan" });
+    const btn = (await screen.findByRole("button", { name: "Kelp Runner is running" })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent?.trim()).toBe("Running");
+    expect((screen.getByRole("button", { name: "Update Kelp Runner" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(screen.getByRole("button", { name: "More options for Kelp Runner" }));
+    expect((screen.getByRole("menuitem", { name: "Uninstall" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Close Kelp Runner first.")).toBeTruthy();
+    running.set([]);
+    await waitFor(() => expect((screen.getByRole("button", { name: "Play Kelp Runner" }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText("Close Kelp Runner first.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Update Kelp Runner" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("the_saved_sort_is_used_and_works_with_search", async () => {
     mockCommands({
       library_cached: () => null,

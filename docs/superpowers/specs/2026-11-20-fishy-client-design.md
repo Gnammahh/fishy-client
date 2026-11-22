@@ -603,7 +603,7 @@ These are the same as for installs (§6c table). Two additions:
 
 Polish is split into five sub-projects, built in this order. Each gets its own design here, its own plan and its own hand check:
 1. **Settings, logs and your data** (this section, approved 2026-11-21)
-2. Friendlier error screens (every error: a plain message plus a next step)
+2. **Friendlier errors** (§6f.2, approved 2026-11-22)
 3. Library filters and sort (an Updates tab, a sort option)
 4. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12)
 5. Installer (`.msi`), last, so it packages everything above
@@ -693,6 +693,71 @@ Settings gets three sections:
   - the delete box: tick box hidden with no games, the "folders stay" note, Cancel does nothing, Delete calls the command and shows Login, the partial-failure message
   - Log out is gone from the sidebar and works from Settings
   - reduced motion follows the setting or Windows
+
+### 6f.2 Friendlier errors (approved 2026-11-22)
+
+Four parts, all chosen by you: clear messages, automatic retries, a crash screen, and expired sign-ins going to Login. Together they finish §7.
+
+#### Messages: every error says what to do next
+- Each message names the problem in plain words and ends with the next step. Messages that already do are unchanged.
+- **Changed messages:**
+
+  | Where | Today | New |
+  |---|---|---|
+  | Library refresh | Couldn't load your library from Epic. | Couldn't load your library from Epic. Check your internet, then press Try again. |
+  | Download lost its connection | Download stopped: the connection to the download server dropped. | Download stopped: the connection to the download server dropped. Check your internet, then press Retry. |
+  | Epic's reply not understood (sign-in) | Epic sent an unexpected reply. Please try again. | Epic sent a reply Fishy Client didn't understand. Try again in a few minutes. |
+  | Credential Manager refused | Couldn't save your sign-in to Windows Credential Manager. | Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again. |
+  | Game not installed (Play, Update, Uninstall) | That game isn't installed. | That game isn't installed any more. Refresh your Library. |
+  | Getting an update | Couldn't get the update from Epic. Try again later. | Couldn't get the update from Epic. Check your internet, then try again. |
+  | Browser for sign-in | Couldn't open your browser. | Couldn't open your browser. Use Sign in with Epic instead. |
+  | Windows wouldn't start a game | Windows wouldn't start *Title*: *reason*. | Windows wouldn't start *Title*: *reason*. Restart your PC and try again. |
+  | Folder can't be written | Couldn't write to *folder*. Pick a different folder. | unchanged, but no longer used when the game is running (below) |
+
+- **A game that's running.** When Windows refuses a write because a file is in use (Windows errors 32 "sharing violation" and 33 "lock violation"), installing, updating or rebuilding a file says:
+  **"Some of *Title*'s files are in use. Close the game, then press Retry."**
+  The download stops as Error, so Retry continues it. Other write errors keep the folder message.
+- All the unchanged messages already end with a next step (for example "Not enough space on C:. Needs 12.3 GB, 4.1 GB free." comes with the Install box's Change folder, and "A downloaded file was damaged. Press Retry to download it again.").
+
+#### Automatic retries
+- One small helper in fishy-core runs an Epic call up to **3 times**, waiting **½ s** then **1 s** between tries.
+- **Only connection problems are retried:** no connection, a timeout, the connection dropping, or Epic answering 500–599 (its server briefly failing). A real answer from Epic (wrong or expired sign-in, not owned, not found) is never retried.
+- **Retried calls:**
+  - the library: the list of your games, the list of Windows downloads, and each game's details
+  - refreshing your sign-in
+  - a game's download information (manifest address) and the file list itself
+  - the two calls Play makes (exchange code, ownership token)
+- **Never retried:** trading the one-time sign-in code (it only works once), and Log out.
+- Game pieces (chunks) keep their own retries, as in §6c.
+- The worst case adds 1.5 s before an error shows. Nothing changes when everything works.
+- Each retry is logged ("retrying library items (2 of 3)"), with no addresses or tokens.
+
+#### Expired sign-in
+- When Epic refuses the saved sign-in while refreshing it (it was revoked, or it expired after weeks unused), the sign-in counts as **expired**. "Can't reach Epic" is not expired: you stay signed in and the offline banner shows as now.
+- **What happens, wherever it's noticed** (Library refresh, Install box, Install, Update, Play):
+  1. Downloads pause; nothing is lost and Resume continues after signing in again.
+  2. The expired sign-in is removed from Credential Manager, and the saved library is deleted (as on Log out). Installed games, downloads in progress and settings stay.
+  3. The app shows the Login screen with: **"Your sign-in has expired. Please sign in again."**
+- Fishy Client doesn't call Epic's log-out for an expired sign-in (there's nothing left to end).
+
+#### Crash screen
+- If a screen hits a bug it didn't expect, the whole window shows a calm page instead of going blank:
+  - the pixel fish, and the title **"Something went wrong"**
+  - "Fishy Client hit a problem it didn't expect. Your games and downloads are safe."
+  - **Reload** (reloads the window; downloads keep going, because they run in the Rust part) and **Open logs folder**
+- **Logging:** the error's name and message (at most 500 characters) go to the log through the scrubber, as `ui error: …`. Nothing else from the screen is sent.
+- Smaller bugs that don't break a screen (a background promise that fails) are only logged the same way, without interrupting you.
+
+#### Tests
+- **Rust:**
+  - each changed message's exact wording
+  - a write that fails with Windows error 32 or 33 gives the "files are in use" message with the game's title; error 5 (access denied) still gives the folder message
+  - the retry helper against the fake Epic server: fails twice then works (one result, 3 requests); always fails (gives up after exactly 3 requests); answers 401/404 (1 request only); answers 503 twice then works; the one-time code exchange is tried once only
+  - expired: a refresh Epic refuses removes the saved sign-in and reports expired; a refresh that can't reach Epic keeps it and reports a network problem
+- **UI (vitest):**
+  - an expired error from Library refresh, Install, Update or Play shows Login with the expired message
+  - the crash screen appears when a child component throws, Reload reloads, and the error goes to `log_ui_error`
+  - an unhandled promise rejection is logged and the page stays as it is
 
 ---
 

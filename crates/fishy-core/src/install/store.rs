@@ -405,19 +405,24 @@ mod tests {
 
     #[test]
     fn install_and_play_time_writes_both_survive() {
+        // Play saving a time while another game finishes installing, at the same moment, many times.
         let dir = tempfile::tempdir().unwrap();
-        let store = InstallStore::at(dir.path().join("data"));
+        let store = std::sync::Arc::new(InstallStore::at(dir.path().join("data")));
         let tide = job(&dir.path().join("game"));
         store.save_job(&tide, &build_binary(&sample(), true)).unwrap();
         store.finish_install(&tide, &sample()).unwrap();
         let t = "2026-11-22T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        store.mark_played("Tide", t).unwrap();
-        let reef = JobInfo { app_name: "Reef".into(), title: "Reef".into(), ..job(&dir.path().join("reef")) };
-        store.save_job(&reef, &build_binary(&sample(), true)).unwrap();
-        store.finish_install(&reef, &sample()).unwrap();
-        let games = store.installed();
-        assert_eq!(games.len(), 2);
-        assert_eq!(games.iter().find(|g| g.app_name == "Tide").unwrap().last_played, Some(t));
+        for round in 0..20 {
+            let reef = JobInfo { app_name: format!("Reef{round}"), title: "Reef".into(), ..job(&dir.path().join(format!("reef{round}"))) };
+            store.save_job(&reef, &build_binary(&sample(), true)).unwrap();
+            let s2 = store.clone();
+            let player = std::thread::spawn(move || s2.mark_played("Tide", t + chrono::Duration::seconds(round)).unwrap());
+            store.finish_install(&reef, &sample()).unwrap();
+            player.join().unwrap();
+            let games = store.installed();
+            assert_eq!(games.len(), round as usize + 2, "round {round}: an install was lost");
+            assert_eq!(games.iter().find(|g| g.app_name == "Tide").unwrap().last_played, Some(t + chrono::Duration::seconds(round)), "round {round}: a play time was lost");
+        }
     }
 
 }

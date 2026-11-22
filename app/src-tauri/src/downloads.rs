@@ -244,14 +244,7 @@ impl Downloads {
                     // Without the old manifest the update still works, it just downloads everything.
                     job.old = store.installed_manifest(&job.info.app_name).ok().and_then(|b| parse_manifest(&b).ok()).map(Arc::new);
                 }
-                // Names only: checking every file of every paused download slowed startup. The run
-                // itself checks the files for real.
-                let finished = store.finished_names(&job.info);
-                // Rough "already downloaded" for the bar, until the job runs and reports for real.
-                let done = fishy_core::install::plan::build_update_plan(&job.manifest, job.old.as_deref(), &finished)
-                    .map(|p| p.download_size)
-                    .unwrap_or(0);
-                job.downloaded = job.info.download_size.saturating_sub(done);
+                job.downloaded = already_downloaded(&store, &job.info, &job.manifest, job.old.as_deref());
                 Some(job)
             })
             .collect();
@@ -295,6 +288,8 @@ impl Downloads {
             }
             let mut job = Job::new(info, manifest, JobState::Queued);
             job.old = old;
+            // An imported repair starts with most files already there (spec §6g).
+            job.downloaded = already_downloaded(&self.store, &job.info, &job.manifest, job.old.as_deref());
             inner.jobs.push(job);
         }
         self.pump(app);
@@ -505,6 +500,17 @@ impl Downloads {
     }
 }
 
+/// Rough "already downloaded" for the bar and the space others reserve, until the job runs and
+/// reports for real. Names only: checking every file of every paused download slowed startup.
+fn already_downloaded(store: &InstallStore, info: &JobInfo, manifest: &Manifest, old: Option<&Manifest>) -> u64 {
+    let finished = store.finished_names(info);
+    if finished.is_empty() {
+        return 0;
+    }
+    let left = fishy_core::install::plan::build_update_plan(manifest, old, &finished).map(|p| p.download_size).unwrap_or(info.download_size);
+    info.download_size.saturating_sub(left)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,6 +543,21 @@ mod tests {
         let inner = Inner { jobs: vec![half, upd, job("c", JobState::Paused), job("d", JobState::Error)], wiping: false };
         let left: Vec<u64> = inner.left_to_write("c").into_iter().map(|(_, b)| b).collect();
         assert_eq!(left, vec![1000, 800]);
+    }
+
+    #[test]
+    fn a_queued_repair_counts_files_already_there_as_downloaded() {
+        use fishy_core::install::manifest::testbuild::sample;
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().to_path_buf());
+        let mut info = job("Tidepool", JobState::Queued).info;
+        info.download_size = 900; // both sample chunks
+        info.imported = true;
+        store.mark_finished("Tidepool", "x", "Binaries/Tidepool.exe").unwrap();
+        store.mark_finished("Tidepool", "x", "empty.cfg").unwrap();
+        // readme.txt still needs the 600-byte chunk, so 300 of 900 count as done.
+        assert_eq!(already_downloaded(&store, &info, &sample(), None), 300);
+        assert_eq!(already_downloaded(&InstallStore::at(dir.path().join("none")), &info, &sample(), None), 0);
     }
 
     #[test]

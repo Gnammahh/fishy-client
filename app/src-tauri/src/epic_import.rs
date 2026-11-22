@@ -8,7 +8,8 @@ use fishy_core::install::store::InstalledGame;
 use fishy_core::install::InstallError;
 use fishy_core::library::Game;
 use serde::Serialize;
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
 const REFRESH: &str = "Refresh your Library, then try again.";
@@ -21,8 +22,40 @@ fn offline(title: &str) -> String {
     format!("Couldn't reach Epic to check {title}. Check your internet.")
 }
 
-fn partial(title: &str) -> String {
-    format!("{title} was installed with only some of its parts, which Fishy Client can't add yet. Keep using Epic's launcher for it.")
+pub(crate) fn being_checked(title: &str) -> String {
+    format!("Fishy Client is checking {title}'s files from Epic's launcher. Try again in a moment.")
+}
+
+/// Games being checked or queued for an import right now. Taking one reserves it until the
+/// returned guard is dropped, so Add, Download them and Install never write the same game at once.
+#[derive(Default, Clone)]
+pub struct Checking(Arc<Mutex<HashSet<String>>>);
+
+pub struct CheckingGuard {
+    set: Arc<Mutex<HashSet<String>>>,
+    app: String,
+}
+
+impl Drop for CheckingGuard {
+    fn drop(&mut self) {
+        self.set.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.app);
+    }
+}
+
+impl Checking {
+    pub fn take(&self, app: &str) -> Option<CheckingGuard> {
+        let fresh = self.0.lock().unwrap_or_else(|e| e.into_inner()).insert(app.to_string());
+        fresh.then(|| CheckingGuard { set: self.0.clone(), app: app.to_string() })
+    }
+
+    pub fn is_busy(&self, app: &str) -> bool {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).contains(app)
+    }
+}
+
+/// Checked again right before anything is written: nothing else installed or queued it meanwhile.
+fn still_free(app: &str, installed: &[InstalledGame], has_job: impl Fn(&str) -> bool) -> bool {
+    !installed.iter().any(|g| g.app_name == app) && !has_job(app)
 }
 
 /// A game the Library note offers to add.
@@ -42,10 +75,11 @@ pub enum AddOutcome {
 }
 
 /// Epic's games that are in the Library, not installed here and not in the Downloads list.
+/// Games installed with only some optional parts (Fortnite) are left out: they can't be added yet.
 fn candidates(items: Vec<EpicItem>, games: &[Game], installed: &[InstalledGame], has_job: impl Fn(&str) -> bool) -> Vec<(EpicItem, Game)> {
     items
         .into_iter()
-        .filter(|i| !installed.iter().any(|g| g.app_name == i.app_name) && !has_job(&i.app_name))
+        .filter(|i| !i.partial && !installed.iter().any(|g| g.app_name == i.app_name) && !has_job(&i.app_name))
         .filter_map(|i| games.iter().find(|g| g.app_name == i.app_name).cloned().map(|g| (i, g)))
         .collect()
 }
@@ -116,10 +150,7 @@ pub async fn epic_import_add(
 ) -> Result<AddOutcome, String> {
     let error = |message: String, signed_out: bool| Ok(AddOutcome::Error { message, signed_out });
     let Some((item, game)) = find(&app_name, &library, &install) else { return error(REFRESH.into(), false) };
-    if item.partial {
-        warn!("epic import: {app_name} has optional parts, not added");
-        return error(partial(&game.title), false);
-    }
+    let Some(_checking) = install.checking.take(&app_name) else { return error(being_checked(&game.title), false) };
     let (bytes, m, _) = match manifest_for(&item, &game, &auth, &install, false).await {
         Ok(x) => x,
         Err(e) => {
@@ -133,6 +164,9 @@ pub async fn epic_import_add(
         return Ok(AddOutcome::Missing { files: result.bad_files, bytes: result.bad_bytes });
     }
     let store = &install.downloads.store;
+    if !still_free(&app_name, &store.installed(), |a| install.downloads.has_job(a)) {
+        return error(REFRESH.into(), false);
+    }
     let job = epic::import_job(&item, &game.title, &m, Vec::new());
     match epic::add_installed(store, &job, &bytes, &m) {
         Ok(_) => {
@@ -158,15 +192,16 @@ pub async fn epic_import_repair(
 ) -> Result<DownloadsView, String> {
     let downloads = &install.downloads;
     let Some((item, game)) = find(&app_name, &library, &install) else { return Err(REFRESH.into()) };
-    if item.partial {
-        return Err(partial(&game.title));
-    }
+    let Some(_checking) = install.checking.take(&app_name) else { return Err(being_checked(&game.title)) };
     let (bytes, m, info) = match manifest_for(&item, &game, &auth, &install, true).await {
         Ok(x) => x,
         Err(e) => return Err(failure(&app, &game.title, e).await.0),
     };
     let base_urls = info.map(|i| i.base_urls).unwrap_or_default();
     let result = check(&item, &m).await;
+    if !still_free(&app_name, &downloads.store.installed(), |a| downloads.has_job(a)) {
+        return Err(REFRESH.into());
+    }
     let job = epic::import_job(&item, &game.title, &m, base_urls);
     if let Err(e) = epic::save_repair(&downloads.store, &job, &bytes, &result) {
         let _ = downloads.store.remove_job(&app_name);
@@ -228,6 +263,34 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].0.app_name, "A");
         assert_eq!(got[0].1.title, "Library A");
+    }
+
+    #[test]
+    fn a_game_being_checked_is_reserved_until_done() {
+        let r = Checking::default();
+        let first = r.take("A").expect("free");
+        assert!(r.is_busy("A"));
+        assert!(r.take("A").is_none(), "a second Add or Download them waits");
+        assert!(r.take("B").is_some(), "other games aren't blocked");
+        drop(first);
+        assert!(!r.is_busy("A"));
+        assert!(r.take("A").is_some());
+    }
+
+    #[test]
+    fn still_free_rechecks_installed_and_queued() {
+        assert!(still_free("A", &[], |_| false));
+        assert!(!still_free("A", &[record("A")], |_| false));
+        assert!(!still_free("A", &[], |app| app == "A"));
+    }
+
+    #[test]
+    fn candidates_skip_partial_installs() {
+        let mut fortnite = item("F");
+        fortnite.partial = true;
+        let got = candidates(vec![fortnite, item("A")], &[game("F"), game("A")], &[], |_| false);
+        let names: Vec<&str> = got.iter().map(|(i, _)| i.app_name.as_str()).collect();
+        assert_eq!(names, vec!["A"]);
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/sv
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import EpicImportNote from "./EpicImportNote.svelte";
 import { resetInstalls } from "$lib/install/installs";
+import { resetEpicImport } from "./epicImport";
 
 const MB = 1024 * 1024;
 const games = (n: number) => Array.from({ length: n }, (_, i) => ({ app_name: `A${i}`, title: `Game ${i}` }));
@@ -23,6 +24,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   resetInstalls();
+  resetEpicImport();
 });
 
 describe("EpicImportNote", () => {
@@ -120,5 +122,63 @@ describe("EpicImportNote", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Add them" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Download them" }));
     expect(await screen.findByText("Couldn't reach Epic to check Game 0. Check your internet.")).toBeTruthy();
+  });
+
+  it("hidden_stays_hidden_after_leaving_the_library", async () => {
+    const calls = mock({ epic_import_scan: games(2) });
+    render(EpicImportNote);
+    await fireEvent.click(await screen.findByRole("button", { name: "Hide" }));
+    cleanup();
+    render(EpicImportNote);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText(/can be added/)).toBeNull();
+    expect(calls.filter((c) => c[0] === "epic_import_scan").length).toBe(1);
+  });
+
+  it("lines_and_a_running_check_survive_leaving_the_library", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const calls = mock({
+      epic_import_scan: games(2),
+      epic_import_add: async (args: { appName: string }) => {
+        if (args.appName === "A1") await gate;
+        return args.appName === "A0" ? { kind: "missing", files: 3, bytes: 10 } : { kind: "added" };
+      },
+      installed_list: [],
+    });
+    render(EpicImportNote);
+    await fireEvent.click(await screen.findByRole("button", { name: "Add them" }));
+    await screen.findByText("Checking Game 1…");
+    cleanup();
+    render(EpicImportNote);
+    expect(screen.getByText("Checking Game 1…")).toBeTruthy();
+    expect(screen.getByText("Game 0: 3 files are missing or damaged (10.0 B).")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add them" })).toBeNull();
+    release();
+    await waitFor(() => expect(screen.queryByText("Checking Game 1…")).toBeNull());
+    expect(calls.filter((c) => c[0] === "epic_import_add").length).toBe(2);
+  });
+
+  it("download_them_works_once_while_busy", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const calls = mock({
+      epic_import_scan: games(1),
+      epic_import_add: { kind: "missing", files: 2, bytes: 10 },
+      epic_import_repair: async () => {
+        await gate;
+        return { items: [] };
+      },
+      installed_list: [],
+    });
+    render(EpicImportNote);
+    await fireEvent.click(await screen.findByRole("button", { name: "Add them" }));
+    const button = await screen.findByRole("button", { name: "Download them" });
+    await fireEvent.click(button);
+    await fireEvent.click(button);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    release();
+    await waitFor(() => expect(screen.queryByText(/missing or damaged/)).toBeNull());
+    expect(calls.filter((c) => c[0] === "epic_import_repair").length).toBe(1);
   });
 });

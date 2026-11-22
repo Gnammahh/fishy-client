@@ -162,6 +162,8 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
 pub struct AppInstall {
     downloads: Downloads,
     prepared: std::sync::Mutex<HashMap<String, Prepared>>,
+    /// Games whose files are being checked for an import (spec §6g); Install waits for them.
+    checking: epic_import::Checking,
 }
 
 /// What the Install box fetched, reused by install_start so the manifest isn't downloaded twice.
@@ -278,6 +280,9 @@ async fn install_start(
     if downloads.has_job(&game.app_name) || downloads.store.installed().iter().any(|g| g.app_name == game.app_name) {
         return Ok(downloads.view());
     }
+    if install.checking.is_busy(&game.app_name) {
+        return Err(epic_import::being_checked(&game.title));
+    }
     let refused = |e: InstallError| {
         let m = e.user_message();
         warn!("install of {} refused: {m}", game.app_name);
@@ -309,6 +314,10 @@ async fn install_start(
         update_from: None,
         imported: false,
     };
+    // An import may have started while the manifest was fetched.
+    if install.checking.is_busy(&game.app_name) || downloads.has_job(&game.app_name) {
+        return Err(epic_import::being_checked(&game.title));
+    }
     downloads
         .store
         .save_job(&job, &p.bytes)
@@ -415,6 +424,7 @@ pub fn run() {
             app.manage(AppInstall {
                 downloads: Downloads::new(InstallStore::default_location(), InstallClient::new()),
                 prepared: std::sync::Mutex::new(HashMap::new()),
+                checking: epic_import::Checking::default(),
             });
             app.manage(play::AppLaunch::new());
             app.manage(running::AppRunning::default());

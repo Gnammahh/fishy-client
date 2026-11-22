@@ -37,6 +37,8 @@ export type InstallOptions = {
   enough_space: boolean;
   /** False when Windows won't let Fishy Client create the folder (spec §6g.3). */
   folder_ok?: boolean;
+  /** Windows will ask for permission once to create the folder (spec §6k). */
+  needs_permission?: boolean;
   error: string | null;
   /** Set when the saved default folder couldn't be used (spec §6f.1). */
   note?: string | null;
@@ -117,6 +119,16 @@ export function getInstallOptions(game: Game, parent?: string | null): Promise<I
 /** The Install box closed without installing: the backend drops the file list it kept. */
 export function forgetInstall(appName: string) {
   invoke("install_forget", { appName }).catch(() => {});
+}
+
+/** Epic's own games folder, if it exists (spec §6k). */
+export async function epicFolder(): Promise<string | null> {
+  try {
+    const f = await invoke<string | null>("epic_folder");
+    return typeof f === "string" && f ? f : null;
+  } catch {
+    return null;
+  }
 }
 
 export function pickFolder(): Promise<string | null> {

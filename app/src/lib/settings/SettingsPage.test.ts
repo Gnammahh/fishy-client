@@ -92,6 +92,21 @@ describe("SettingsPage", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't open the logs folder. It's at %APPDATA%\\FishyClient\\logs.");
   });
 
+  it("use_epics_folder_saves_it", async () => {
+    const saved: { install_folder?: string | null }[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "epic_folder") return "C:\\Program Files\\Epic Games";
+      if (cmd === "settings_set") {
+        saved.push((args as { value: { install_folder?: string | null } }).value);
+        return (args as { value: unknown }).value;
+      }
+      return null;
+    });
+    render(SettingsPage, { account: { display_name: "FishFan" } });
+    await fireEvent.click(await screen.findByRole("button", { name: "Use Epic's folder" }));
+    await waitFor(() => expect(saved[0]?.install_folder).toBe("C:\\Program Files\\Epic Games"));
+  });
+
   it("delete_all_my_data_opens_the_box", async () => {
     mockIPC(() => null);
     render(SettingsPage, { account: { display_name: "FishFan" } });

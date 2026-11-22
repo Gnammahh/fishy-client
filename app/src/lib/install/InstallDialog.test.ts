@@ -5,6 +5,7 @@ import InstallDialog from "./InstallDialog.svelte";
 import { resetInstalls } from "./installs";
 
 const GB = 1024 ** 3;
+const EPIC = "C:\\Program Files\\Epic Games";
 const game = { app_name: "Tide", namespace: "ns", catalog_item_id: "cat", title: "Tidepool Odyssey", cover_url: null, installable: true };
 const options = (over: Record<string, unknown> = {}) => ({
   install_path: "C:\\Users\\you\\Games\\Tidepool Odyssey",
@@ -72,6 +73,40 @@ describe("InstallDialog", () => {
     render(InstallDialog, { game, onclose: () => {} });
     expect(await screen.findByText(error)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("needs_permission_shows_note_and_install_enabled", async () => {
+    mock({ install_options: () => options({ folder_ok: true, needs_permission: true }) });
+    render(InstallDialog, { game, onclose: () => {} });
+    expect(await screen.findByText("Windows will ask for permission once to create this folder.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("use_epics_folder_asks_again_with_it", async () => {
+    const calls = mock({ install_options: () => options(), epic_folder: () => EPIC });
+    render(InstallDialog, { game, onclose: () => {} });
+    await fireEvent.click(await screen.findByRole("button", { name: "Use Epic's folder" }));
+    await waitFor(() => expect(calls.filter(([c]) => c === "install_options").at(-1)![1].parent).toBe(EPIC));
+  });
+
+  it("use_epics_folder_hidden_without_it", async () => {
+    mock({ install_options: () => options(), epic_folder: () => null });
+    render(InstallDialog, { game, onclose: () => {} });
+    await screen.findByText("C:\\Users\\you\\Games\\Tidepool Odyssey");
+    expect(screen.queryByRole("button", { name: "Use Epic's folder" })).toBeNull();
+  });
+
+  it("declined_message_shown", async () => {
+    const msg = "Fishy Client needs your permission to use that folder. Pick a different folder.";
+    mock({
+      install_options: () => options({ needs_permission: true }),
+      install_start: () => {
+        throw msg;
+      },
+    });
+    render(InstallDialog, { game, onclose: () => {} });
+    await fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+    expect(await screen.findByText(msg)).toBeTruthy();
   });
 
   it("change_folder_asks_again_with_the_picked_parent", async () => {

@@ -3,7 +3,7 @@
   import { settings, saveSettings, type Settings, type WhenGameStarts } from "./settings";
   import { openLogsFolder, parseSpeed, defaultInstallFolder, getAutostart, setAutostart } from "./data";
   import { signOut } from "$lib/auth/auth";
-  import { downloads, installed, pickFolder } from "$lib/install/installs";
+  import { downloads, epicFolder, installed, pickFolder } from "$lib/install/installs";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import DeleteDataBox from "./DeleteDataBox.svelte";
 
@@ -22,7 +22,10 @@
   let defaultFolder = $state("");
   let autostart = $state(false);
 
+  let epic = $state<string | null>(null);
+
   onMount(async () => {
+    epicFolder().then((f) => (epic = f));
     defaultFolder = await defaultInstallFolder();
     autostart = await getAutostart();
   });
@@ -116,6 +119,7 @@
       <span class="hint">New games go here. You can still pick another folder in the Install box.</span>
       <span class="buttons">
         <PixelButton variant="ghost" onclick={changeFolder}>Change…</PixelButton>
+        {#if epic && $settings.install_folder !== epic}<PixelButton variant="ghost" onclick={() => save({ install_folder: epic })}>Use Epic's folder</PixelButton>{/if}
         {#if $settings.install_folder}
           <PixelButton variant="ghost" onclick={() => save({ install_folder: null })}>Use default</PixelButton>
         {/if}

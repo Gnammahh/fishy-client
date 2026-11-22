@@ -4,7 +4,7 @@
   import FishLoader from "$lib/loader/FishLoader.svelte";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import { formatBytes } from "$lib/progress/progress";
-  import { forgetInstall, getInstallOptions, pickFolder, startInstall, type InstallOptions } from "./installs";
+  import { epicFolder, forgetInstall, getInstallOptions, pickFolder, startInstall, type InstallOptions } from "./installs";
 
   let { game, onclose }: { game: Game; onclose: () => void } = $props();
   /** Closing without installing frees the file list Fishy Client fetched for the box. */
@@ -32,6 +32,14 @@
     }
   }
 
+  let epic = $state<string | null>(null);
+
+  async function useEpic() {
+    if (!epic) return;
+    parent = epic;
+    await load();
+  }
+
   async function changeFolder() {
     const picked = await pickFolder().catch(() => null);
     if (!picked) return;
@@ -49,6 +57,7 @@
   }
 
   onMount(() => {
+    epicFolder().then((f) => (epic = f));
     dialog?.focus();
     load();
   });
@@ -91,11 +100,13 @@
         <dd>{formatBytes(options.free_space)}</dd>
       </dl>
       <p class="only-here">Only Fishy Client will know about this game. Epic's launcher can't see it and would download it again.</p>
+      {#if options.needs_permission}<p class="permission">Windows will ask for permission once to create this folder.</p>{/if}
       {#if options.note}<p class="note">{options.note}</p>{/if}
       {#if options.error}<p class="error" role="alert">{options.error}</p>{/if}
       {#if startError}<p class="error" role="alert">{startError}</p>{/if}
       <div class="actions">
         <PixelButton variant="ghost" onclick={changeFolder}>Change folder</PixelButton>
+        {#if epic}<PixelButton variant="ghost" onclick={useEpic}>Use Epic's folder</PixelButton>{/if}
         <span class="spacer"></span>
         <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
         <PixelButton disabled={!options.enough_space || options.folder_ok === false || busy} onclick={install}>Install</PixelButton>
@@ -155,6 +166,11 @@
     color: var(--text-2);
   }
   /* Epic's launcher can't be told about games installed here (spec §6h). */
+  .permission {
+    color: var(--aqua);
+    font-size: 14px;
+    margin: 0;
+  }
   .only-here {
     color: var(--text-2);
     font-size: 13px;

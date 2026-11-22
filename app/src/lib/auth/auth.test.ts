@@ -169,3 +169,40 @@ describe("paste flow", () => {
     expect(still).toBe(true); // the Epic window is still open
   });
 });
+
+describe("expired sign-in", () => {
+  const EXPIRED = "Your sign-in has expired. Please sign in again.";
+
+  it("signed_out_event_clears_the_previous_accounts_games", async () => {
+    mockCommands({ auth_state: () => ({ kind: "SignedIn", display_name: "FishFan", account_id: "acc123" }) });
+    await init();
+    library.set({
+      status: "ready",
+      updating: false,
+      latestVersions: {},
+      error: "",
+      games: [{ app_name: "A", namespace: "n", catalog_item_id: "a", title: "Private Game", cover_url: null, installable: true }],
+    });
+    await emit("auth-changed", { kind: "SignedOut" });
+    await waitFor(() => {
+      let games: unknown[] = [1];
+      library.subscribe((v) => (games = v.games))();
+      expect(games).toEqual([]);
+    });
+    let current: unknown;
+    authState.subscribe((v) => (current = v))();
+    expect(current).toEqual({ kind: "SignedOut" });
+  });
+
+  it("expired_event_shows_the_message_on_login", async () => {
+    mockCommands({ auth_state: () => ({ kind: "SignedIn", display_name: "FishFan", account_id: "acc123" }) });
+    await init();
+    await emit("login-failed", EXPIRED);
+    await emit("auth-changed", { kind: "SignedOut" });
+    await waitFor(() => {
+      let msg = "";
+      loginError.subscribe((v) => (msg = v))();
+      expect(msg).toBe(EXPIRED);
+    });
+  });
+});

@@ -20,7 +20,7 @@ pub struct AppSettings {
 /// update is "Couldn't get the update".
 fn update_error(e: InstallError) -> String {
     match e {
-        InstallError::Rejected(_) | InstallError::Unsupported | InstallError::NoSpace { .. } => e.user_message(),
+        InstallError::Rejected(_) | InstallError::Unsupported | InstallError::NoSpace { .. } | InstallError::Expired => e.user_message(),
         _ => UPDATE_FETCH_ERROR.to_string(),
     }
 }
@@ -35,9 +35,12 @@ pub async fn update_start(
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
 ) -> Result<DownloadsView, String> {
-    let result = queue_update(app, app_name.clone(), auth, library, install).await;
+    let result = queue_update(app.clone(), app_name.clone(), auth, library, install).await;
     if let Err(m) = &result {
         tracing::warn!("update of {app_name} refused: {m}");
+        if m == crate::session::EXPIRED {
+            crate::session::expire(&app).await;
+        }
     }
     result
 }

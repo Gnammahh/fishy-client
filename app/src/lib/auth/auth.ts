@@ -32,6 +32,8 @@ async function subscribe() {
   }
   unlisteners = await Promise.all([
     listen<AuthState>("auth-changed", (e) => {
+      // Signed out from the Rust side (an expired sign-in): the old account's games go too.
+      if (e.payload.kind === "SignedOut") resetLibrary();
       authState.set(e.payload);
       signingIn.set(false);
     }),

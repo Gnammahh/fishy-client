@@ -48,6 +48,7 @@ fn session_error(e: AuthError) -> LaunchError {
 
 #[tauri::command]
 pub async fn play_game(
+    app: tauri::AppHandle,
     app_name: String,
     offline: bool,
     auth: tauri::State<'_, AppAuth>,
@@ -58,6 +59,9 @@ pub async fn play_game(
     let result = launch_game(app_name.clone(), offline, auth, library, install, launch).await;
     if let Err(e) = &result {
         tracing::warn!("play {app_name} failed: {}", e.message);
+        if e.signed_out {
+            crate::session::expire(&app).await;
+        }
     }
     result
 }

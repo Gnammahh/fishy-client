@@ -2,6 +2,7 @@ mod data;
 mod downloads;
 mod login_window;
 mod play;
+mod session;
 mod updates;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
@@ -118,13 +119,20 @@ fn library_cached(library: tauri::State<'_, AppLibrary>) -> Option<CachedLibrary
 
 /// Fetches the library from Epic, saves it, and returns it.
 #[tauri::command]
-async fn library_refresh(auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
+async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
     let started = std::time::Instant::now();
     let failed = || {
         warn!("library refresh failed: {LIBRARY_ERROR}");
         LIBRARY_ERROR.to_string()
     };
-    let token = auth.manager.access_token().await.map_err(|_| failed())?;
+    let token = match auth.manager.access_token().await {
+        Ok(t) => t,
+        Err(fishy_core::auth::AuthError::Expired) => {
+            session::expire(&app).await;
+            return Err(session::EXPIRED.to_string());
+        }
+        Err(_) => return Err(failed()),
+    };
     let data = library.client.fetch_library(&token).await.map_err(|_| failed())?;
     info!("library refreshed: {} games in {:.1} s", data.games.len(), started.elapsed().as_secs_f64());
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
@@ -190,6 +198,7 @@ fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &up
 /// Everything the Install box shows: folder, sizes and free space.
 #[tauri::command]
 async fn install_options(
+    app: tauri::AppHandle,
     game: Game,
     parent: Option<String>,
     auth: tauri::State<'_, AppAuth>,
@@ -197,7 +206,15 @@ async fn install_options(
     install: tauri::State<'_, AppInstall>,
     settings: tauri::State<'_, updates::AppSettings>,
 ) -> Result<InstallOptions, String> {
-    let p = prepare(&game, &auth, &library, &install).await.map_err(|e| e.user_message())?;
+    let p = match prepare(&game, &auth, &library, &install).await {
+        Ok(p) => p,
+        Err(e) => {
+            if session::is_expired_install(&e) {
+                session::expire(&app).await;
+            }
+            return Err(e.user_message());
+        }
+    };
     let (path, note) = install_path(&game, parent, &p, &settings);
     let install_size = p.manifest.install_size();
     let free = free_space(&path).unwrap_or(0);
@@ -232,7 +249,15 @@ async fn install_start(
         warn!("install of {} refused: {m}", game.app_name);
         m
     };
-    let p = prepare(&game, &auth, &library, &install).await.map_err(refused)?;
+    let p = match prepare(&game, &auth, &library, &install).await {
+        Ok(p) => p,
+        Err(e) => {
+            if session::is_expired_install(&e) {
+                session::expire(&app).await;
+            }
+            return Err(refused(e));
+        }
+    };
     let (path, _) = install_path(&game, parent, &p, &settings);
     let install_size = p.manifest.install_size();
     check_space(&path, install_size, free_space(&path).unwrap_or(0)).map_err(refused)?;

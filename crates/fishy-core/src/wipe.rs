@@ -184,7 +184,7 @@ mod tests {
         fs::create_dir_all(&epic).unwrap();
         let info = SyncInfo { namespace: "ns".into(), catalog_item_id: "cat".into(), can_run_offline: true, requires_ot: false };
         let a = g.store.installed().remove(0);
-        write_entry(&epic, &a, &info, b"M", || "AAAA".into()).unwrap();
+        write_entry(&epic, &a, &info, b"M", crate::epic_sync::Mode::Update, || "AAAA".into()).unwrap();
         fs::write(epic.join("OTHER.item"), br#"{"AppName":"Other","InstallLocation":"D:\Other","InstallationGuid":"OTHER"}"#).unwrap();
         epic
     }

@@ -2,7 +2,7 @@
 //! fails an install, update, import or uninstall: problems only go to the log.
 use crate::{AppInstall, AppLibrary};
 use fishy_core::epic_import::epic_manifests_dir;
-use fishy_core::epic_sync::{new_guid, remove_entry, write_entry, SyncInfo, Synced};
+use fishy_core::epic_sync::{new_guid, remove_entry, write_entry, Mode, SyncInfo, Synced};
 use fishy_core::install::store::{InstallStore, InstalledGame};
 use fishy_core::library::Game;
 use fishy_core::settings::Settings;
@@ -42,19 +42,18 @@ fn target(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 /// Writes the entries for these installed games. Returns how many Epic now lists, and the
-/// app names that couldn't be written.
-fn write_all(epic: &std::path::Path, store: &InstallStore, games: &[InstalledGame], library: &[Game]) -> (usize, Vec<String>) {
+/// app names that couldn't be written. A game missing from the saved Library is skipped (the
+/// Library isn't saved yet, or it's signed out); a refresh syncs again.
+fn write_all(epic: &std::path::Path, store: &InstallStore, games: &[InstalledGame], library: &[Game], mode: Mode) -> (usize, Vec<String>) {
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let (mut listed, mut failed) = (0, Vec::new());
     for g in games {
-        let written = library.iter().find(|l| l.app_name == g.app_name).ok_or(()).and_then(|l| {
-            let bytes = store.installed_manifest(&g.app_name).map_err(|_| ())?;
-            write_entry(epic, g, &sync_info(l), &bytes, new_guid).map_err(|_| ())
-        });
+        let Some(l) = library.iter().find(|l| l.app_name == g.app_name) else { continue };
+        let written = store.installed_manifest(&g.app_name).and_then(|bytes| write_entry(epic, g, &sync_info(l), &bytes, mode, new_guid));
         match written {
-            Ok(Synced::Written { .. }) => listed += 1,
-            Ok(Synced::OtherCopy | Synced::NoEpic) => {}
-            Err(()) => failed.push(g.app_name.clone()),
+            Ok(Synced::Written { .. } | Synced::Kept) => listed += 1,
+            Ok(Synced::OtherCopy | Synced::NoEpic | Synced::NoGame) => {}
+            Err(_) => failed.push(g.app_name.clone()),
         }
     }
     (listed, failed)
@@ -69,7 +68,9 @@ async fn sync(app: &tauri::AppHandle, only: Option<&str>) {
         return;
     }
     let all = only.is_none();
-    let result = tauri::async_runtime::spawn_blocking(move || write_all(&epic, &store, &games, &library)).await;
+    // A whole sync never rolls back an entry Epic updated itself (spec §6h).
+    let mode = if all { Mode::AddOnly } else { Mode::Update };
+    let result = tauri::async_runtime::spawn_blocking(move || write_all(&epic, &store, &games, &library, mode)).await;
     match result {
         Ok((listed, failed)) => {
             if !failed.is_empty() {
@@ -88,7 +89,7 @@ pub(crate) async fn sync_one(app: &tauri::AppHandle, app_name: &str) {
     sync(app, Some(app_name)).await;
 }
 
-/// At start-up and when the switch is turned on.
+/// At start-up, when the switch is turned on and after a Library refresh: adds missing entries.
 pub(crate) async fn sync_all(app: &tauri::AppHandle) {
     sync(app, None).await;
 }
@@ -110,6 +111,7 @@ pub(crate) async fn remove_one(app: &tauri::AppHandle, game: InstalledGame) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn turned_on_only_from_off_to_on() {
@@ -135,6 +137,65 @@ mod tests {
         g.launch.requires_ot = true;
         g.launch.can_run_offline = false;
         assert_eq!(sync_info(&g), SyncInfo { namespace: "ns".into(), catalog_item_id: "cat".into(), can_run_offline: false, requires_ot: true });
+    }
+
+    fn library_game(app: &str) -> Game {
+        Game {
+            app_name: app.into(),
+            namespace: "ns".into(),
+            catalog_item_id: "cat".into(),
+            title: app.into(),
+            cover_url: None,
+            installable: true,
+            launch: Default::default(),
+        }
+    }
+
+    /// Games A and B installed in a temp folder, with Epic's list folder next to them.
+    fn installed_two() -> (tempfile::TempDir, InstallStore, PathBuf) {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        use fishy_core::install::store::JobInfo;
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        for app in ["A", "B"] {
+            let job = JobInfo {
+                app_name: app.into(),
+                title: app.into(),
+                namespace: "ns".into(),
+                catalog_item_id: "cat".into(),
+                install_path: dir.path().join("Games").join(app),
+                download_size: 1,
+                install_size: 1,
+                base_urls: vec![],
+                update_from: None,
+                imported: false,
+            };
+            std::fs::create_dir_all(&job.install_path).unwrap();
+            store.save_job(&job, &build_binary(&sample(), true)).unwrap();
+            store.finish_install(&job, &sample()).unwrap();
+        }
+        let epic = dir.path().join("Manifests");
+        std::fs::create_dir_all(&epic).unwrap();
+        (dir, store, epic)
+    }
+
+    #[test]
+    fn write_all_skips_games_missing_from_the_library() {
+        let (_dir, store, epic) = installed_two();
+        let (listed, failed) = write_all(&epic, &store, &store.installed(), &[library_game("A")], Mode::AddOnly);
+        assert_eq!(listed, 1);
+        assert!(failed.is_empty(), "B isn't in the saved Library: skipped, not a failure");
+        assert_eq!(std::fs::read_dir(&epic).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn write_all_counts_a_game_epic_already_lists() {
+        let (_dir, store, epic) = installed_two();
+        let lib = [library_game("A"), library_game("B")];
+        write_all(&epic, &store, &store.installed(), &lib, Mode::AddOnly);
+        let (listed, failed) = write_all(&epic, &store, &store.installed(), &lib, Mode::AddOnly);
+        assert_eq!((listed, failed.len()), (2, 0));
+        assert_eq!(std::fs::read_dir(&epic).unwrap().count(), 2, "no duplicates");
     }
 
     #[test]

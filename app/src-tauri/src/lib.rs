@@ -156,6 +156,9 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
     }
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
+    // Games skipped before the Library was saved (first sign-in) join Epic's list now.
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move { epic_sync::sync_all(&handle).await });
     Ok(fresh)
 }
 

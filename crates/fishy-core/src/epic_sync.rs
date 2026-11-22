@@ -24,6 +24,20 @@ pub enum Synced {
     OtherCopy,
     /// Epic's launcher isn't installed: nothing written.
     NoEpic,
+    /// The game folder is gone (removed outside Fishy Client): nothing written or made again.
+    NoGame,
+    /// Epic already lists it (start-up), or Epic is installing or checking it: left as is.
+    Kept,
+}
+
+/// How far `write_entry` may go with an entry Epic already has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    /// Start-up and switch-on: only add missing entries. An existing one may be newer than
+    /// Fishy Client's record (Epic updated the game itself), so it is never rolled back.
+    AddOnly,
+    /// Right after Fishy Client's own install, update or import: bring the entry up to date.
+    Update,
 }
 
 /// 32 uppercase hex characters, like Legendary's `uuid4().hex.upper()`.
@@ -103,12 +117,19 @@ fn template() -> Map<String, Value> {
 
 /// Adds or updates the game's entry in Epic's list (spec §6h). `guid` is only called for a new
 /// entry. Nothing is created when `epic_dir` doesn't exist.
-pub fn write_entry(epic_dir: &Path, game: &InstalledGame, info: &SyncInfo, manifest: &[u8], guid: impl FnOnce() -> String) -> io::Result<Synced> {
+pub fn write_entry(epic_dir: &Path, game: &InstalledGame, info: &SyncInfo, manifest: &[u8], mode: Mode, guid: impl FnOnce() -> String) -> io::Result<Synced> {
     if !epic_dir.is_dir() {
         return Ok(Synced::NoEpic);
     }
+    if !game.install_path.is_dir() {
+        return Ok(Synced::NoGame);
+    }
     let (path, mut entry, guid) = match find_ours(epic_dir, game) {
         Err(()) => return Ok(Synced::OtherCopy),
+        Ok(Some(_)) if mode == Mode::AddOnly => return Ok(Synced::Kept),
+        Ok(Some((_, m))) if ["bIsIncompleteInstall", "bNeedsValidation"].iter().any(|k| m.get(*k) == Some(&Value::Bool(true))) => {
+            return Ok(Synced::Kept);
+        }
         Ok(Some((path, m))) => {
             let g = m.get("InstallationGuid").and_then(Value::as_str).map(str::to_string).unwrap_or_default();
             plain_guid(&g)?;
@@ -247,7 +268,7 @@ mod tests {
     #[test]
     fn writes_a_new_entry() {
         let e = Env::new();
-        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"MANIFEST", guid).unwrap(), Synced::Written { guid: guid() });
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"MANIFEST", Mode::Update, guid).unwrap(), Synced::Written { guid: guid() });
         let text = std::fs::read_to_string(e.epic().join(format!("{}.item", guid()))).unwrap();
         assert!(text.starts_with("{\n    \""), "4-space indent, no BOM");
         let v = e.item(&guid());
@@ -282,6 +303,48 @@ mod tests {
     }
 
     #[test]
+    fn add_only_leaves_an_existing_entry_alone() {
+        // Epic updated the game itself: its entry is newer than Fishy Client's record.
+        let e = Env::new();
+        e.put_item("E1", &json!({"AppName": "Bendy", "InstallLocation": e.folder(), "InstallationGuid": "E1", "AppVersionString": "9.9"}));
+        let before = std::fs::read(e.epic().join("E1.item")).unwrap();
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"OLD", Mode::AddOnly, guid).unwrap(), Synced::Kept);
+        assert_eq!(std::fs::read(e.epic().join("E1.item")).unwrap(), before);
+        assert!(!e.folder().join(".egstore").join("E1.manifest").exists());
+    }
+
+    #[test]
+    fn add_only_still_adds_a_missing_entry() {
+        let e = Env::new();
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::AddOnly, guid).unwrap(), Synced::Written { guid: guid() });
+    }
+
+    #[test]
+    fn never_touches_an_entry_epic_is_working_on() {
+        let e = Env::new();
+        for (guid_name, flag) in [("E1", "bIsIncompleteInstall"), ("E2", "bNeedsValidation")] {
+            let dir = tempfile::tempdir().unwrap();
+            let epic = dir.path().join("M");
+            std::fs::create_dir_all(&epic).unwrap();
+            let mut v = json!({"AppName": "Bendy", "InstallLocation": e.folder(), "InstallationGuid": guid_name});
+            v[flag] = true.into();
+            std::fs::write(epic.join(format!("{guid_name}.item")), serde_json::to_vec(&v).unwrap()).unwrap();
+            let before = std::fs::read(epic.join(format!("{guid_name}.item"))).unwrap();
+            assert_eq!(write_entry(&epic, &e.record(), &info(), b"M", Mode::Update, guid).unwrap(), Synced::Kept, "{flag}");
+            assert_eq!(std::fs::read(epic.join(format!("{guid_name}.item"))).unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn missing_game_folder_writes_nothing() {
+        let e = Env::new();
+        std::fs::remove_dir_all(e.folder()).unwrap();
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::AddOnly, guid).unwrap(), Synced::NoGame);
+        assert!(!e.folder().exists(), "the folder isn't made again");
+        assert!(e.items().is_empty());
+    }
+
+    #[test]
     fn new_guid_is_32_uppercase_hex() {
         let g = new_guid();
         assert_eq!(g.len(), 32);
@@ -296,7 +359,7 @@ mod tests {
         let other = json!({"AppName": "Bendy", "InstallLocation": "D:\\Other\\Bendy", "InstallationGuid": "E2", "AppVersionString": "old"});
         e.put_item("E2", &other);
         let before = std::fs::read(e.epic().join("E2.item")).unwrap();
-        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap(), Synced::Written { guid: "E1".into() });
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap(), Synced::Written { guid: "E1".into() });
         assert_eq!(e.item("E1")["AppVersionString"], "2.0");
         assert_eq!(std::fs::read(e.epic().join("E2.item")).unwrap(), before);
         assert_eq!(e.items().len(), 2);
@@ -308,7 +371,7 @@ mod tests {
         let e = Env::new();
         let odd = format!("{}/", e.folder().display().to_string().replace('\\', "/").to_uppercase());
         e.put_item("E1", &json!({"AppName": "Bendy", "InstallLocation": odd, "InstallationGuid": "E1"}));
-        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap(), Synced::Written { guid: "E1".into() });
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap(), Synced::Written { guid: "E1".into() });
         assert_eq!(e.items().len(), 1);
     }
 
@@ -319,7 +382,7 @@ mod tests {
             "E1",
             &json!({"AppName": "Bendy", "InstallLocation": e.folder(), "InstallationGuid": "E1", "InstallComponents": ["X"], "InstallSessionId": "S"}),
         );
-        write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap();
+        write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap();
         let v = e.item("E1");
         assert_eq!(v["InstallComponents"], json!(["X"]));
         assert_eq!(v["InstallSessionId"], "S");
@@ -330,7 +393,7 @@ mod tests {
     fn another_folder_only_is_left_alone() {
         let e = Env::new();
         e.put_item("E2", &json!({"AppName": "Bendy", "InstallLocation": "D:\\Other\\Bendy", "InstallationGuid": "E2"}));
-        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap(), Synced::OtherCopy);
+        assert_eq!(write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap(), Synced::OtherCopy);
         assert_eq!(e.items().len(), 1);
         assert!(!e.folder().join(".egstore").exists());
     }
@@ -339,7 +402,7 @@ mod tests {
     fn no_epic_folder_writes_nothing() {
         let e = Env::new();
         let missing = e.dir.path().join("NoEpic");
-        assert_eq!(write_entry(&missing, &e.record(), &info(), b"M", guid).unwrap(), Synced::NoEpic);
+        assert_eq!(write_entry(&missing, &e.record(), &info(), b"M", Mode::Update, guid).unwrap(), Synced::NoEpic);
         assert!(!remove_entry(&missing, &e.record()).unwrap());
         assert!(!missing.exists());
         assert!(!e.folder().join(".egstore").exists());
@@ -348,7 +411,7 @@ mod tests {
     #[test]
     fn remove_deletes_only_its_files() {
         let e = Env::new();
-        write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap();
+        write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap();
         let eg = e.folder().join(".egstore");
         std::fs::write(eg.join("OTHER.manifest"), b"epic").unwrap();
         assert!(remove_entry(&e.epic(), &e.record()).unwrap());
@@ -361,7 +424,7 @@ mod tests {
     #[test]
     fn remove_cleans_empty_folders() {
         let e = Env::new();
-        write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap();
+        write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap();
         assert!(remove_entry(&e.epic(), &e.record()).unwrap());
         assert!(!e.folder().exists());
         assert!(e.folder().parent().unwrap().exists());
@@ -378,11 +441,11 @@ mod tests {
     #[test]
     fn writing_twice_updates_the_same_entry() {
         let e = Env::new();
-        write_entry(&e.epic(), &e.record(), &info(), b"M", guid).unwrap();
+        write_entry(&e.epic(), &e.record(), &info(), b"M", Mode::Update, guid).unwrap();
         let mut newer = e.record();
         newer.version = "3.0".into();
         let unused = || "SHOULDNOTBEUSED".to_string();
-        assert_eq!(write_entry(&e.epic(), &newer, &info(), b"M2", unused).unwrap(), Synced::Written { guid: guid() });
+        assert_eq!(write_entry(&e.epic(), &newer, &info(), b"M2", Mode::Update, unused).unwrap(), Synced::Written { guid: guid() });
         assert_eq!(e.items().len(), 1);
         assert_eq!(e.item(&guid())["AppVersionString"], "3.0");
     }

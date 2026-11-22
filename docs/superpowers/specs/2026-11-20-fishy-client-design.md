@@ -911,6 +911,11 @@ Windows lets only administrator programs create folders in places like `C:\Progr
 - Importing games already in Epic's folders (§6g) is not affected: Epic gives users full control of each game folder.
 - **Tests:** Rust: `can_create_in` true for a temp folder, true for a not-yet-existing folder under it (checks the parent), false when the nearest existing thing is a file, and the test folder is gone afterwards. UI: the message is shown and Install is disabled when `folder_ok` is false.
 
+### 6g.4 Not-installed games look a bit grey (asked for 2026-11-22)
+- In the Library, the cover of a game that isn't installed (and isn't downloading or queued) is shown greyer and darker, and its title in the dimmer text colour.
+- Hovering the card, or reaching it with the keyboard, shows it in full colour again, so the Install button still stands out.
+- **Test (vitest):** a not-installed card has the `not-installed` class; installed and downloading cards don't.
+
 ---
 
 ## 7. Error handling

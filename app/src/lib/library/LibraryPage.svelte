@@ -220,7 +220,7 @@
       <ul class="grid">
         {#each shown as game (game.catalog_item_id)}
           {@const s = status(game)}
-          <li class="card">
+          <li class="card" class:not-installed={s === "none"}>
             <div class="cover">
               {#if game.cover_url}
                 <img src={game.cover_url} alt="{game.title} cover art" loading="lazy" referrerpolicy="no-referrer" />
@@ -496,6 +496,21 @@
   }
   .cover {
     position: relative;
+  }
+  /* Not installed: a bit grey, back to full colour on hover or keyboard focus (spec §6g.4). */
+  .not-installed .cover {
+    filter: grayscale(0.75) brightness(0.75);
+  }
+  .not-installed .title {
+    color: var(--text-2);
+  }
+  .not-installed:hover .cover,
+  .not-installed:focus-within .cover {
+    filter: none;
+  }
+  .not-installed:hover .title,
+  .not-installed:focus-within .title {
+    color: var(--text);
   }
   .badge {
     position: absolute;

@@ -280,6 +280,20 @@ describe("LibraryPage", () => {
     expect(screen.queryByRole("button", { name: /^Install / })).toBeNull();
   });
 
+  it("games_not_installed_are_greyed_out", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner"), game("Tidepool Odyssey"), game("Coral Cove")] }),
+    });
+    installed.set([installedGame("KelpRunner")]);
+    downloads.set([downloadItem("TidepoolOdyssey", "downloading")]);
+    render(LibraryPage, { name: "FishFan" });
+    const card = async (title: string) => (await screen.findByText(title)).closest("li")!;
+    expect((await card("Coral Cove")).classList.contains("not-installed")).toBe(true);
+    expect((await card("Kelp Runner")).classList.contains("not-installed")).toBe(false);
+    expect((await card("Tidepool Odyssey")).classList.contains("not-installed")).toBe(false);
+  });
+
   it("menu_shows_installed_size", async () => {
     mockCommands({
       library_cached: () => null,

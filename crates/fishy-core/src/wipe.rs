@@ -129,6 +129,7 @@ mod tests {
             install_size: 1,
             base_urls: vec![],
             update_from: None,
+            imported: false,
         }
     }
 

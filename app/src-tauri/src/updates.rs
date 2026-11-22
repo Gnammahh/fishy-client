@@ -90,6 +90,7 @@ async fn queue_update(
         install_size: manifest.install_size(),
         base_urls: info.base_urls.clone(),
         update_from: Some(installed.version.clone()),
+        imported: false,
     };
     downloads
         .store

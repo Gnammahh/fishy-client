@@ -58,8 +58,10 @@ pub fn uninstall(store: &InstallStore, app: &str) -> Result<(), InstallError> {
 }
 
 /// Cancel: deletes what a download wrote so far and its saved progress.
+/// An imported game's files were there before (spec §6g), so only the saved progress goes.
 pub fn discard_download(store: &InstallStore, job: &JobInfo) -> Result<(), InstallError> {
-    if let Some(manifest) = store.job_manifest(&job.app_name).ok().and_then(|b| parse_manifest(&b).ok()) {
+    let manifest = if job.imported { None } else { store.job_manifest(&job.app_name).ok().and_then(|b| parse_manifest(&b).ok()) };
+    if let Some(manifest) = manifest {
         if !delete_manifest_files(&job.install_path, &manifest) {
             return Err(InstallError::InUse);
         }
@@ -96,6 +98,7 @@ mod tests {
             install_size: 1,
             base_urls: vec![],
             update_from: None,
+            imported: false,
         };
         write_files(&root);
         store.save_job(&job, &build_binary(&sample(), true)).unwrap();
@@ -112,6 +115,18 @@ mod tests {
 
     fn root(e: &Env) -> PathBuf {
         e.job.install_path.clone()
+    }
+
+    #[test]
+    fn cancel_of_imported_job_keeps_game_files() {
+        let mut e = installed();
+        e.job.imported = true;
+        e.store.save_job(&e.job, &build_binary(&sample(), true)).unwrap();
+        discard_download(&e.store, &e.job).unwrap();
+        for f in &sample().files {
+            assert!(crate::install::store::file_path(&root(&e), &f.filename).unwrap().is_file(), "{} kept", f.filename);
+        }
+        assert!(e.store.pending_jobs().is_empty(), "the download folder is gone");
     }
 
     #[test]

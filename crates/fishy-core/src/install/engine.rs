@@ -414,6 +414,7 @@ mod tests {
             install_size: f.manifest.install_size(),
             base_urls: vec![format!("{}/base", server.uri())],
             update_from: None,
+            imported: false,
         };
         store.save_job(&job, &build_binary(&f.manifest, true)).unwrap();
         Env { _dir: dir, store, job, client: InstallClient::with_base_url(&server.uri()).with_retry_base(Duration::from_millis(1)) }

@@ -521,6 +521,7 @@ mod tests {
             install_size: 2000,
             base_urls: vec![],
             update_from: None,
+            imported: false,
         };
         Job::new(info, Arc::new(Manifest::new(ManifestMeta::default(), vec![], vec![])), state)
     }

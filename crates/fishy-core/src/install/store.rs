@@ -24,6 +24,9 @@ pub struct JobInfo {
     /// The installed version an update started from (spec §6e). None: a normal install.
     #[serde(default)]
     pub update_from: Option<String>,
+    /// Added from Epic's launcher (spec §6g): Cancel must not delete the game's files.
+    #[serde(default)]
+    pub imported: bool,
 }
 
 /// One entry of `installed.json`.
@@ -248,6 +251,7 @@ mod tests {
             install_size: 1224,
             base_urls: vec!["https://cdn/x".into()],
             update_from: None,
+            imported: false,
         }
     }
 
@@ -310,6 +314,16 @@ mod tests {
         assert_eq!(store.installed_manifest("Tide").unwrap(), bytes);
         assert!(store.pending_jobs().is_empty());
         assert!(!dir.path().join("data/downloads/Tide").exists());
+    }
+
+    #[test]
+    fn old_job_json_without_imported_reads_as_false() {
+        let j: JobInfo = serde_json::from_value(serde_json::json!({
+            "app_name": "Tide", "title": "T", "namespace": "ns", "catalog_item_id": "c",
+            "install_path": "C:/Games/T", "download_size": 1, "install_size": 1, "base_urls": []
+        }))
+        .unwrap();
+        assert!(!j.imported);
     }
 
     #[test]

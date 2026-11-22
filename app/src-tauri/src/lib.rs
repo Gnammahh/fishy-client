@@ -292,6 +292,7 @@ async fn install_start(
         install_size,
         base_urls: p.info.base_urls.clone(),
         update_from: None,
+        imported: false,
     };
     downloads
         .store

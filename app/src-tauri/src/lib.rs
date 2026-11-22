@@ -221,10 +221,19 @@ fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &up
     (unique_folder(folder_for(&root, p.folder.as_deref(), &game.title), &downloads.taken_folders(&game.app_name)), note)
 }
 
-/// The admin copy may create this game folder (spec §6k path rules).
-fn permission_possible(path: &std::path::Path) -> bool {
-    let windows = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-    fishy_core::install::elevate::check_new_folder(path, &windows).is_ok()
+/// The admin copy may create this game folder (spec §6k path rules). Touches the disk, so it
+/// runs off the async thread.
+async fn permission_possible(path: &std::path::Path) -> bool {
+    let p = path.to_path_buf();
+    tokio::task::spawn_blocking(move || fishy_core::install::elevate::check_new_folder(&p, &fishy_core::install::elevate::windows_dir()).is_ok())
+        .await
+        .unwrap_or(false)
+}
+
+/// After Windows' permission prompt (which can stay open for minutes): nothing else installed,
+/// queued, imported or wiped the game meanwhile.
+fn still_queueable(installed: bool, has_job: bool, being_imported: bool, wiping: bool) -> bool {
+    !(installed || has_job || being_imported || wiping)
 }
 
 /// The Install box's folder fields: (folder_ok, needs_permission, error). A folder Fishy Client
@@ -251,7 +260,7 @@ async fn ensure_folder(path: &std::path::Path) -> Result<(), InstallError> {
     let p = path.to_path_buf();
     let res = tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&p)).await.unwrap_or(Ok(()));
     let Err(folder) = res else { return Ok(()) };
-    if !permission_possible(path) {
+    if !permission_possible(path).await {
         return Err(InstallError::NoWriteAccess { folder: folder.display().to_string() });
     }
     info!("install: asking for permission to create a game folder");
@@ -314,7 +323,7 @@ async fn install_options(
     let space = check_space(&path, install_size + reserved, free);
     let check_path = path.clone();
     let res = tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&check_path)).await.unwrap_or(Ok(()));
-    let (folder_ok, needs_permission, folder_error) = folder_fields(res, permission_possible(&path));
+    let (folder_ok, needs_permission, folder_error) = folder_fields(res, permission_possible(&path).await);
     Ok(InstallOptions {
         install_path: path.display().to_string(),
         download_size: p.manifest.chunks.iter().map(|c| c.file_size).sum(),
@@ -381,6 +390,10 @@ async fn install_start(
     }
     // Last, so Windows' permission prompt only appears for an install that will really start.
     ensure_folder(&path).await.map_err(refused)?;
+    let installed_now = downloads.store.installed().iter().any(|g| g.app_name == game.app_name);
+    if !still_queueable(installed_now, downloads.has_job(&game.app_name), install.checking.is_busy(&game.app_name), downloads.is_wiping()) {
+        return Err(epic_import::being_checked(&game.title));
+    }
     downloads
         .store
         .save_job(&job, &p.bytes)
@@ -600,6 +613,15 @@ mod tests {
         let (ok, ask, msg) = folder_fields(no(), false);
         assert_eq!((ok, ask), (false, false));
         assert!(msg.unwrap().contains("without administrator rights"));
+    }
+
+    #[test]
+    fn nothing_else_may_have_queued_the_game_during_the_prompt() {
+        assert!(still_queueable(false, false, false, false));
+        assert!(!still_queueable(true, false, false, false), "installed meanwhile");
+        assert!(!still_queueable(false, true, false, false), "queued meanwhile");
+        assert!(!still_queueable(false, false, true, false), "being imported");
+        assert!(!still_queueable(false, false, false, true), "Delete all my data running");
     }
 
     #[test]

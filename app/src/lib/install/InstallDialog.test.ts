@@ -96,6 +96,14 @@ describe("InstallDialog", () => {
     expect(screen.queryByRole("button", { name: "Use Epic's folder" })).toBeNull();
   });
 
+  it("use_epics_folder_hidden_when_already_chosen", async () => {
+    mock({ install_options: () => options({ install_path: EPIC + "\\Tidepool Odyssey" }), epic_folder: () => EPIC });
+    render(InstallDialog, { game, onclose: () => {} });
+    await screen.findByText(EPIC + "\\Tidepool Odyssey");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Use Epic's folder" })).toBeNull();
+  });
+
   it("declined_message_shown", async () => {
     const msg = "Fishy Client needs your permission to use that folder. Pick a different folder.";
     mock({

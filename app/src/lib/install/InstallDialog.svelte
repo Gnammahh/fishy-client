@@ -106,7 +106,9 @@
       {#if startError}<p class="error" role="alert">{startError}</p>{/if}
       <div class="actions">
         <PixelButton variant="ghost" onclick={changeFolder}>Change folder</PixelButton>
-        {#if epic}<PixelButton variant="ghost" onclick={useEpic}>Use Epic's folder</PixelButton>{/if}
+        {#if epic && !options.install_path.toLowerCase().startsWith(epic.toLowerCase() + "\\")}
+          <PixelButton variant="ghost" onclick={useEpic}>Use Epic's folder</PixelButton>
+        {/if}
         <span class="spacer"></span>
         <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
         <PixelButton disabled={!options.enough_space || options.folder_ok === false || busy} onclick={install}>Install</PixelButton>

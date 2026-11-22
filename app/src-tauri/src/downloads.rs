@@ -367,6 +367,11 @@ impl Downloads {
         self.lock().active_names()
     }
 
+    /// Delete all my data is running: nothing may be queued.
+    pub fn is_wiping(&self) -> bool {
+        self.lock().wiping
+    }
+
     /// Wait (up to `timeout`) until nothing is writing, e.g. after `pause_all`.
     pub async fn wait_idle(&self, timeout: Duration) {
         let deadline = Instant::now() + timeout;

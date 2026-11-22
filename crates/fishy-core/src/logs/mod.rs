@@ -49,6 +49,8 @@ fn appender(dir: &Path) -> io::Result<tracing_appender::rolling::RollingFileAppe
         .rotation(tracing_appender::rolling::Rotation::DAILY)
         .filename_prefix("fishy-client")
         .filename_suffix("log")
+        // Trims old files each new day too, so a Fishy Client left running still keeps a week.
+        .max_log_files(KEEP_DAYS as usize)
         .build(dir)
         .map_err(io::Error::other)
 }
@@ -82,6 +84,20 @@ mod tests {
 
     fn log_name(d: &str) -> String {
         format!("fishy-client.{d}.log")
+    }
+
+    #[test]
+    fn the_daily_file_keeps_old_logs_trimmed_while_running() {
+        // Rotation (each new day) also trims, not only startup.
+        let dir = tempfile::tempdir().unwrap();
+        for d in 1..=12 {
+            std::fs::write(dir.path().join(format!("fishy-client.2026-10-{d:02}.log")), "old").unwrap();
+        }
+        let mut w = make_writer(dir.path()).unwrap();
+        w.get_mut().unwrap().write_all(b"hello
+").unwrap();
+        let logs = std::fs::read_dir(dir.path()).unwrap().count();
+        assert!(logs <= KEEP_DAYS as usize, "{logs} log files kept");
     }
 
     #[test]

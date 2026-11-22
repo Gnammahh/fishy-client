@@ -81,9 +81,11 @@
   }
 
   async function changeSpeed(e: Event) {
-    const n = parseSpeed((e.currentTarget as HTMLInputElement).value);
+    const box = e.currentTarget as HTMLInputElement;
+    const n = parseSpeed(box.value);
     if (n === null) {
       downloadsError = SPEED_ERROR;
+      box.value = String($settings.speed_limit_mbps); // a wrong number doesn't stay in the box
       return;
     }
     await save({ speed_limit_mbps: n });

@@ -104,6 +104,7 @@ describe("Limit download speed", () => {
     for (const bad of ["", "2.5", "abc", "0", "1001"]) {
       await fireEvent.change(box, { target: { value: bad } });
       expect(await screen.findByText(SPEED_ERROR)).toBeTruthy();
+      expect(box.value).toBe("10"); // the saved value comes back
     }
     expect(saved).toEqual([]);
     await fireEvent.change(box, { target: { value: "25" } });

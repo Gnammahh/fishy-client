@@ -10,6 +10,8 @@ const CHECK_EVERY: Duration = Duration::from_secs(5);
 #[derive(Default)]
 struct Watch {
     list: RunningList,
+    /// Games whose Play is between the click and the game starting.
+    launching: std::collections::HashSet<String>,
     /// The check loop is running.
     watching: bool,
     /// Fishy Client minimized itself for a game, so it comes back when they've all closed.
@@ -28,6 +30,27 @@ impl AppRunning {
 
     pub fn contains(&self, app_name: &str) -> bool {
         self.lock().list.contains(app_name)
+    }
+
+    /// Claims the game for one Play. None when it's already starting or running. The claim ends
+    /// when the returned guard is dropped (the game is in the running list by then, or it failed).
+    pub fn begin_launch(&self, app_name: &str) -> Option<Launching<'_>> {
+        let mut w = self.lock();
+        if w.list.contains(app_name) || !w.launching.insert(app_name.to_string()) {
+            return None;
+        }
+        Some(Launching { running: self, app_name: app_name.to_string() })
+    }
+}
+
+pub struct Launching<'a> {
+    running: &'a AppRunning,
+    app_name: String,
+}
+
+impl Drop for Launching<'_> {
+    fn drop(&mut self) {
+        self.running.lock().launching.remove(&self.app_name);
     }
 }
 
@@ -65,24 +88,15 @@ pub fn started(app: &AppHandle, app_name: &str, folder: &Path, minimize: bool) {
 
 /// Every 5 seconds: drop the games with nothing open. Ends when the list is empty.
 async fn watch(app: AppHandle) {
-    let mut programs = Some(OpenPrograms::new());
     loop {
         tokio::time::sleep(CHECK_EVERY).await;
-        let mut p = programs.take().unwrap_or_default();
-        let (back, paths) = match tauri::async_runtime::spawn_blocking(move || {
-            let paths = p.paths();
-            (p, paths)
-        })
-        .await
-        {
-            Ok((p, paths)) => (Some(p), paths),
-            Err(_) => (None, Vec::new()), // the check itself failed: treat everything as closed
-        };
-        programs = back;
+        let taken_at = std::time::Instant::now();
+        // If the check itself fails, everything counts as closed, so no card stays stuck.
+        let paths = tauri::async_runtime::spawn_blocking(|| OpenPrograms::new().paths()).await.unwrap_or_default();
         let state = app.state::<AppRunning>();
         let (closed, names, restore, done) = {
             let mut w = state.lock();
-            let closed = w.list.check(&paths);
+            let closed = w.list.check(&paths, taken_at);
             let empty = w.list.is_empty();
             let restore = should_restore(empty, w.minimized_by_us);
             if empty {
@@ -123,6 +137,18 @@ mod tests {
         assert!(should_restore(true, true));
         assert!(!should_restore(false, true), "another game is still running");
         assert!(!should_restore(true, false), "the user chose Keep open");
+    }
+
+    #[test]
+    fn a_second_play_is_refused_while_the_first_is_starting_or_running() {
+        let r = AppRunning::default();
+        let first = r.begin_launch("kelp").expect("first Play goes ahead");
+        assert!(r.begin_launch("kelp").is_none(), "still starting");
+        assert!(r.begin_launch("reef").is_some(), "another game is fine");
+        drop(first); // the launch failed
+        assert!(r.begin_launch("kelp").is_some(), "allowed again after a failure");
+        r.lock().list.add("kelp", std::path::Path::new(r"C:\Games\Kelp"));
+        assert!(r.begin_launch("kelp").is_none(), "running");
     }
 
     #[test]

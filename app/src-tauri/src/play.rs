@@ -94,9 +94,11 @@ async fn launch_game(
         return Err(play_error(LaunchError::NotInstalled, &app_name, false));
     };
     let title = installed.title.clone();
-    if running.contains(&app_name) {
+    // Held until the game is in the running list (or Play failed), so a second click can't
+    // start it twice.
+    let Some(_launching) = running.begin_launch(&app_name) else {
         return Err(PlayError { message: already_running(&title), can_offline: false, signed_out: false });
-    }
+    };
     let Some(game) = library.cache.load().and_then(|c| c.games.into_iter().find(|g| g.app_name == app_name)) else {
         return Err(play_error(LaunchError::NotInLibrary, &title, false));
     };

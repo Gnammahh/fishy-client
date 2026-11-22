@@ -1,6 +1,7 @@
 mod data;
 mod downloads;
 mod epic_import;
+mod epic_sync;
 mod login_window;
 mod play;
 mod running;
@@ -386,6 +387,7 @@ async fn uninstall_game(
         return Err("Pause the update first, then uninstall.".to_string());
     }
     let _ = app.emit("downloads-changed", install.downloads.view());
+    let record = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name);
     let store = install.downloads.store.clone();
     let name = app_name.clone();
     tauri::async_runtime::spawn_blocking(move || uninstall(&store, &name))
@@ -397,6 +399,9 @@ async fn uninstall_game(
             m
         })?;
     info!("uninstalled {app_name}");
+    if let Some(record) = record {
+        epic_sync::remove_one(&app, record).await;
+    }
     let _ = app.emit("installed-changed", ());
     Ok(install.downloads.store.installed())
 }
@@ -432,6 +437,9 @@ pub fn run() {
             // The saved speed limit applies from the first download, not only after a change.
             app.state::<AppInstall>().downloads.limiter.set(fishy_core::install::limit::limit_bytes(&settings.store.load()));
             app.manage(settings);
+            // Games installed before (or while Epic's launcher wasn't looking) join Epic's list (spec §6h).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { epic_sync::sync_all(&handle).await });
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.

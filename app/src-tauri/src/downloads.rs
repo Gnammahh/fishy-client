@@ -483,6 +483,8 @@ impl Downloads {
                 inner.jobs.remove(i);
                 drop(inner);
                 let _ = app.emit("installed-changed", ());
+                let (handle, name) = (app.clone(), info.app_name.clone());
+                tauri::async_runtime::spawn(async move { crate::epic_sync::sync_one(&handle, &name).await });
             }
             Err(InstallError::Stopped) => {
                 tracing::info!("paused {}", info.app_name);

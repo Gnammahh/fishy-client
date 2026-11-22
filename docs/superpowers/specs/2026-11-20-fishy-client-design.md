@@ -605,8 +605,13 @@ Polish is split into five sub-projects, built in this order. Each gets its own d
 1. **Settings, logs and your data** (this section, approved 2026-11-21)
 2. **Friendlier errors** (§6f.2, approved 2026-11-22)
 3. Library filters and sort (an Updates tab, a sort option)
-4. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12)
-5. Installer (`.msi`), last, so it packages everything above
+4. **Running games** (added 2026-11-22 at your request):
+   - the game's card shows **Running** while any program from its install folder is open, checked every few seconds, only after Play and only until the game closes
+   - Play, Update and Uninstall wait while it runs
+   - a setting "When a game starts": **Keep Fishy Client open** (as now) or **Minimize it, and bring it back when the game closes**; downloads keep going either way
+   - fully closing Fishy Client on Play was considered and rejected: nothing would be left to reopen it, and downloads would stop
+5. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12)
+6. Installer (`.msi`), last, so it packages everything above
 
 ### 6f.1 Settings, logs and your data
 
@@ -1089,5 +1094,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. Next: 3 Library filters and sort, 4 small fixes, 5 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. Next: 3 Library filters and sort, 4 Running games (with "minimize while playing"), 5 small fixes, 6 installer (`.msi`).
    - Later: signed updates and a code-signed installer

@@ -1,6 +1,9 @@
 //! Games already installed by Epic's own launcher (spec §6g). Read-only: nothing here ever
 //! writes to Epic's folders.
+use crate::install::manifest::{parse_manifest, Manifest};
+use crate::install::store::{file_path, InstallStore, InstalledGame, JobInfo};
 use serde::Deserialize;
+use std::io;
 use std::path::{Path, PathBuf};
 
 /// One game from Epic's list, with only the fields Fishy Client uses.
@@ -14,6 +17,9 @@ pub struct EpicItem {
     pub version: String,
     pub namespace: String,
     pub catalog_item_id: String,
+    /// Installed with only some optional parts (Epic's `InstallComponents` / `InstallTags`).
+    /// Fishy Client always installs every file, so these can't be imported yet.
+    pub partial: bool,
 }
 
 /// The `.item` file as Epic writes it. Everything else in it is ignored.
@@ -38,6 +44,10 @@ struct RawItem {
     main_game_app_name: String,
     #[serde(default, rename = "bIsIncompleteInstall")]
     incomplete: bool,
+    #[serde(default)]
+    install_components: Vec<String>,
+    #[serde(default)]
+    install_tags: Vec<String>,
 }
 
 /// `%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests`, where Epic keeps one `.item` per install.
@@ -55,7 +65,9 @@ fn read_item(path: &Path) -> Option<EpicItem> {
     if raw.incomplete || addon || raw.app_name.is_empty() || raw.install_location.is_empty() || !install_path.is_dir() {
         return None;
     }
+    let partial = raw.install_components.iter().chain(&raw.install_tags).any(|t| !t.is_empty());
     Some(EpicItem {
+        partial,
         app_name: raw.app_name,
         title: raw.display_name,
         install_path,
@@ -89,6 +101,75 @@ pub fn local_manifest(item: &EpicItem) -> Option<Vec<u8>> {
         return None;
     }
     std::fs::read(item.install_path.join(".egstore").join(format!("{guid}.manifest"))).ok()
+}
+
+/// The manifest, if it parses. Its own app name isn't compared: Epic often puts the build's name
+/// there ("SugarStaging" for "Sugar"). The file is tied to this install by its InstallationGuid.
+pub fn usable_manifest(_item: &EpicItem, bytes: &[u8]) -> Option<Manifest> {
+    parse_manifest(bytes).ok()
+}
+
+/// What the size check found.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FileCheck {
+    /// `(sha1 hex, name)` of every file that's there with the right size.
+    pub good: Vec<(String, String)>,
+    pub bad_files: usize,
+    /// The manifest sizes of the missing or damaged files.
+    pub bad_bytes: u64,
+}
+
+impl FileCheck {
+    pub fn all_good(&self) -> bool {
+        self.bad_files == 0
+    }
+}
+
+/// Every manifest file must exist with the manifest's size (no SHA-1: too slow for big games).
+pub fn check_files(root: &Path, m: &Manifest) -> FileCheck {
+    let mut check = FileCheck::default();
+    for f in &m.files {
+        let ok = file_path(root, &f.filename).ok().and_then(|p| std::fs::metadata(p).ok()).is_some_and(|md| md.is_file() && md.len() == f.size());
+        if ok {
+            check.good.push((hex::encode(f.sha1), f.filename.clone()));
+        } else {
+            check.bad_files += 1;
+            check.bad_bytes += f.size();
+        }
+    }
+    check
+}
+
+/// The download record for an imported game; `imported` keeps Cancel off its files.
+pub fn import_job(item: &EpicItem, title: &str, m: &Manifest, base_urls: Vec<String>) -> JobInfo {
+    JobInfo {
+        app_name: item.app_name.clone(),
+        title: title.to_string(),
+        namespace: item.namespace.clone(),
+        catalog_item_id: item.catalog_item_id.clone(),
+        install_path: item.install_path.clone(),
+        download_size: m.chunks.iter().map(|c| c.file_size).sum(),
+        install_size: m.install_size(),
+        base_urls,
+        update_from: None,
+        imported: true,
+    }
+}
+
+/// Every file is there: record the game as installed, like a finished install.
+pub fn add_installed(store: &InstallStore, job: &JobInfo, bytes: &[u8], m: &Manifest) -> io::Result<InstalledGame> {
+    store.save_job(job, bytes)?;
+    store.finish_install(job, m)
+}
+
+/// Some files are missing: save a download whose resume list already holds the good ones,
+/// so only the rest are downloaded.
+pub fn save_repair(store: &InstallStore, job: &JobInfo, bytes: &[u8], check: &FileCheck) -> io::Result<()> {
+    store.save_job(job, bytes)?;
+    for (sha1, name) in &check.good {
+        store.mark_finished(&job.app_name, sha1, name)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -148,6 +229,7 @@ mod tests {
                 version: "1.0.3".into(),
                 namespace: "ns".into(),
                 catalog_item_id: "cat".into(),
+                partial: false,
             }]
         );
     }
@@ -242,4 +324,150 @@ mod tests {
         std::fs::write(folder.join(".egstore").join("AAA.manifest"), b"bytes").unwrap();
         assert_eq!(local_manifest(&item), Some(b"bytes".to_vec()));
     }
+    // ---- checking files, adding, repairing ----
+    use crate::install::manifest::testbuild::{build_binary, sample};
+
+
+    /// The sample game (app "Tidepool") as Epic would have installed it: every file the right size.
+    fn epic_game(e: &Env) -> EpicItem {
+        let folder = e.game_folder("Tidepool");
+        for f in &sample().files {
+            let p = file_path(&folder, &f.filename).unwrap();
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, vec![b'x'; f.size() as usize]).unwrap();
+        }
+        EpicItem {
+            app_name: "Tidepool".into(),
+            title: "Tidepool".into(),
+            install_path: folder,
+            installation_guid: "AAA".into(),
+            version: "1.0.0-CL1".into(),
+            namespace: "ns".into(),
+            catalog_item_id: "cat".into(),
+            partial: false,
+        }
+    }
+
+    #[test]
+    fn all_files_present_is_all_good() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        let c = check_files(&item.install_path, &sample());
+        assert!(c.all_good());
+        assert_eq!(c.good.len(), 3);
+        assert_eq!((c.bad_files, c.bad_bytes), (0, 0));
+        assert_eq!(c.good[1], (hex::encode([4u8; 20]), "readme.txt".to_string()));
+    }
+
+    #[test]
+    fn missing_file_is_bad() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        std::fs::remove_file(item.install_path.join("readme.txt")).unwrap();
+        let c = check_files(&item.install_path, &sample());
+        assert!(!c.all_good());
+        assert_eq!((c.bad_files, c.bad_bytes), (1, 24));
+        assert_eq!(c.good.len(), 2);
+    }
+
+    #[test]
+    fn wrong_size_is_bad() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        std::fs::write(item.install_path.join("Binaries").join("Tidepool.exe"), b"short").unwrap();
+        let c = check_files(&item.install_path, &sample());
+        assert_eq!((c.bad_files, c.bad_bytes), (1, 1200));
+    }
+
+    #[test]
+    fn unsafe_name_is_bad() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        let mut m = sample();
+        m.files[1].filename = "../outside.txt".into();
+        let c = check_files(&item.install_path, &m);
+        assert_eq!(c.bad_files, 1);
+        assert!(c.good.iter().all(|(_, n)| n != "../outside.txt"));
+    }
+
+    #[test]
+    fn manifest_with_a_build_name_is_used() {
+        // Real Epic manifests often name the build ("SugarStaging"), not the app ("Sugar").
+        let e = Env::new();
+        let mut item = epic_game(&e);
+        item.app_name = "Sugar".into();
+        assert!(usable_manifest(&item, &build_binary(&sample(), true)).is_some());
+    }
+
+    #[test]
+    fn optional_parts_marked_partial() {
+        let e = Env::new();
+        let folder = e.game_folder("Fortnite");
+        let mut j = item_json("Fortnite", "Fortnite", &folder, "F");
+        j["InstallComponents"] = serde_json::json!(["A17316661F902216B15E8DAB34ECCD71"]);
+        write_item(&e.manifests(), "F", &j);
+        let mut t = item_json("Tagged", "Tagged", &e.game_folder("t"), "T");
+        t["InstallTags"] = serde_json::json!(["chunk0"]);
+        write_item(&e.manifests(), "T", &t);
+        let mut plain = item_json("Sol", "Sol", &e.game_folder("s"), "S");
+        plain["InstallComponents"] = serde_json::json!([]);
+        plain["InstallTags"] = serde_json::json!([""]);
+        write_item(&e.manifests(), "S", &plain);
+        let got: Vec<(String, bool)> = scan(&e.manifests()).into_iter().map(|i| (i.app_name, i.partial)).collect();
+        assert_eq!(got, vec![("Fortnite".into(), true), ("Sol".into(), false), ("Tagged".into(), true)]);
+    }
+
+    #[test]
+    fn bad_manifest_bytes_not_used() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        assert!(usable_manifest(&item, b"\x00\x01 not a manifest").is_none());
+    }
+
+    #[test]
+    fn import_job_fields() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        let j = import_job(&item, "Tidepool (Library)", &sample(), vec!["https://cdn/base".into()]);
+        assert!(j.imported);
+        assert_eq!(j.update_from, None);
+        assert_eq!(j.title, "Tidepool (Library)");
+        assert_eq!(j.install_path, item.install_path);
+        assert_eq!((j.download_size, j.install_size), (900, 1224));
+        assert_eq!((j.namespace.as_str(), j.catalog_item_id.as_str()), ("ns", "cat"));
+    }
+
+    #[test]
+    fn add_installed_writes_record_and_manifest() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        let store = InstallStore::at(e.dir.path().join("data"));
+        let job = import_job(&item, "Tidepool", &sample(), vec![]);
+        let game = add_installed(&store, &job, &build_binary(&sample(), true), &sample()).unwrap();
+        assert_eq!(game.version, "1.0.0-CL1");
+        assert_eq!(game.executable, "Binaries/Tidepool.exe");
+        assert_eq!(game.launch_parameters, "-fish");
+        assert_eq!(game.install_path, item.install_path);
+        assert_eq!(store.installed(), vec![game]);
+        assert!(store.installed_manifest("Tidepool").is_ok());
+        assert!(store.pending_jobs().is_empty());
+    }
+
+    #[test]
+    fn save_repair_lists_only_good_files() {
+        let e = Env::new();
+        let item = epic_game(&e);
+        std::fs::remove_file(item.install_path.join("readme.txt")).unwrap();
+        let store = InstallStore::at(e.dir.path().join("data"));
+        let check = check_files(&item.install_path, &sample());
+        let job = import_job(&item, "Tidepool", &sample(), vec![]);
+        save_repair(&store, &job, &build_binary(&sample(), true), &check).unwrap();
+        let jobs = store.pending_jobs();
+        assert!(jobs[0].imported);
+        let names = store.finished_names(&jobs[0]);
+        let want: std::collections::HashSet<String> = ["Binaries/Tidepool.exe", "empty.cfg"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(names, want);
+        assert!(store.installed().is_empty());
+    }
+
 }

@@ -485,6 +485,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn imported_repair_downloads_only_missing_files() {
+        let server = MockServer::start().await;
+        let ca: Vec<u8> = b"aaaa".repeat(10);
+        let cb: Vec<u8> = b"bbbb".repeat(10);
+        let f = fixture(&[&ca, &cb], &[("a.txt", &[(0, 0, 40)]), ("b.txt", &[(1, 0, 40)])]);
+        serve(&server, &f, None, Some((0, 0))).await; // a.txt is there already: its chunk is never fetched
+        let mut e = env(&server, &f);
+        e.job.imported = true;
+        std::fs::create_dir_all(&e.job.install_path).unwrap();
+        std::fs::write(e.job.install_path.join("a.txt"), &f.expected[0].1).unwrap();
+        let check = crate::epic_import::check_files(&e.job.install_path, &f.manifest);
+        assert_eq!(check.bad_files, 1);
+        crate::epic_import::save_repair(&e.store, &e.job, &build_binary(&f.manifest, true), &check).unwrap();
+        run_download(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}).await.unwrap();
+        assert_eq!(read(&e.job.install_path, "a.txt"), f.expected[0].1);
+        assert_eq!(read(&e.job.install_path, "b.txt"), f.expected[1].1);
+    }
+
+    #[tokio::test]
     async fn resume_rewrites_unfinished_file() {
         let server = MockServer::start().await;
         let ca: Vec<u8> = b"aaaa".repeat(10);

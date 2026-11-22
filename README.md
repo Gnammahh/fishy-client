@@ -63,9 +63,7 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 **Your files:** Fishy Client only reads and writes the folders you pick for games, plus the places above. It doesn't scan your drives, read save files or browser profiles, or collect hardware details.
 
 ### Deleting everything
-**Settings → Delete all my data** logs you out, removes your sign-in from Credential Manager, deletes everything in `%APPDATA%\FishyClient` and turns off Start with Windows. You choose whether your installed games are deleted too.
-
-It doesn't yet empty the WebView2 cache in `%LOCALAPPDATA%\com.fishyclient.app\`. To remove it, close Fishy Client and delete that folder.
+**Settings → Delete all my data** logs you out, removes your sign-in from Credential Manager, deletes everything in `%APPDATA%\FishyClient`, empties the app window's browser cache and turns off Start with Windows. You choose whether your installed games are deleted too. (The empty WebView2 folder `%LOCALAPPDATA%\com.fishyclient.app\` stays while Fishy Client is installed; uninstalling doesn't remove it, so delete it by hand afterwards if you like.)
 
 ## Develop
 

@@ -12,6 +12,12 @@ pub(crate) fn autostart_off_failed<E>(enabled: Result<bool, E>, disable: impl Fn
     enabled.unwrap_or(true) && disable().is_err()
 }
 
+/// Empties the app window's WebView2 data (cached cover images and the like, in
+/// `%LOCALAPPDATA%\com.fishyclient.app`). True when it couldn't. No window: nothing to clear.
+pub(crate) fn browser_data_failed<E>(clear: Option<impl FnOnce() -> Result<(), E>>) -> bool {
+    clear.is_some_and(|c| c().is_err())
+}
+
 pub(crate) const STOP_ERROR: &str = "A download wouldn't stop, so nothing was deleted. Try again in a minute.";
 
 pub(crate) const AUTOSTART_ERROR: &str = "Couldn't change Start with Windows.";
@@ -97,13 +103,23 @@ pub async fn delete_all_data(
             tracing::warn!("{AUTOSTART_ERROR}");
         }
     }
+    // The window's own browser data goes too (cover images it cached, for one).
+    let browser_failed = {
+        use tauri::Manager;
+        let window = app.get_webview_window("main");
+        browser_data_failed(window.as_ref().map(|w| move || w.clear_all_browsing_data()))
+    };
+    if browser_failed {
+        tracing::warn!("couldn't clear the window's browser data");
+    }
     install.downloads.limiter.set(None); // the saved limit is deleted too
     // 3 and 5. Games (if ticked), then everything in %APPDATA%\FishyClient.
     let store = install.downloads.store.clone();
     let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games))
         .await
         .unwrap_or(1)
-        + usize::from(autostart_failed);
+        + usize::from(autostart_failed)
+        + usize::from(browser_failed);
     install.downloads.end_wipe();
     let _ = app.emit("installed-changed", ());
     tracing::info!("delete all my data finished, {failed} not deleted");
@@ -199,6 +215,13 @@ mod tests {
         }));
         assert!(asked);
         assert!(!autostart_off_failed::<()>(Ok(true), || Ok(())));
+    }
+
+    #[test]
+    fn the_window_browser_data_is_cleared_and_a_failure_counts() {
+        assert!(!browser_data_failed(Some(|| Ok::<(), ()>(()))));
+        assert!(browser_data_failed(Some(|| Err::<(), ()>(()))));
+        assert!(!browser_data_failed(None::<fn() -> Result<(), ()>>), "no window, nothing to clear");
         assert!(!autostart_off_failed::<()>(Ok(false), || panic!("not on, so not touched")));
         assert!(!autostart_off_failed::<()>(Err(()), || Ok(())), "can't read it: try to turn it off anyway");
     }

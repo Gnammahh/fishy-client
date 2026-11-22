@@ -1148,7 +1148,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - Epic's error messages, which can quote tokens, are never stored.
 - **Security policy (CSP) is on.** The unused "open links" plugin was removed, and the Tauri version is pinned to 2.12.
 - **Running games (§6f.4):** the paths of other programs on your PC are only compared in memory to spot a game's folder. They're never logged, saved or sent.
-- **README "Privacy" section (2026-11-22):** lists every Epic address contacted, everything stored on the PC and how to delete it, for users of the installer. Known gap, written there: Delete all my data doesn't empty the WebView2 cache in `%LOCALAPPDATA%\com.fishyclient.app\` (cached cover images).
+- **README "Privacy" section (2026-11-22):** lists every Epic address contacted, everything stored on the PC and how to delete it, for users of the installer. Delete all my data now also empties the app window's WebView2 browser data (cached cover images in `%LOCALAPPDATA%\com.fishyclient.app\`); a failure there counts as one thing not deleted.
 - **Dependency check:** 0 known problems in what ships. The warnings come from a development-only tool and are left as is.
 
 ### Bugs found while testing for real, and fixed

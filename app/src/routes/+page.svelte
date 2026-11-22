@@ -6,6 +6,10 @@
   import AppShell from "$lib/shell/AppShell.svelte";
   import { authState, init, loginError } from "$lib/auth/auth";
 
+  // Dev only: ?crash=1 shows the crash page, to check how it looks.
+  const crashForPreview = dev && typeof location !== "undefined" && new URLSearchParams(location.search).get("crash") === "1";
+  if (crashForPreview) throw new Error("preview crash");
+
   onMount(async () => {
     // Dev only: in a plain browser there is no Rust side, so fake it (?mock=signedout|signedin|offline).
     if (dev && !("__TAURI_INTERNALS__" in window)) {

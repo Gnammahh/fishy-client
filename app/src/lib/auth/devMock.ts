@@ -138,6 +138,8 @@ let devAutostart = false;
 
 export function installDevMock(start: string) {
   const dl = devDownloads();
+  const fail = new URLSearchParams(location.search).get("fail");
+  let failedOnce = false;
   let state: AuthState =
     start === "signedin" ? SIGNED_IN : start === "offline" ? { kind: "Offline", display_name: "FishFan" } : { kind: "SignedOut" };
 
@@ -166,6 +168,18 @@ export function installDevMock(start: string) {
         case "library_cached":
           return null;
         case "library_refresh":
+          // ?fail=library: the first refresh fails; ?fail=expired: the sign-in has expired.
+          if (fail === "library" && !failedOnce) {
+            failedOnce = true;
+            return new Promise((_, no) => setTimeout(() => no("Couldn't load your library from Epic. Check your internet, then press Try again."), 800));
+          }
+          if (fail === "expired") {
+            state = { kind: "SignedOut" };
+            const msg = "Your sign-in has expired. Please sign in again.";
+            return emit("login-failed", msg)
+              .then(() => emit("auth-changed", state))
+              .then(() => Promise.reject(msg));
+          }
           return new Promise((r) =>
             setTimeout(() => r({ updated_at: new Date().toISOString(), games: DEV_GAMES, latest_versions: DEV_LATEST }), 1500),
           );

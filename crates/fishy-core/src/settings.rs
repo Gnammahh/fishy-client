@@ -64,7 +64,12 @@ impl SettingsStore {
 
     /// The saved settings; missing or damaged means the defaults.
     pub fn load(&self) -> Settings {
-        std::fs::read(&self.path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        let mut s: Settings = std::fs::read(&self.path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        // A speed outside 1 to 1000 (an edited file) means no limit, so other saves still work.
+        if s.check().is_err() {
+            s.speed_limit_mbps = None;
+        }
+        s
     }
 
     pub fn save(&self, settings: &Settings) -> std::io::Result<()> {
@@ -104,6 +109,18 @@ mod tests {
         assert_eq!(s.library_sort, "az");
         assert_eq!(s.when_game_starts, "keep");
         assert!(s.auto_update && !s.warn_outdated_play);
+    }
+
+    #[test]
+    fn a_saved_speed_limit_out_of_range_loads_as_no_limit() {
+        // Otherwise every other settings change would be refused with the range message.
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["0", "5000"] {
+            std::fs::write(dir.path().join("settings.json"), format!(r#"{{"speed_limit_mbps": {bad}, "auto_update": true}}"#)).unwrap();
+            let s = SettingsStore::at(dir.path().join("settings.json")).load();
+            assert_eq!(s.speed_limit_mbps, None, "{bad}");
+            assert!(s.auto_update && s.check().is_ok());
+        }
     }
 
     #[test]

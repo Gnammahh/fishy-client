@@ -4,6 +4,20 @@ A lightweight, open-source launcher for your Epic Games library, written in Rust
 
 It signs you in, shows your games, installs them, updates them (downloading only what changed) and starts them. Windows 10/11 only.
 
+## How light is it?
+
+Measured on one Windows 11 PC (16 cores) on 2026-11-22, each launcher started from fully closed and left idle:
+
+| | Fishy Client 1.0.0 | Epic Games Launcher |
+|---|---|---|
+| Program on disk | **9 MB** | 869 MB |
+| Memory in use | **429 MB** | 1,449 MB |
+| Processor use while idle | **0.3 %** | 1.7 % |
+| Processes | **7** | 10 |
+| Windows services added | **none** | 2 |
+
+Most of Fishy Client's memory is Microsoft WebView2, which draws the window. Numbers vary a little between PCs and runs.
+
 ## Install
 
 Download `Fishy Client_<version>_x64_en-US.msi` and double-click it. It installs to `C:\Program Files\Fishy Client\` with a Start menu shortcut.

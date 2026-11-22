@@ -52,8 +52,7 @@
         "language": "en-US",
         "upgradeCode": "d895a25e-2ca5-44d4-b204-1ee4cb3b89f9"
       }
-    },
-    "createUpdaterArtifacts": true
+    }
   },
   "plugins": {
     "updater": {

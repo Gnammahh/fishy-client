@@ -105,6 +105,12 @@ impl Inner {
             .collect()
     }
 
+    /// The jobs that are downloading or waiting: what a pause for an app update has to resume
+    /// if the update fails (spec §6j).
+    pub fn active_names(&self) -> Vec<String> {
+        self.jobs.iter().filter(|j| matches!(j.state, JobState::Downloading | JobState::Queued)).map(|j| j.info.app_name.clone()).collect()
+    }
+
     /// Running job first, then the queue in order, then paused and failed ones.
     /// Something is still writing (a running download, or a cancel deleting its files).
     pub fn busy(&self) -> bool {
@@ -357,6 +363,18 @@ impl Downloads {
         self.lock().take_stopped_update(app_name)
     }
 
+    pub fn active_names(&self) -> Vec<String> {
+        self.lock().active_names()
+    }
+
+    /// Wait (up to `timeout`) until nothing is writing, e.g. after `pause_all`.
+    pub async fn wait_idle(&self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        while self.lock().busy() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     /// Log out: the running download pauses and nothing new starts.
     pub fn pause_all(&self, app: &AppHandle) {
         self.lock().stop_all();
@@ -558,6 +576,15 @@ mod tests {
         // readme.txt still needs the 600-byte chunk, so 300 of 900 count as done.
         assert_eq!(already_downloaded(&store, &info, &sample(), None), 300);
         assert_eq!(already_downloaded(&InstallStore::at(dir.path().join("none")), &info, &sample(), None), 0);
+    }
+
+    #[test]
+    fn active_names_are_the_running_and_queued_jobs() {
+        let inner = Inner {
+            jobs: vec![job("run", JobState::Downloading), job("wait", JobState::Queued), job("p", JobState::Paused), job("e", JobState::Error)],
+            wiping: false,
+        };
+        assert_eq!(inner.active_names(), vec!["run".to_string(), "wait".to_string()]);
     }
 
     #[test]

@@ -41,6 +41,12 @@ pub(crate) fn percent(done: u64, total: Option<u64>) -> u8 {
     }
 }
 
+/// The updater with a time limit, so a stalled connection ends in the error line instead of a
+/// progress line that never moves.
+fn updater(app: &tauri::AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    app.updater_builder().timeout(std::time::Duration::from_secs(60)).build()
+}
+
 fn settings(app: &tauri::AppHandle) -> Settings {
     app.state::<crate::updates::AppSettings>().store.load()
 }
@@ -53,7 +59,7 @@ pub async fn app_update_check(app: tauri::AppHandle) -> Option<AppUpdate> {
         return None;
     }
     let current = app.package_info().version.to_string();
-    let found = match app.updater() {
+    let found = match updater(&app) {
         Ok(u) => u.check().await,
         Err(e) => Err(e),
     };
@@ -68,6 +74,12 @@ pub async fn app_update_check(app: tauri::AppHandle) -> Option<AppUpdate> {
             None
         }
     }
+}
+
+/// The error's kind for the log, without its text (it can hold URLs).
+fn error_kind(e: &tauri_plugin_updater::Error) -> String {
+    let debug = format!("{e:?}");
+    debug.split(['(', ' ', '{']).next().unwrap_or("unknown").to_string()
 }
 
 #[derive(Clone, Serialize)]
@@ -89,9 +101,7 @@ pub async fn app_update_install(
     if let Some(m) = install_blocked(&titles) {
         return Err(m);
     }
-    // Downloads pause first, so they show as Paused after the restart like after any close.
-    install.downloads.pause_all(&app);
-    let update = match app.updater().map_err(|_| DOWNLOAD_ERROR.to_string())?.check().await {
+    let update = match updater(&app).map_err(|_| DOWNLOAD_ERROR.to_string())?.check().await {
         Ok(Some(u)) => u,
         _ => {
             warn!("app update: check failed");
@@ -99,6 +109,11 @@ pub async fn app_update_install(
         }
     };
     info!("app update: installing {}", update.version);
+    // Game downloads pause just before the installer runs (it closes Fishy Client; they show as
+    // Paused after the restart like after any close). If the update fails, they carry on.
+    let downloads = &install.downloads;
+    let was_active = downloads.active_names();
+    downloads.pause_all(&app);
     let (mut done, mut last) = (0u64, 255u8);
     let progress_app = app.clone();
     let result = update
@@ -114,10 +129,16 @@ pub async fn app_update_install(
             || {},
         )
         .await;
-    if result.is_err() {
-        warn!("app update: check failed");
+    if let Err(e) = result {
+        warn!("app update: install failed: {}", error_kind(&e));
+        downloads.wait_idle(std::time::Duration::from_secs(10)).await;
+        for name in was_active {
+            downloads.resume(&app, &name);
+        }
         return Err(DOWNLOAD_ERROR.to_string());
     }
+    // On Windows the plugin starts the installer and exits; the installer starts Fishy Client
+    // again. This line is only reached elsewhere.
     app.restart();
 }
 

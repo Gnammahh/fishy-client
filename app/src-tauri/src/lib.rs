@@ -413,7 +413,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Fishy Client's own signed updates (spec §6j); used from Rust only, so the page gets no permission.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             // Logs first, so everything after is recorded. Without a logs folder the app still runs.
@@ -519,11 +518,15 @@ mod tests {
         assert_eq!(bundle["windows"]["wix"]["upgradeCode"], "d895a25e-2ca5-44d4-b204-1ee4cb3b89f9");
         assert_eq!(bundle["windows"]["wix"]["language"], "en-US");
         // Spec §6j: signed updates from the public repository's newest Release.
-        assert_eq!(bundle["createUpdaterArtifacts"], true);
+        // Signing is on only for release builds (tauri.release.conf.json), so a plain build works
+        // without the maintainer's key.
+        assert_ne!(bundle["createUpdaterArtifacts"], true);
+        let release: serde_json::Value = serde_json::from_str(include_str!("../tauri.release.conf.json")).unwrap();
+        assert_eq!(release, serde_json::json!({ "bundle": { "createUpdaterArtifacts": true } }));
         let updater = &conf["plugins"]["updater"];
         assert_eq!(updater["endpoints"], serde_json::json!(["https://github.com/Gnammahh/fishy-client/releases/latest/download/latest.json"]));
         assert_eq!(updater["windows"]["installMode"], "passive");
-        assert!(updater["pubkey"].as_str().is_some_and(|k| !k.is_empty()));
+        assert!(updater["pubkey"].as_str().is_some_and(|k| !k.is_empty() && k != "REPLACE_WITH_PUBLIC_KEY"));
     }
 
     #[test]

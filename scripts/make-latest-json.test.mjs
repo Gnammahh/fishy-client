@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { makeLatestJson, releaseAssetName } from "./make-latest-json.mjs";
+import { makeLatestJson, releaseAssetName, checkPubkey } from "./make-latest-json.mjs";
 
 const base = {
   version: "1.2.0",
@@ -26,6 +26,13 @@ describe("make-latest-json", () => {
 
   it("uses_the_name_github_gives_the_upload", () => {
     expect(releaseAssetName("Fishy Client_1.2.0_x64_en-US.msi")).toBe("Fishy.Client_1.2.0_x64_en-US.msi");
+  });
+
+  it("refuses_a_placeholder_or_wrong_public_key", () => {
+    expect(() => checkPubkey("REPLACE_WITH_PUBLIC_KEY", "abc")).toThrow(/public key/);
+    expect(() => checkPubkey("abc", "xyz\n")).toThrow(/public key/);
+    expect(() => checkPubkey("abc", null)).toThrow(/key file/);
+    expect(() => checkPubkey("abc", "abc\n")).not.toThrow();
   });
 
   it("refuses_an_empty_signature", () => {

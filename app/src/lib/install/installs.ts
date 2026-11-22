@@ -56,7 +56,7 @@ export function resetInstalls() {
 }
 
 const asNames = (v: unknown) => (Array.isArray(v) ? v.filter((n): n is string => typeof n === "string") : []);
-const asItems = (v: DownloadsView | null | undefined) => (v && Array.isArray(v.items) ? v.items : []);
+export const asItems = (v: DownloadsView | null | undefined) => (v && Array.isArray(v.items) ? v.items : []);
 
 /** Re-reads the installed games from disk. */
 export async function refreshInstalled() {
@@ -106,7 +106,7 @@ export function statusFor(appName: string, dl: DownloadItem[], ins: InstalledGam
   return ins.some((g) => g.app_name === appName) ? "installed" : "none";
 }
 
-const message = (e: unknown) => (typeof e === "string" ? e : "Something went wrong. Please try again.");
+export const message = (e: unknown) => (typeof e === "string" ? e : "Something went wrong. Please try again.");
 
 export function getInstallOptions(game: Game, parent?: string | null): Promise<InstallOptions> {
   return invoke<InstallOptions>("install_options", { game, parent: parent ?? null });

@@ -6,6 +6,7 @@
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import InstallDialog from "$lib/install/InstallDialog.svelte";
   import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
+  import EpicImportNote from "$lib/import/EpicImportNote.svelte";
   import {
     downloads,
     hasUpdate,
@@ -168,6 +169,10 @@
       <span>Refreshing…</span>
       <span class="why">Fishy Client checks every game with Epic, so this takes a few seconds.</span>
     </p>
+  {/if}
+
+  {#if $library.status === "ready" && $library.games.length > 0}
+    <EpicImportNote />
   {/if}
 
   {#if $library.status === "loading"}

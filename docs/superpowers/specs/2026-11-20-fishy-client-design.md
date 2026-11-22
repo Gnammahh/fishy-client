@@ -604,7 +604,7 @@ These are the same as for installs (§6c table). Two additions:
 Polish is split into five sub-projects, built in this order. Each gets its own design here, its own plan and its own hand check:
 1. **Settings, logs and your data** (this section, approved 2026-11-21)
 2. **Friendlier errors** (§6f.2, approved 2026-11-22)
-3. Library filters and sort (an Updates tab, a sort option)
+3. **Library filters and sort** (§6f.3, built 2026-11-22)
 4. **Running games** (added 2026-11-22 at your request):
    - the game's card shows **Running** while any program from its install folder is open, checked every few seconds, only after Play and only until the game closes
    - Play, Update and Uninstall wait while it runs
@@ -764,6 +764,14 @@ Four parts, all chosen by you: clear messages, automatic retries, a crash screen
   - an expired error from Library refresh, Install, Update or Play shows Login with the expired message
   - the crash screen appears when a child component throws, Reload reloads, and the error goes to `log_ui_error`
   - an unhandled promise rejection is logged and the page stays as it is
+
+### 6f.3 Library filters and sort (approved 2026-11-22)
+A small change to the existing Library screen, so it was designed in chat (no separate plan).
+- **Updates tab:** All | Installed (n) | **Updates (n)** | Not on Windows (n). It lists installed games with a newer version from Epic, and only appears when there's at least one. If it empties while open (the last update finished), the Library goes back to All.
+- **Sort menu** next to the search box: **A–Z** (default), **Z–A**, **Recently installed** (installed games first, newest on top, then the rest A–Z), **Size on disk** (installed games first, biggest on top, then the rest A–Z). Letter case is ignored. It works on every tab and together with search.
+- The choice is saved as `library_sort` in `settings.json` (`"az"`, `"za"`, `"installed"`, `"size"`; older files load as `"az"`), so it stays after a restart; Delete all my data resets it.
+- "Recently played" needs play times, which Fishy Client doesn't record yet; it can come with Running games (sub-project 4).
+- **Tests:** each sort order (case, ties, uninstalled games last, the input list unchanged), the Updates tab (shown, counted, filtering, hidden without updates, back to All when empty), the menu saving its choice, and the saved choice used together with search; Rust: the new field's default and round-trip.
 
 ---
 
@@ -984,6 +992,12 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - **Independent code review: "with fixes", no critical findings.** Fixed test-first: a throttled or blocked refresh no longer signs you out; a Credential Manager hiccup no longer counts as expired; a Wi-Fi login page at startup no longer signs you out (an older bug); updating a running game now says "close the game" (Windows reports that case as "access denied"). 6 minor ones are under "Small things deferred".
 - **Tests now:** Rust 263 (core 235 + app 28), UI 144. New: 30 core, 5 app, 8 UI.
 
+**Polish 3, Library filters and sort (§6f.3), built 2026-11-22:** an **Updates** tab (only when updates are waiting) and a **Sort** menu next to the search box (A–Z, Z–A, Recently installed, Size on disk), remembered after a restart. Checked in the browser preview with fake data: the Updates tab, Z–A on every tab, no console errors. **Tests now:** Rust 263, UI 154 (10 new).
+
+### Still to check by hand (milestone 7, sub-project 3)
+- [ ] The **Sort** menu reorders your real Library (try Size on disk: Bendy first), and the choice is still set after restarting the app
+- [ ] With an update waiting (mark Bendy outdated as in the milestone 6 check), the **Updates (1)** tab shows only Bendy
+
 ### Still to check by hand (milestone 7, sub-project 2)
 - [x] (2026-11-22) With Wi-Fi off, **Refresh** shows "Couldn't load your library from Epic. Check your internet, then press Try again." (after about 1.5 s of retries); with Wi-Fi back, **Try again** works
 - [x] (2026-11-22) The log shows `retrying …` lines from that refresh
@@ -1047,7 +1061,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 
 ### Tests
 - **Rust core:** 235 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 28. (Counts as of 2026-11-22, milestone 7 sub-project 2.)
-- **UI:** 144 tests.
+- **UI:** 154 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -1094,5 +1108,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. Next: 3 Library filters and sort, 4 Running games (with "minimize while playing"), 5 small fixes, 6 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. Next: 4 Running games (with "minimize while playing"), 5 small fixes, 6 installer (`.msi`).
    - Later: signed updates and a code-signed installer

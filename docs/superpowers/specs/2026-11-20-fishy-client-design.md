@@ -611,7 +611,7 @@ Polish is split into five sub-projects, built in this order. Each gets its own d
    - a setting "When a game starts": **Keep Fishy Client open** (as now) or **Minimize it, and bring it back when the game closes**; downloads keep going either way
    - fully closing Fishy Client on Play was considered and rejected: nothing would be left to reopen it, and downloads would stop
 5. Small fixes: "~600 min left" says hours, and the 8 minor items from the milestone 4 review (§12), plus the deferred minors from Polish 1, 2 and 4 (built 2026-11-22; what was fixed and what was left is in §12)
-6. Installer (`.msi`), last, so it packages everything above
+6. Installer (`.msi`), last, so it packages everything above (designed in §6f.6)
 
 ### 6f.1 Settings, logs and your data
 
@@ -821,6 +821,28 @@ A small change to the existing Library screen, so it was designed in chat (no se
   - the "When a game starts" control saves and shows the saved value after a failed save
   - Recently played order (played newest first, then other installed, then the rest; ties A–Z)
   - auto-update queues a skipped update when the game closes
+
+### 6f.6 Installer (`.msi`) (designed 2026-11-22 while you were away; every choice below is easy to change)
+
+#### What you get
+- One file, `Fishy Client_0.1.0_x64_en-US.msi`, built with `npm.cmd run tauri build` from `app/`. It lands in `target\release\bundle\msi\`.
+- Double-clicking it installs Fishy Client to `C:\Program Files\Fishy Client\`, with a Start menu shortcut. Windows asks for administrator rights once, as for any `.msi`.
+- **Apps → Installed apps** lists it as "Fishy Client" (publisher Fishy Client), so it can be uninstalled from there.
+
+#### Choices made for you (change any of them)
+- **Only `.msi`.** No `.exe` (NSIS) installer and no `.app`/`.dmg`; Windows is the only platform (§1).
+- **Version stays 0.1.0.** It becomes 1.0.0 when you decide version 1 is done (§1 list).
+- **Not code-signed** (signing costs money and is listed under "Later"). Windows SmartScreen will show "Windows protected your PC": click **More info → Run anyway**. Same as most open-source apps.
+- **A fixed upgrade code** (`d895a25e-2ca5-44d4-b204-1ee4cb3b89f9`), so a newer `.msi` replaces the old version instead of installing a second copy.
+- **WebView2:** if it's missing (rare on Windows 10/11), the installer downloads Microsoft's small WebView2 setup.
+- **Uninstalling keeps your data:** your games, `%APPDATA%\FishyClient` (settings, logs, saved Library) and the sign-in in Credential Manager stay. Use **Settings → Delete all my data** first to remove them. (An `.msi` can't safely know which game folders are yours.)
+- **Licence:** the installer's details say GPL-3.0-or-later and link to the GitHub page. No licence page to click through.
+- **Start with Windows:** if it was turned on while running the development build, turn it off and on again once in the installed app, so it points at the installed program.
+
+#### Tests
+- A Rust test reads `tauri.conf.json` and checks the bundle: target `msi` only, the fixed upgrade code, the product name and publisher.
+- Build check: the `.msi` is built, then unpacked with `msiexec /a` into a temporary folder (this doesn't install anything) to check it holds `Fishy Client.exe`.
+- Hand check (yours): install, start from the Start menu, sign in still works, uninstall from Installed apps.
 
 ---
 

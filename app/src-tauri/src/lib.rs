@@ -470,6 +470,19 @@ mod tests {
     }
 
     #[test]
+    fn the_installer_is_one_msi_with_a_fixed_upgrade_code() {
+        // Spec §6f.6: a newer .msi must replace the old version, never install a second copy.
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let bundle = &conf["bundle"];
+        assert_eq!(conf["productName"], "Fishy Client");
+        assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
+        assert_eq!(bundle["publisher"], "Fishy Client");
+        assert_eq!(bundle["license"], "GPL-3.0-or-later");
+        assert_eq!(bundle["windows"]["wix"]["upgradeCode"], "d895a25e-2ca5-44d4-b204-1ee4cb3b89f9");
+        assert_eq!(bundle["windows"]["wix"]["language"], "en-US");
+    }
+
+    #[test]
     fn library_and_browser_messages_say_what_to_do() {
         assert_eq!(LIBRARY_ERROR, "Couldn't load your library from Epic. Check your internet, then press Try again.");
         assert_eq!(BROWSER_ERROR, "Couldn't open your browser. Use Sign in with Epic instead.");

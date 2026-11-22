@@ -15,8 +15,10 @@ pub struct Settings {
     pub speed_limit_mbps: Option<u32>,
     /// Calm animations even when Windows doesn't ask for it.
     pub reduce_motion: bool,
-    /// The Library's order (spec §6f.3): "az", "za", "installed" or "size".
+    /// The Library's order (spec §6f.3, §6f.4): "az", "za", "installed", "size" or "played".
     pub library_sort: String,
+    /// What Fishy Client does after Play (spec §6f.4): "keep" or "minimize".
+    pub when_game_starts: String,
 }
 
 impl Default for Settings {
@@ -28,6 +30,7 @@ impl Default for Settings {
             speed_limit_mbps: None,
             reduce_motion: false,
             library_sort: "az".into(),
+            when_game_starts: "keep".into(),
         }
     }
 }
@@ -86,6 +89,7 @@ mod tests {
         assert_eq!(s.speed_limit_mbps, None);
         assert!(!s.reduce_motion);
         assert_eq!(s.library_sort, "az");
+        assert_eq!(s.when_game_starts, "keep");
         assert!(s.auto_update && !s.warn_outdated_play);
     }
 
@@ -100,6 +104,7 @@ mod tests {
             speed_limit_mbps: Some(25),
             reduce_motion: true,
             library_sort: "size".into(),
+            when_game_starts: "minimize".into(),
         };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);

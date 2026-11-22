@@ -37,6 +37,9 @@ pub struct InstalledGame {
     pub launch_parameters: String,
     pub install_size: u64,
     pub installed_at: DateTime<Utc>,
+    /// When Play last started it (spec §6f.4). Records from before then have none.
+    #[serde(default)]
+    pub last_played: Option<DateTime<Utc>>,
 }
 
 /// Where a manifest file goes inside the install folder. Refuses names that would escape it
@@ -82,6 +85,14 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)
+}
+
+/// Held around every read-change-write of `installed.json`, so an install finishing while Play
+/// saves a play time can't lose either change.
+static INSTALLED_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn installed_lock() -> std::sync::MutexGuard<'static, ()> {
+    INSTALLED_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 pub struct InstallStore {
@@ -171,8 +182,11 @@ impl InstallStore {
     pub fn finish_install(&self, job: &JobInfo, m: &Manifest) -> io::Result<InstalledGame> {
         let saved = self.saved_manifest(&job.app_name)?;
         write_atomic(&saved, &self.job_manifest(&job.app_name)?)?;
-        // An update keeps the original install date.
-        let installed_at = self.installed().into_iter().find(|g| g.app_name == job.app_name).map(|g| g.installed_at).unwrap_or_else(Utc::now);
+        let _lock = installed_lock();
+        // An update keeps the original install date and the last play time.
+        let before = self.installed().into_iter().find(|g| g.app_name == job.app_name);
+        let installed_at = before.as_ref().map(|g| g.installed_at).unwrap_or_else(Utc::now);
+        let last_played = before.and_then(|g| g.last_played);
         let game = InstalledGame {
             app_name: job.app_name.clone(),
             title: job.title.clone(),
@@ -182,6 +196,7 @@ impl InstallStore {
             launch_parameters: m.meta.launch_command.clone(),
             install_size: m.install_size(),
             installed_at,
+            last_played,
         };
         let mut games: Vec<InstalledGame> = self.installed().into_iter().filter(|g| g.app_name != job.app_name).collect();
         games.push(game.clone());
@@ -195,9 +210,19 @@ impl InstallStore {
         std::fs::read(self.saved_manifest(app)?)
     }
 
+    /// Saves when Play started the game. Nothing happens if it isn't installed.
+    pub fn mark_played(&self, app: &str, at: DateTime<Utc>) -> io::Result<()> {
+        let _lock = installed_lock();
+        let mut games = self.installed();
+        let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
+        game.last_played = Some(at);
+        self.save_installed(&games)
+    }
+
     /// Removes the record and the saved manifest.
     pub fn forget_installed(&self, app: &str) -> io::Result<()> {
         let path = self.saved_manifest(app)?;
+        let _lock = installed_lock();
         let games: Vec<InstalledGame> = self.installed().into_iter().filter(|g| g.app_name != app).collect();
         self.save_installed(&games)?;
         ignore_missing(std::fs::remove_file(path))
@@ -340,4 +365,55 @@ mod tests {
             assert_eq!(store.save_job(&j, b"M").unwrap_err().kind(), io::ErrorKind::InvalidInput, "{bad}");
         }
     }
+    #[test]
+    fn play_time_is_saved_and_kept_by_an_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let j = job(&dir.path().join("game"));
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        let first = store.finish_install(&j, &sample()).unwrap();
+        assert_eq!(first.last_played, None);
+        let t = "2026-11-22T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        store.mark_played("Tide", t).unwrap();
+        assert_eq!(store.installed()[0].last_played, Some(t));
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        let again = store.finish_install(&j, &sample()).unwrap();
+        assert_eq!(again.last_played, Some(t), "an update keeps the play time");
+        assert_eq!(again.installed_at, first.installed_at);
+        let before = store.installed();
+        store.mark_played("Nope", t).unwrap();
+        assert_eq!(store.installed(), before);
+    }
+
+    #[test]
+    fn old_installed_json_without_play_time_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("data")).unwrap();
+        std::fs::write(
+            dir.path().join("data/installed.json"),
+            br#"[{"app_name":"Tide","title":"T","version":"1","install_path":"C:/G/T","executable":"t.exe","launch_parameters":"","install_size":1,"installed_at":"2026-11-01T00:00:00Z"}]"#,
+        )
+        .unwrap();
+        let games = InstallStore::at(dir.path().join("data")).installed();
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].last_played, None);
+    }
+
+    #[test]
+    fn install_and_play_time_writes_both_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let tide = job(&dir.path().join("game"));
+        store.save_job(&tide, &build_binary(&sample(), true)).unwrap();
+        store.finish_install(&tide, &sample()).unwrap();
+        let t = "2026-11-22T10:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        store.mark_played("Tide", t).unwrap();
+        let reef = JobInfo { app_name: "Reef".into(), title: "Reef".into(), ..job(&dir.path().join("reef")) };
+        store.save_job(&reef, &build_binary(&sample(), true)).unwrap();
+        store.finish_install(&reef, &sample()).unwrap();
+        let games = store.installed();
+        assert_eq!(games.len(), 2);
+        assert_eq!(games.iter().find(|g| g.app_name == "Tide").unwrap().last_played, Some(t));
+    }
+
 }

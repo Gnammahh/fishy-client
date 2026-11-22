@@ -138,6 +138,7 @@ mod tests {
             launch_parameters: params.into(),
             install_size: 1,
             installed_at: Utc::now(),
+            last_played: None,
         }
     }
 

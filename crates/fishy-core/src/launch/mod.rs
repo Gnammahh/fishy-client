@@ -121,6 +121,7 @@ mod tests {
             launch_parameters: String::new(),
             install_size: 1,
             installed_at: Utc::now(),
+            last_played: None,
         };
         let game = Game {
             app_name: "Reef".into(),

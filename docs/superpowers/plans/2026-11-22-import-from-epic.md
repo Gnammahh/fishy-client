@@ -159,10 +159,33 @@
 - [ ] **Step 4:** `npm.cmd test` and `npm.cmd run check` → PASS.
 - [ ] **Step 5:** Commit `feat: game size in the ⋯ menu`.
 
+### Task 5c: Folder check in the Install box (spec §6g.3)
+
+**Files:**
+- Modify: `crates/fishy-core/src/install/space.rs` (new function + tests)
+- Modify: `crates/fishy-core/src/install/error.rs` (new variant + `user_message`)
+- Modify: `app/src-tauri/src/lib.rs` (`InstallOptions`, `install_options`, `install_start`)
+- Modify: `app/src/lib/install/InstallDialog.svelte`, `app/src/lib/install/installs.ts` (`InstallOptions` type), `app/src/lib/install/InstallDialog.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `pub fn can_create_in(path: &Path) -> Result<(), PathBuf>`: walks up from `path` to the nearest existing folder, creates and removes `.fishy-write-test` there; `Err(that_folder)` if creating fails.
+  - `InstallError::NoWriteAccess { folder: String }`, message exactly `"Fishy Client can't create folders in {folder} without administrator rights. Pick a different folder."`
+  - `InstallOptions.folder_ok: bool`; when false, `error` holds the message above (it wins over the space message).
+
+- [ ] **Step 1: Failing tests**
+  - space.rs: `can_create_in_temp_folder`, `can_create_in_missing_child_checks_parent`, `cannot_create_in_read_only_folder` (set the folder read-only with `std::fs::set_permissions`; on Windows a read-only folder attribute doesn't block creation, so use an ACL-free approach: point at a path under an existing *file*, which fails to create, and assert `Err`), `test_folder_is_removed`.
+  - error.rs: `no_write_access_message` with `C:\Program Files\Epic Games`.
+  - InstallDialog.test.ts: `folder_not_ok_disables_install_and_shows_message`.
+- [ ] **Step 2:** `cargo test -p fishy-core can_create` and `npm.cmd test -- InstallDialog` → FAIL.
+- [ ] **Step 3:** Implement. `install_options`: call `can_create_in(&path)` in `spawn_blocking`; set `folder_ok` and `error`. `install_start`: same check before `check_space`, refuse with the message. `InstallDialog`: `disabled={!options.enough_space || !options.folder_ok || busy}`.
+- [ ] **Step 4:** `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `npm.cmd test`, `npm.cmd run check` → all PASS/clean.
+- [ ] **Step 5:** Commit `feat: Install box says when a folder needs admin rights`.
+
 ### Task 6: Docs, review, push, hand check
 
 - [ ] README: "What is stored / read" — add a row or line: Fishy Client **reads** (never changes) `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\` and each Epic game's `.egstore` folder, only when the Library opens, to offer **Add them**. Update "Your files" sentence accordingly. Add a short "Games from Epic's launcher" usage note with the shared-folder limits.
-- [ ] Spec §12: progress-log entry (version 1.1 import), new test counts, privacy line, hand-check list: note appears with the right count; Add them on a game with all files → Installed and Play starts; rename one small game file → missing line, Download them fetches only it; Cancel keeps files; Epic's launcher still sees the game; the ⋯ menu shows the size.
+- [ ] Spec §12: progress-log entry (version 1.1 import), new test counts, privacy line, hand-check list: note appears with the right count; Add them on a game with all files → Installed and Play starts; rename one small game file → missing line, Download them fetches only it; Cancel keeps files; Epic's launcher still sees the game; the ⋯ menu shows the size; picking `C:\Program Files\Epic Games` in the Install box shows the admin message and greys out Install.
 - [ ] Fresh whole-branch review (superpowers:requesting-code-review), fix findings test-first.
 - [ ] `git push -u origin feat/import` (only this branch).
 - [ ] Start `npm.cmd run tauri dev` in `app/` in a terminal tab for the user's hand check.

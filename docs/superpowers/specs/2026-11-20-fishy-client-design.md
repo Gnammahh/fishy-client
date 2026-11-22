@@ -1008,6 +1008,13 @@ Asked for by the user's friend: install games into `C:\Program Files\Epic Games`
 - **UI:** the "Windows will ask…" note with Install enabled; Use Epic's folder in the Install box and in Settings; the declined and failed messages.
 - **By hand:** install a small game into `C:\Program Files\Epic Games` from the installed app: one prompt, the game installs and plays; uninstall removes it with no prompt; No in the prompt shows the message.
 
+## 6l. Games installed through another store (version 1.2.0, approved 2026-11-22)
+- Some games Epic sells are installed and started by **another store's app**, and Epic has no Windows download of its own for them (for example STAR WARS Battlefront II through the EA app). Until 1.2.0 they landed in **Not on Windows**, which is wrong: they are Windows games.
+- A library entry with no Windows download but with a store from the catalog (`ThirdPartyManagedApp` / `ThirdPartyManagedProvider`, already read for §6d) now counts as a Windows game and shows in **All**. Its card has no Install button; it says **"Installs through *store*"** (for example "Installs through EA app") and, as a small line, "Fishy Client can't install or start this game. Use Epic's launcher or *store*."
+- Phone games and other entries without a Windows download and without a store stay in **Not on Windows**.
+- Games Epic does host (Ubisoft games such as Watch Dogs) are unchanged: they install normally, and Play keeps the §6d message if they must start through another launcher.
+- **Tests:** Rust: an entry without a Windows download but with a store is a Windows game with `third_party_store` set, and one without a store stays not installable. UI: such a card shows "Installs through EA app" and the line, with no Install button.
+
 ---
 
 ## 7. Error handling

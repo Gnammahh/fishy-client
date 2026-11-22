@@ -61,6 +61,13 @@
 - [ ] **Step 1: Failing tests:** `needs_permission_shows_note_and_install_enabled`, `use_epics_folder_asks_again_with_it` (Install box: button calls `install_options` with `parent` = the Epic folder), `use_epics_folder_hidden_without_it`, `declined_message_shown` (install_start error string), Settings `use_epics_folder_saves_it`.
 - [ ] **Step 2–5:** as usual; commit `feat(admin-folders): Use Epic's folder and the permission note`.
 
+### Task 3b: Games installed through another store (spec §6l)
+
+**Files:** `crates/fishy-core/src/library/build.rs` (+ tests), `app/src/lib/library/LibraryPage.svelte`, `app/src/lib/library/library.ts` (`Game.launch.third_party_store` already mirrored? add if missing), `app/src/lib/library/library.test.ts`.
+
+- [ ] **Step 1: Failing tests:** Rust `third_party_game_without_windows_download_is_a_windows_game`, `no_store_and_no_download_stays_elsewhere`; UI `third_party_card_says_installs_through_store`.
+- [ ] **Step 2–5:** implement (`installable` stays "Fishy Client can download it"; a new `Game.elsewhere_store` is not needed: the card uses `launch.third_party_store` when `!installable`, and the All/Not-on-Windows split counts `installable || launch.third_party_store`); commit `feat: games installed through another store show in All`.
+
 ### Task 4: Review, release 1.2.0, hand check
 
 - [ ] Spec §12 entry + hand checks; README "Your files and PC" line (one permission prompt per game folder in protected places).

@@ -82,8 +82,9 @@ Only to Epic, always over HTTPS with normal certificate checks:
 | `launcher-public-service-prod06.ol.epicgames.com` | where to download a game and its newest version |
 | `ecommerceintegration-public-service-ecomprod02.ol.epicgames.com` | an ownership token, only for the few games that need one to start |
 | Epic's download servers (addresses Epic gives for each game) | the game files themselves |
+| `github.com` | checking at start-up whether a newer Fishy Client exists, and downloading it after you press **Update now**. Only a normal download request is sent: no account details, no game list. Turn it off in **Settings → Check for Fishy Client updates** |
 
-Each downloaded piece is checked against Epic's file list, so a changed file is never installed. Fishy Client doesn't update itself, so there's no update server that could be attacked.
+Each downloaded piece is checked against Epic's file list, so a changed file is never installed. Fishy Client updates itself only after you press **Update now**, and only installs updates signed with the maintainer's private key, so a changed or fake update is refused.
 
 When a game starts, Fishy Client passes it your Epic display name, account ID, language and a one-time code, the same as Epic's launcher does. While the game is starting, other programs on your PC could read these from its command line (the same limit Epic's launcher and Legendary have).
 

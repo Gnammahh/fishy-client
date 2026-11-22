@@ -117,7 +117,12 @@ pub(crate) fn cut(s: &str, max_chars: usize) -> &str {
 /// every other line.
 #[tauri::command]
 pub fn log_ui_error(message: String) {
-    tracing::warn!("ui error: {}", cut(&message, 500));
+    tracing::warn!("ui error: {}", ui_line(&message));
+}
+
+/// At most 500 characters, on one line (a stack trace's line breaks become " | ").
+fn ui_line(message: &str) -> String {
+    cut(message, 500).lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" | ")
 }
 
 /// Keeps the log writer alive (and flushing) for as long as the app runs.
@@ -135,6 +140,12 @@ pub fn open_logs_folder() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_screen_error_is_one_line() {
+        assert_eq!(ui_line("TypeError: x\n    at a.js:1\r\n    at b.js:2"), "TypeError: x | at a.js:1 | at b.js:2");
+        assert_eq!(ui_line("plain"), "plain");
+    }
 
     #[test]
     fn cut_keeps_whole_characters() {

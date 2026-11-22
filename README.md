@@ -12,11 +12,33 @@ The installer isn't code-signed yet, so Windows may say "Windows protected your 
 
 Uninstalling (Settings → Apps → Installed apps) removes the program but keeps your games, settings and sign-in. To remove those too, use **Settings → Delete all my data** in Fishy Client first.
 
-## Before you use it
+## Warnings: please read before using Fishy Client
 
-- **Epic doesn't officially allow third-party launchers.** Fishy Client signs in by identifying itself as the Epic Games Launcher, the same way [Legendary](https://github.com/derrod/legendary) and [Heroic](https://heroicgameslauncher.com/) do. They have been used for years without known bans for normal use, but the risk isn't zero, and Epic could change something that breaks signing in until Fishy Client is updated. Use your own library only; a second Epic account is the zero-risk option.
-- **Some games won't work:** Fortnite, some anti-cheat games (Easy Anti-Cheat, BattlEye) that need the official launcher, and games that start through Ubisoft Connect, the EA app or Rockstar's launcher.
-- No Epic overlay, so no in-game friends or achievement pop-ups.
+**Use it at your own risk.** Fishy Client is a free hobby project. It is provided "as is", with no warranty (see the GPL licence).
+
+### Your Epic account could be restricted
+- **Fishy Client is not made, approved or supported by Epic Games.** It is not affiliated with Epic Games in any way. "Epic Games" and "Epic Games Store" are Epic's trademarks.
+- **Epic doesn't officially allow third-party launchers.** To work, Fishy Client identifies itself to Epic as the Epic Games Launcher, the same way the open-source launchers [Legendary](https://github.com/derrod/legendary) and [Heroic](https://heroicgameslauncher.com/) do.
+- Those launchers have been used for years, and we know of **no bans for normal use** (signing in, installing and playing games you own). But **the risk is not zero**: Epic could decide to suspend or restrict accounts that use unofficial launchers, at any time and without warning.
+- **If losing your Epic account would hurt** (many games, money spent, Fortnite items), think twice. The zero-risk option is a second Epic account that only holds free games.
+- Only use it with **your own account** and **games you own**. Don't share your sign-in.
+
+### Some games won't work
+- **Fortnite** isn't supported.
+- **Online games with anti-cheat** (Easy Anti-Cheat, BattlEye) may refuse to start or go online without Epic's own launcher. **Don't try to force them** (for example by changing their files): that's the kind of thing anti-cheat systems ban for.
+- Games that start through **Ubisoft Connect, the EA app or Rockstar's launcher** aren't supported yet.
+- There's **no Epic overlay**: no in-game friends list or achievement pop-ups.
+- **No store:** buying games, refunds and gifts happen on Epic's website or in Epic's launcher.
+
+### It can stop working
+- Epic can change how its sign-in or downloads work at any time. Signing in, downloading or starting games may then **break until Fishy Client is updated**, and there's no promise when that will be.
+
+### Your files and PC
+- **Uninstall** on a game's card, and **Delete all my data** when you also tick your games, **permanently delete those game folders.** Double-check before confirming. (Uninstalling Fishy Client itself keeps your games.)
+- The installer **isn't code-signed**, so Windows shows "Windows protected your PC". Only download Fishy Client from this GitHub page: a copy from anywhere else could be changed to steal your account.
+- While a game starts, **other programs on your PC can read the one-time sign-in code** Fishy Client gives it (Epic's own launcher and Legendary have the same limit). Only use Fishy Client on a PC you trust.
+
+This page is not legal advice. If you're unsure, read [Epic's terms](https://www.epicgames.com/site/en-US/tos) or don't use unofficial launchers.
 
 ## Privacy
 

@@ -119,6 +119,16 @@ fn library_cached(library: tauri::State<'_, AppLibrary>) -> Option<CachedLibrary
     library.cache.load()
 }
 
+/// A refresh may only be saved if the same account is still signed in when it finishes: the
+/// sign-in can expire, or the user log out, while the games are being fetched.
+fn may_save_refresh(before: Option<&AuthState>, now: Option<&AuthState>) -> bool {
+    match (before, now) {
+        (Some(AuthState::SignedIn { account_id: was, .. }), Some(AuthState::SignedIn { account_id: is, .. })) => was == is,
+        (_, Some(AuthState::SignedIn { .. })) => true,
+        _ => false,
+    }
+}
+
 /// Fetches the library from Epic, saves it, and returns it.
 #[tauri::command]
 async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
@@ -127,6 +137,7 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
         warn!("library refresh failed: {LIBRARY_ERROR}");
         LIBRARY_ERROR.to_string()
     };
+    let before = auth.current.lock().await.clone();
     let token = match auth.manager.access_token().await {
         Ok(t) => t,
         Err(fishy_core::auth::AuthError::Expired) => {
@@ -137,6 +148,10 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
     };
     let data = library.client.fetch_library(&token).await.map_err(|_| failed())?;
     info!("library refreshed: {} games in {:.1} s", data.games.len(), started.elapsed().as_secs_f64());
+    if !may_save_refresh(before.as_ref(), auth.current.lock().await.as_ref()) {
+        warn!("library refresh dropped: the sign-in changed while it ran");
+        return Err(failed());
+    }
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
     Ok(fresh)
@@ -441,6 +456,18 @@ fn chrono_now() -> fishy_core::chrono::DateTime<fishy_core::chrono::Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refresh_is_saved_only_for_the_account_still_signed_in() {
+        let fan = AuthState::SignedIn { display_name: "Fan".into(), account_id: "a1".into() };
+        let other = AuthState::SignedIn { display_name: "Other".into(), account_id: "b2".into() };
+        let offline = AuthState::Offline { display_name: "Fan".into() };
+        assert!(may_save_refresh(Some(&fan), Some(&fan)));
+        assert!(may_save_refresh(Some(&offline), Some(&fan)), "back online while it ran");
+        assert!(!may_save_refresh(Some(&fan), Some(&AuthState::SignedOut)), "expired or logged out");
+        assert!(!may_save_refresh(Some(&fan), Some(&other)), "someone else signed in");
+        assert!(!may_save_refresh(Some(&fan), None));
+    }
 
     #[test]
     fn library_and_browser_messages_say_what_to_do() {

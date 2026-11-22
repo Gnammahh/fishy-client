@@ -46,8 +46,13 @@ pub fn decode_chunk(bytes: &[u8], expected: &ChunkInfo) -> Result<Vec<u8>, Insta
     }
     let payload = bytes.get(header_size..).ok_or_else(|| bad("truncated"))?;
     let data = if stored_as & COMPRESSED != 0 {
+        // Never inflate past the size the manifest states (a "zip bomb" would fill memory).
+        let limit = expected.window_size as u64;
         let mut out = Vec::with_capacity(expected.window_size as usize);
-        flate2::read::ZlibDecoder::new(payload).read_to_end(&mut out).map_err(|_| bad("zlib"))?;
+        flate2::read::ZlibDecoder::new(payload).take(limit + 1).read_to_end(&mut out).map_err(|_| bad("zlib"))?;
+        if out.len() as u64 > limit {
+            return Err(bad("too big"));
+        }
         out
     } else {
         payload.to_vec()
@@ -132,6 +137,15 @@ mod tests {
         let mut bytes = build_chunk(info.guid, &data, true, None);
         bytes.truncate(bytes.len() - 5);
         assert!(matches!(decode_chunk(&bytes, &info), Err(InstallError::BadChunk(_))));
+    }
+
+    #[test]
+    fn inflating_stops_past_the_stated_size() {
+        // A small download that would inflate to 64 MB is refused without filling memory.
+        let small = b"fish".to_vec();
+        let info = info_for([1, 2, 3, 4], &small, 0);
+        let bomb = build_chunk(info.guid, &vec![0u8; 64 << 20], true, None);
+        assert_eq!(decode_chunk(&bomb, &info), Err(InstallError::BadChunk("too big".into())));
     }
 
     #[test]

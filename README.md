@@ -31,6 +31,7 @@ If Epic's launcher already installed some of your games, the Library shows "3 ga
 
 - The game stays in Epic's folder, so both launchers see it. Uninstalling it in Fishy Client deletes its files, and Epic's launcher then shows it as broken. Updating it in one launcher can make the other ask for an update or a repair.
 - Games Epic installed with only some optional parts (Fortnite, for example) can't be added yet. Keep using Epic's launcher for those.
+- The other way round works too: with **Settings → Show my games in Epic's launcher** (on by default), games you install with Fishy Client show as installed in Epic's launcher, the next time it starts. Turning it off stops future changes; games already shown stay.
 - New games can't go into `C:\Program Files\Epic Games`: Windows only lets programs with administrator rights create folders there. Use your own Games folder (the default) or something like `D:\Games`.
 
 ## Warnings: please read before using Fishy Client
@@ -98,6 +99,7 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 | `%TEMP%\FishyClient\` | an ownership token file for the few games that need one; deleted when Fishy Client starts |
 | `%LOCALAPPDATA%\com.fishyclient.app\` | the app window's own browser cache (for example cover images), made by Microsoft WebView2 |
 | the Registry `Run` key | only if you turn on **Start with Windows** |
+| `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\`, and `.egstore\` in each game folder | small entries so Epic's launcher sees your games, only while **Show my games in Epic's launcher** is on. Uninstalling a game removes its entry; Delete all my data can remove them too |
 
 **Logs** never contain your tokens, sign-in codes, Epic's error messages, account ID, email or name, and a filter masks anything secret-looking as a second safety net. They do contain file paths, which can include your Windows user name (for example `C:\Users\you\Games\…`). Logs never leave your PC.
 
@@ -105,7 +107,7 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 
 **Games from Epic's launcher:** when the Library opens, Fishy Client **reads** (never changes) Epic's list of installed games in `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\`, and, when you press **Add them**, each game's own `.egstore` file list and file sizes. Those files hold no account details. The log only says how many games were found and which game IDs were added, never folder paths.
 
-**Your files:** Fishy Client only reads and writes the folders you pick for games, plus the places above. It doesn't scan your drives, read save files or browser profiles, or collect hardware details.
+**Your files:** Fishy Client only reads and writes the folders you pick for games, plus the places above (including Epic's list, while that switch is on). It doesn't scan your drives, read save files or browser profiles, or collect hardware details.
 
 ### Deleting everything
 **Settings → Delete all my data** logs you out, removes your sign-in from Credential Manager, deletes everything in `%APPDATA%\FishyClient`, empties the app window's browser cache and turns off Start with Windows. You choose whether your installed games are deleted too. (The empty WebView2 folder `%LOCALAPPDATA%\com.fishyclient.app\` stays while Fishy Client is installed; uninstalling doesn't remove it, so delete it by hand afterwards if you like.)

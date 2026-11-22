@@ -6,6 +6,7 @@ pub mod manifest;
 pub mod chunk;
 pub mod client;
 pub mod compare;
+pub mod elevate;
 pub mod engine;
 pub mod plan;
 pub mod space;

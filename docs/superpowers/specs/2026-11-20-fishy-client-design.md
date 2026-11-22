@@ -929,7 +929,7 @@ The idea: games installed with Fishy Client (Bendy, for example) would also show
 
 **Result:** games installed by Epic can be added to Fishy Client (§6g); games installed by Fishy Client stay Fishy Client's. Epic's launcher would download them again. The files the experiment left (Bendy's `.egstore` folder) were deleted by hand. Users are told about this limit: the Install box always shows "Only Fishy Client will know about this game. Epic's launcher can't see it and would download it again.", and the README explains it, with the tip to install with Epic's launcher and then **Add them** if a game should be in both.
 
-### 6i. What's new (version 1.1.0, asked for 2026-11-22)
+## 6i. What's new (version 1.1.0, asked for 2026-11-22)
 - A small button at the bottom of the sidebar, **What's new · v1.1.0**, opens a box with the patch notes of every version, newest first (version, date, a few plain lines). **Close** or Esc closes it.
 - It opens **by itself once per version**: `settings.json` gains `notes_seen` (the version last shown; old files read as none). When it differs from the app's version, the box opens as the app shows the Library and `notes_seen` is saved. A brand-new user sees it once too. Delete all my data resets it.
 - The notes live in `app/src/lib/notes/releaseNotes.ts`, built into the app (no internet). Each release adds its entry at the top; a test checks the top entry matches `package.json`'s version.

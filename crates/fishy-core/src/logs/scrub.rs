@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::sync::LazyLock;
 
 const MASK: &str = "[redacted]";
-const KEYS: &str = "code|token|access_token|refresh_token|exchange_code|password";
+const KEYS: &str = "code|token|access_?token|refresh_?token|exchange_?code|password";
 
 static AUTH_HEADER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(authorization:\s*)(?:(?:bearer|basic)\s+)?\S+").unwrap());
@@ -40,6 +40,12 @@ pub fn scrub(line: &str) -> Cow<'_, str> {
     out
 }
 
+/// A drive like `C:\` (a letter before `:\`), not JSON's `":\"`.
+fn has_drive(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.match_indices(":\\").any(|(i, _)| i >= 1 && b[i - 1].is_ascii_alphabetic())
+}
+
 /// Long random strings, except where they are a part of a Windows path.
 fn mask_long_runs(text: Cow<'_, str>) -> Cow<'_, str> {
     let bytes = text.as_bytes();
@@ -49,7 +55,9 @@ fn mask_long_runs(text: Cow<'_, str>) -> Cow<'_, str> {
             let before = m.start().checked_sub(1).map(|i| bytes[i]);
             let after = bytes.get(m.end()).copied();
             let word_start = text[..m.start()].rfind(char::is_whitespace).map_or(0, |i| i + 1);
-            let in_path = before == Some(b'\\') || after == Some(b'\\') || text[word_start..m.start()].contains(":\\");
+            // `\"` after a value is an escaped quote in JSON text, not a path.
+            let escaped_quote = after == Some(b'\\') && bytes.get(m.end() + 1) == Some(&b'"');
+            let in_path = before == Some(b'\\') || (after == Some(b'\\') && !escaped_quote) || has_drive(&text[word_start..m.start()]);
             !in_path
         })
         .map(|m| (m.start(), m.end()))
@@ -89,6 +97,15 @@ mod tests {
             assert_eq!(scrub(&format!(r#"{{"{key}":"s3cret"}}"#)), format!(r#"{{"{key}":"[redacted]"}}"#), "{key}");
         }
         assert_eq!(scrub("PASSWORD=hunter2"), "PASSWORD=[redacted]");
+    }
+
+    #[test]
+    fn masks_camel_case_keys_and_values_before_an_escaped_quote() {
+        assert_eq!(scrub(r#"{"accessToken":"s3cret"}"#), r#"{"accessToken":"[redacted]"}"#);
+        assert_eq!(scrub("refreshToken=s3cret x"), "refreshToken=[redacted] x");
+        assert_eq!(scrub("exchangeCode=s3cret"), "exchangeCode=[redacted]");
+        let forty = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(scrub(&format!(r#"body {{\"id\":\"{forty}\"}}"#)), r#"body {\"id\":\"[redacted]\"}"#);
     }
 
     #[test]

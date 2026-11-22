@@ -907,7 +907,7 @@ For a friend who already has games installed with Epic's own launcher: Fishy Cli
 ### 6g.3 Folder check in the Install box (asked for 2026-11-22)
 Windows lets only administrator programs create folders in places like `C:\Program Files\Epic Games`. Epic's launcher has an admin helper for that; Fishy Client runs without admin rights on purpose (so games don't start as admin either).
 - The Install box checks the folder before Install is pressed: it finds the nearest folder that already exists on the way to the install folder, creates an empty test folder `.fishy-write-test` in it and removes it again.
-- If that fails: Install is greyed out and the box says "Fishy Client can't create folders in *C:\Program Files\Epic Games* without administrator rights. Pick a different folder." (*folder* is the nearest existing one). **Change folder** works as usual.
+- (Until 1.2.0; since then see §6k.) If that fails: Install is greyed out and the box says "Fishy Client can't create folders in *C:\Program Files\Epic Games* without administrator rights. Pick a different folder." (*folder* is the nearest existing one). **Change folder** works as usual.
 - Pressing Install (and auto-updates) checks again and refuses with the same message.
 - Importing games already in Epic's folders (§6g) is not affected: Epic gives users full control of each game folder.
 - **Tests:** Rust: `can_create_in` true for a temp folder, true for a not-yet-existing folder under it (checks the parent), false when the nearest existing thing is a file, and the test folder is gone afterwards. UI: the message is shown and Install is disabled when `folder_ok` is false.
@@ -976,6 +976,37 @@ After installing 1.1.0 by hand once, new versions of Fishy Client arrive by them
 - **Script:** `make-latest-json` writes the expected JSON from a sample `.sig` and notes.
 - **UI (vitest):** the bar with version and three buttons; What's new shows the notes; Later hides it; Update now calls the install command and shows progress; "Close *Title* first."; the error line; the Settings switch.
 - **By hand:** publish 1.1.0, then a small 1.1.1; an installed 1.1.0 offers 1.1.1, installs it and restarts as 1.1.1.
+
+## 6k. Installing into folders that need administrator rights (version 1.2.0, approved 2026-11-22)
+
+Asked for by the user's friend: install games into `C:\Program Files\Epic Games` like Epic's launcher does. Epic's admin helper creates each game folder and gives normal users full control of it (checked on this PC: `BUILTIN\Users:(OI)(CI)(F)` on each game folder); the download itself then needs no admin rights. Fishy Client does the same, once per game folder.
+
+### What the user sees
+- **Install box:** a **Use Epic's folder** button next to **Change folder** (it picks `%ProgramFiles%\Epic Games`, shown only when that folder exists). **Settings → Default install folder** gets the same button.
+- When Fishy Client can't create the game folder itself (§6g.3), Install stays **enabled** and the box says **"Windows will ask for permission once to create this folder."** (replacing the old "can't create folders… Pick a different folder." message).
+- **Install** then shows Windows' permission prompt (UAC) once. After **Yes**, the game is queued as usual. Updates, repairs and uninstalls of that game need no prompt.
+- **No** in Windows' prompt: "Fishy Client needs your permission to use that folder. Pick a different folder." Nothing is created and nothing is queued.
+- Any other failure: "Couldn't create *folder*. Pick a different folder."
+
+### How it works
+- Fishy Client starts **a second copy of itself as administrator** (`ShellExecuteExW`, verb `runas`) with exactly `--make-game-folder <path>`, waits for it, and reads its exit code. `main.rs` handles that argument **before** Tauri starts: no window, no network, no sign-in, nothing else.
+- The admin copy:
+  1. checks the path (below); refuses with exit code 2 if it isn't safe
+  2. creates that **one** folder (its parent must already exist)
+  3. runs `%SystemRoot%\System32\icacls.exe <path> /grant *S-1-5-32-545:(OI)(CI)F` (full control for the built-in Users group on this folder only, as Epic does); exit code 3 if that fails, after removing the folder it just created
+  4. exits 0
+- **Path rules** (checked in the admin copy and before asking): absolute, a plain drive-letter path (no `\?\`, no network share), no `.` or `..` parts, not a drive root, the parent exists and is a folder, the folder itself doesn't exist yet (or exists and is empty), and it isn't inside `%SystemRoot%` (Windows).
+- The download, Play and everything else keep running **without** admin rights, so games never start as administrator.
+- Exit codes: 0 done, 2 refused path, 3 couldn't create or set permissions. A declined prompt is Windows' `ERROR_CANCELLED` (1223) from `ShellExecuteExW`.
+- `InstallOptions.folder_ok` stays; a new `needs_permission: bool` is true when the folder can't be created without admin rights (then `error` is empty and Install is enabled). `install_start` asks for permission, then re-checks that the folder is now writable before queuing.
+
+### Privacy and logs
+- Logs: "install: asking for permission to create a game folder", "install: permission declined", "install: game folder created with permission"; never the path.
+
+### Tests
+- **Rust:** the path rules (good path; relative; `..`; drive root; `\?\` and network paths; missing parent; existing non-empty folder; inside Windows); the helper's argument parsing (`--make-game-folder` with exactly one path, anything else refused); exit code to message mapping (0, 2, 3, 1223); the icacls arguments; `InstallOptions` with `needs_permission`.
+- **UI:** the "Windows will ask…" note with Install enabled; Use Epic's folder in the Install box and in Settings; the declined and failed messages.
+- **By hand:** install a small game into `C:\Program Files\Epic Games` from the installed app: one prompt, the game installs and plays; uninstall removes it with no prompt; No in the prompt shows the message.
 
 ---
 

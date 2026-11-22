@@ -112,6 +112,11 @@ export function getInstallOptions(game: Game, parent?: string | null): Promise<I
   return invoke<InstallOptions>("install_options", { game, parent: parent ?? null });
 }
 
+/** The Install box closed without installing: the backend drops the file list it kept. */
+export function forgetInstall(appName: string) {
+  invoke("install_forget", { appName }).catch(() => {});
+}
+
 export function pickFolder(): Promise<string | null> {
   return invoke<string | null>("pick_folder");
 }

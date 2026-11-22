@@ -288,6 +288,12 @@ async fn install_start(
     Ok(downloads.view())
 }
 
+/// The Install box closed without installing: drop the file list it fetched (it can be large).
+#[tauri::command]
+fn install_forget(app_name: String, install: tauri::State<'_, AppInstall>) {
+    install.prepared.lock().unwrap_or_else(|e| e.into_inner()).remove(&app_name);
+}
+
 /// The system folder picker. Async: dialogs must not block the main thread.
 #[tauri::command]
 async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
@@ -404,6 +410,7 @@ pub fn run() {
             library_refresh,
             install_options,
             install_start,
+            install_forget,
             pick_folder,
             downloads_state,
             download_pause,

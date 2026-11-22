@@ -96,10 +96,12 @@ describe("InstallDialog", () => {
 
   it("cancel_and_escape_close_it", async () => {
     const onclose = vi.fn();
-    mock({ install_options: () => options() });
+    const calls = mock({ install_options: () => options() });
     render(InstallDialog, { game, onclose });
     await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onclose).toHaveBeenCalledTimes(2);
+    // Closing frees the file list the box fetched.
+    expect(calls.filter(([c]) => c === "install_forget").map(([, a]) => a.appName)).toEqual([game.app_name, game.app_name]);
   });
 });

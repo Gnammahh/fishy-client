@@ -4,9 +4,14 @@
   import FishLoader from "$lib/loader/FishLoader.svelte";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import { formatBytes } from "$lib/progress/progress";
-  import { getInstallOptions, pickFolder, startInstall, type InstallOptions } from "./installs";
+  import { forgetInstall, getInstallOptions, pickFolder, startInstall, type InstallOptions } from "./installs";
 
   let { game, onclose }: { game: Game; onclose: () => void } = $props();
+  /** Closing without installing frees the file list Fishy Client fetched for the box. */
+  function cancel() {
+    forgetInstall(game.app_name);
+    onclose();
+  }
 
   let parent = $state<string | null>(null);
   let options = $state<InstallOptions | null>(null);
@@ -57,14 +62,14 @@
     aria-label="Install {game.title}"
     tabindex="-1"
     bind:this={dialog}
-    onkeydown={(e) => e.key === "Escape" && onclose()}
+    onkeydown={(e) => e.key === "Escape" && cancel()}
   >
     <h3>Install {game.title}</h3>
 
     {#if loadError}
       <p class="error" role="alert">{loadError}</p>
       <div class="actions">
-        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+        <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
       </div>
     {:else if !options}
       <div class="loading" role="status">
@@ -72,7 +77,7 @@
         <span>Getting download info…</span>
       </div>
       <div class="actions">
-        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+        <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
       </div>
     {:else}
       <dl>
@@ -91,7 +96,7 @@
       <div class="actions">
         <PixelButton variant="ghost" onclick={changeFolder}>Change folder</PixelButton>
         <span class="spacer"></span>
-        <PixelButton variant="ghost" onclick={onclose}>Cancel</PixelButton>
+        <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
         <PixelButton disabled={!options.enough_space || busy} onclick={install}>Install</PixelButton>
       </div>
     {/if}

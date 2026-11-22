@@ -783,9 +783,11 @@ A small change to the existing Library screen, so it was designed in chat (no se
 
 #### How a running game is noticed
 - **Only after Play.** A successful Play adds the game (its code name and install folder) to a running list in the Rust part. Games started any other way (Epic's launcher, a shortcut) aren't watched, and the list doesn't survive a restart of Fishy Client.
-- **One check every 5 seconds, only while the list has a game.** The check asks Windows once for every open program's file path (the `sysinfo` crate, file paths only, nothing else read) and keeps the games that have at least one program inside their install folder. When the list is empty, the check stops.
+- **One check every 5 seconds, only while the list has a game.** The check asks Windows once for the list of open programs and each one's file path (Windows' "limited information" query, which also works for games running as administrator or protected by anti-cheat; nothing else is read) and keeps the games that have at least one program inside their install folder. When the list is empty, the check stops.
 - **Inside the folder** means the program's path starts with the install folder as whole folder names, with capital letters ignored: `C:\Games\Kelp\Bin\kelp.exe` counts for `C:\Games\Kelp`, `C:\Games\Kelp2\kelp.exe` doesn't.
-- A program whose path Windows won't tell (some protected system programs) is skipped.
+- A program whose path Windows won't tell (system services) is skipped, and so is one that has already ended.
+- A game Play adds while a check is running is kept until the next check.
+- A second Play of the same game is refused from the click until the game is in the list (or Play failed), so it can't start twice.
 - Each change sends `running-changed` with the list of running code names. `running_list` gives it on demand (the Library asks once when it opens).
 - **Pressing Play on a game that's already running** can't happen from the card (it's greyed out); the command also refuses it with "*Title* is already running."
 - **Update and Uninstall** commands refuse a running game with "Close *Title* first." (the UI already hides the way there).
@@ -1041,6 +1043,15 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 **Polish 3, Library filters and sort (§6f.3), built 2026-11-22:** an **Updates** tab (only when updates are waiting) and a **Sort** menu next to the search box (A–Z, Z–A, Recently installed, Size on disk), remembered after a restart. Checked in the browser preview with fake data: the Updates tab, Z–A on every tab, no console errors. **Tests now:** Rust 263, UI 154 (10 new).
 
+**Polish 4, Running games (§6f.4), built 2026-11-22:** after Play the card says **Running** while any program from the game's folder is open (checked every 5 s, only while a game runs); Play, Update and Uninstall are greyed out with "Close *Title* first."; a setting **When a game starts** (Keep open / Minimize and bring back); play times saved in `installed.json`, and a **Recently played** sort. Built from a plan (`docs/superpowers/plans/2026-11-22-running-games.md`), then a fresh whole-branch review: three fixes made test-first (games running as administrator or with anti-cheat now count, a second Play can't start a game twice, a game started during a check isn't dropped). Checked in the browser preview with fake data. **Tests now:** Rust 275 (core 244 + app 31), UI 159.
+
+### Still to check by hand (milestone 7, sub-project 4)
+- [ ] Play a game: the card shows **Starting…**, then **Running**, with Update and Uninstall greyed out and "Close *Title* first."
+- [ ] Close the game: within about 5 seconds the card shows **Play** again
+- [ ] Settings → **When a game starts** → Minimize: Play minimizes Fishy Client, and it comes back when the game closes
+- [ ] Sort → **Recently played** puts the game you just played first
+- [ ] The log shows `… is running` and `… closed`, and nothing about other programs
+
 ### Still to check by hand (milestone 7, sub-project 3)
 - [x] (2026-11-22) The **Sort** menu reorders your real Library (try Size on disk: Bendy first), and the choice is still set after restarting the app
 - [ ] Optional, not tried: with an update waiting (mark Bendy outdated as in the milestone 6 check), the **Updates (1)** tab shows only Bendy
@@ -1099,6 +1110,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - Session changes happen **one at a time**, so a late refresh can't undo a logout.
 - Epic's error messages, which can quote tokens, are never stored.
 - **Security policy (CSP) is on.** The unused "open links" plugin was removed, and the Tauri version is pinned to 2.12.
+- **Running games (§6f.4):** the paths of other programs on your PC are only compared in memory to spot a game's folder. They're never logged, saved or sent.
 - **Dependency check:** 0 known problems in what ships. The warnings come from a development-only tool and are left as is.
 
 ### Bugs found while testing for real, and fixed
@@ -1107,8 +1119,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 235 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 28. (Counts as of 2026-11-22, milestone 7 sub-project 2.)
-- **UI:** 154 tests.
+- **Rust core:** 244 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 31. (Counts as of 2026-11-22, milestone 7 sub-project 4.)
+- **UI:** 159 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -1146,6 +1158,13 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
   - The log scrubber can't hide names or emails if a screen error ever quotes them (none do today).
   - After an expired refresh, the Library view can stay in "loading" with an error until you sign in again.
 
+- From the Polish 4 review (minor):
+  - If the running check ever crashed, later games wouldn't be watched until a restart.
+  - Delete all my data clears the UI's running list but not the Rust one (the card shows Play; Play is still refused), and "also delete games" doesn't check for running games.
+  - The auto-update after a game closes also runs offline (it fails quietly).
+  - The play-time/install write test runs one after the other, not at the same time.
+  - When a game closes, Fishy Client comes to the front even if you'd already brought it back yourself.
+
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
 2. ~~Back up to a private GitHub repository.~~ Done on 2026-11-20 (`gh` installed and signed in as Gnammahh). To back up new work: `git push`.
@@ -1155,5 +1174,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. Next: 4 Running games (with "minimize while playing"), 5 small fixes, 6 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22, hand check above. Next: 5 small fixes, 6 installer (`.msi`).
    - Later: signed updates and a code-signed installer

@@ -42,7 +42,7 @@
   }
 
   /** A switch saved in settings.json; on failure it goes back to what's really saved. */
-  async function toggle(key: "auto_update" | "warn_outdated_play" | "reduce_motion", e: Event, where: "downloads" | "appearance") {
+  async function toggle(key: "auto_update" | "warn_outdated_play" | "reduce_motion" | "show_in_epic", e: Event, where: "downloads" | "appearance") {
     const box = e.currentTarget as HTMLInputElement;
     const wanted = box.checked;
     const err = (await saveSettings({ [key]: wanted })) ?? "";
@@ -168,6 +168,20 @@
     <span>
       <span class="name" id="warn-name">Warn before playing a game with an update waiting</span>
       <span class="hint" id="warn-hint">Some online games won't start until they're updated.</span>
+    </span>
+  </label>
+  <label class="row">
+    <input
+      type="checkbox"
+      role="switch"
+      aria-labelledby="epic-name"
+      aria-describedby="epic-hint"
+      checked={$settings.show_in_epic}
+      onchange={(e) => toggle("show_in_epic", e, "downloads")}
+    />
+    <span>
+      <span class="name" id="epic-name">Show my games in Epic's launcher</span>
+      <span class="hint" id="epic-hint">Epic's launcher sees games installed with Fishy Client. Changes show the next time Epic's launcher starts.</span>
     </span>
   </label>
   {#if downloadsError}<p class="error" role="alert">{downloadsError}</p>{/if}

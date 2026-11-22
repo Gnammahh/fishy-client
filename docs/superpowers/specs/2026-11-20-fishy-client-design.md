@@ -716,7 +716,7 @@ Four parts, all chosen by you: clear messages, automatic retries, a crash screen
 
 - **A game that's running.** When Windows refuses a write because a file is in use (Windows errors 32 "sharing violation" and 33 "lock violation"), installing, updating or rebuilding a file says:
   **"Some of *Title*'s files are in use. Close the game, then press Retry."**
-  The download stops as Error, so Retry continues it. Other write errors keep the folder message.
+  The download stops as Error, so Retry continues it. Swapping an updated file into place also counts "access denied" (Windows error 5) as in use, because that's how Windows refuses to replace a running program. Other write errors keep the folder message.
 - All the unchanged messages already end with a next step (for example "Not enough space on C:. Needs 12.3 GB, 4.1 GB free." comes with the Install box's Change folder, and "A downloaded file was damaged. Press Retry to download it again.").
 
 #### Automatic retries
@@ -733,7 +733,8 @@ Four parts, all chosen by you: clear messages, automatic retries, a crash screen
 - Each retry is logged ("retrying library items (2 of 3)"), with no addresses or tokens.
 
 #### Expired sign-in
-- When Epic refuses the saved sign-in while refreshing it (it was revoked, or it expired after weeks unused), the sign-in counts as **expired**. "Can't reach Epic" is not expired: you stay signed in and the offline banner shows as now.
+- When Epic refuses the saved sign-in while refreshing it (it was revoked, or it expired after weeks unused), the sign-in counts as **expired**. Only Epic's "this sign-in is no longer valid" answers count: an auth-token, invalid-grant or invalid-token error code, or a bare 400/401.
+- **Not expired** (you stay signed in): can't reach Epic, Epic's server errors (500–599), "too many requests" (429), a request timeout (408), a blocked or throttled answer, a reply that isn't Epic's (a Wi-Fi login page), and a Credential Manager hiccup. Offline Play never forgets the sign-in.
 - **What happens, wherever it's noticed** (Library refresh, Install box, Install, Update, Play):
   1. Downloads pause; nothing is lost and Resume continues after signing in again.
   2. The expired sign-in is removed from Credential Manager, and the saved library is deleted (as on Log out). Installed games, downloads in progress and settings stay.
@@ -751,7 +752,7 @@ Four parts, all chosen by you: clear messages, automatic retries, a crash screen
 #### Tests
 - **Rust:**
   - each changed message's exact wording
-  - a write that fails with Windows error 32 or 33 gives the "files are in use" message with the game's title; error 5 (access denied) still gives the folder message
+  - a write that fails with Windows error 32 or 33 gives the "files are in use" message with the game's title; error 5 (access denied) still gives the folder message, except when swapping an updated file into place
   - the retry helper against the fake Epic server: fails twice then works (one result, 3 requests); always fails (gives up after exactly 3 requests); answers 401/404 (1 request only); answers 503 twice then works; the one-time code exchange is tried once only
   - expired: a refresh Epic refuses removes the saved sign-in and reports expired; a refresh that can't reach Epic keeps it and reports a network problem
 - **UI (vitest):**

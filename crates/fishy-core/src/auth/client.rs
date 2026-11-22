@@ -90,11 +90,12 @@ pub(crate) fn network(e: reqwest::Error) -> AuthError {
 }
 
 /// Turns any non-2xx or `errorCode` body into `Rejected`, except Epic's own server errors (5xx),
-/// which count as a connection problem (retried, and never "your sign-in was refused").
+/// "too many requests" (429) and "request timeout" (408), which count as a connection problem
+/// (retried, and never "your sign-in was refused").
 /// Empty 2xx bodies become `Value::Null`.
 pub(crate) async fn read_json(res: Response) -> Result<Value, AuthError> {
     let status = res.status();
-    if status.is_server_error() {
+    if status.is_server_error() || status.as_u16() == 408 || status.as_u16() == 429 {
         return Err(AuthError::Network(format!("http_{}", status.as_u16())));
     }
     let text = res.text().await.map_err(network)?;
@@ -182,6 +183,19 @@ mod tests {
         Mock::given(method("POST")).respond_with(ResponseTemplate::new(503)).expect(1).mount(&server).await;
         let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert!(matches!(c.exchange_code("abc").await, Err(AuthError::Network(_))));
+    }
+
+    #[tokio::test]
+    async fn too_many_requests_and_timeouts_count_as_network() {
+        for status in [408, 429] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(status).set_body_json(serde_json::json!({"errorCode": "errors.com.epicgames.common.throttled"})))
+                .mount(&server)
+                .await;
+            let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+            assert!(matches!(c.refresh(&Secret::new("x")).await, Err(AuthError::Network(_))), "{status}");
+        }
     }
 
     #[tokio::test]

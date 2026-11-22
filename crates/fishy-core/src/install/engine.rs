@@ -53,6 +53,15 @@ pub fn files_in_use(e: &std::io::Error) -> bool {
     matches!(e.raw_os_error(), Some(32 | 33))
 }
 
+/// Swapping an updated file into place. Windows refuses to replace a running program with
+/// "access denied" (5), so here that also means "close the game" (spec §6f.2).
+pub fn swap_error(install_path: &Path, title: &str, e: std::io::Error) -> InstallError {
+    if files_in_use(&e) || e.raw_os_error() == Some(5) {
+        return InstallError::FilesInUse(title.to_string());
+    }
+    InstallError::Io { folder: install_path.display().to_string(), detail: e.to_string() }
+}
+
 /// A write error: a file in use becomes "close the game", a full disk "Not enough space".
 pub fn write_error(install_path: &Path, title: &str, e: std::io::Error, needed: u64, free: u64) -> InstallError {
     if files_in_use(&e) {
@@ -313,7 +322,7 @@ pub async fn run_job(
             return Err(InstallError::DamagedFile(entry.filename.clone()));
         }
         if path != target {
-            std::fs::rename(&path, &target).map_err(io_err)?; // replaces the old file
+            std::fs::rename(&path, &target).map_err(|e| swap_error(&job.install_path, &job.title, e))?; // replaces the old file
         }
         store.mark_finished(&job.app_name, &hex::encode(sha), &entry.filename).map_err(io_err)?;
     }
@@ -587,6 +596,31 @@ mod tests {
             Ok(40)
         }
         run_download_with(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}, opts(1 << 20, exactly_b)).await.unwrap();
+    }
+
+    #[test]
+    fn replacing_a_file_that_is_locked_says_close_the_game() {
+        let p = Path::new(r"C:\Games\Bendy");
+        for code in [5, 32, 33] {
+            assert_eq!(swap_error(p, "Bendy", std::io::Error::from_raw_os_error(code)), InstallError::FilesInUse("Bendy".into()), "{code}");
+        }
+        assert!(matches!(swap_error(p, "Bendy", std::io::Error::from_raw_os_error(3)), InstallError::Io { .. }));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_running_program_blocks_the_swap_and_says_close_the_game() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("Game.exe");
+        let fresh = dir.path().join("Game.exe.fishy-update");
+        std::fs::write(&target, b"old").unwrap();
+        std::fs::write(&fresh, b"new").unwrap();
+        // How Windows holds a running program: others may read it, not replace or delete it.
+        let running = std::fs::OpenOptions::new().read(true).share_mode(1).open(&target).unwrap();
+        let e = std::fs::rename(&fresh, &target).unwrap_err();
+        drop(running);
+        assert_eq!(swap_error(dir.path(), "Bendy", e), InstallError::FilesInUse("Bendy".into()));
     }
 
     #[test]

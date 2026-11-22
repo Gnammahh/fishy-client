@@ -13,6 +13,12 @@ pub enum AuthState {
     Offline { display_name: String },
 }
 
+/// Epic's "this sign-in is no longer valid" answers to a refresh (spec §6f.2). Anything else it
+/// refuses with (blocked, throttled, a missing action) is temporary: the sign-in is kept.
+pub(crate) fn is_refresh_refusal(code: &str) -> bool {
+    code.contains("auth_token") || code.contains("invalid_grant") || code.contains("invalid_token") || code == "http_400" || code == "http_401"
+}
+
 /// Refresh this long before the access token expires (spec §6a).
 const REFRESH_MARGIN_MINUTES: i64 = 5;
 
@@ -67,7 +73,9 @@ impl<S: SessionStore> AuthManager<S> {
                 let _ = self.store.save(&fresh);
                 signed_in(&fresh)
             }
-            Err(AuthError::Network(_)) => AuthState::Offline { display_name: session.display_name },
+            // Can't reach Epic, or something else answered (a Wi-Fi login page): keep the sign-in.
+            Err(AuthError::Network(_) | AuthError::Unexpected(_)) => AuthState::Offline { display_name: session.display_name },
+            Err(AuthError::Rejected { code }) if !is_refresh_refusal(&code) => AuthState::Offline { display_name: session.display_name },
             Err(_) => {
                 let _ = self.store.clear();
                 AuthState::SignedOut
@@ -86,7 +94,9 @@ impl<S: SessionStore> AuthManager<S> {
         let _turn = self.one_at_a_time.lock().await;
         let session = match self.store.load() {
             Ok(Some(s)) => s,
-            _ => return Err(AuthError::Expired),
+            Ok(None) | Err(StoreError::Damaged(_)) => return Err(AuthError::Expired),
+            // Credential Manager hiccup: the sign-in may be fine, so it isn't "expired".
+            Err(StoreError::Backend(d)) => return Err(AuthError::Storage(d)),
         };
         if session.expires_at - (self.now)() > Duration::minutes(REFRESH_MARGIN_MINUTES) {
             return Ok(session);
@@ -94,7 +104,7 @@ impl<S: SessionStore> AuthManager<S> {
         let fresh = match self.client.refresh(&session.refresh_token).await {
             Ok(fresh) => fresh,
             // Epic said no: the sign-in is over. Forget it so nothing keeps trying (spec §6f.2).
-            Err(AuthError::Rejected { .. }) => {
+            Err(AuthError::Rejected { code }) if is_refresh_refusal(&code) => {
                 let _ = self.store.clear();
                 return Err(AuthError::Expired);
             }
@@ -344,6 +354,57 @@ mod tests {
         let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(2), Duration::days(20))));
         assert!(matches!(m.access_token().await, Err(AuthError::Expired)));
         assert!(m.store().load().unwrap().is_none(), "the expired sign-in is forgotten");
+    }
+
+    #[test]
+    fn only_a_refused_sign_in_counts_as_a_refusal() {
+        for code in [
+            "errors.com.epicgames.account.auth_token.invalid_refresh_token",
+            "errors.com.epicgames.account.oauth.invalid_grant",
+            "errors.com.epicgames.common.oauth.invalid_token",
+            "http_400",
+            "http_401",
+        ] {
+            assert!(is_refresh_refusal(code), "{code}");
+        }
+        for code in ["http_403", "errors.com.epicgames.common.throttled", "errors.com.epicgames.common.missing_action", "http_404"] {
+            assert!(!is_refresh_refusal(code), "{code}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_blocked_or_throttled_refresh_keeps_the_sign_in() {
+        for (status, body) in [
+            (403, ResponseTemplate::new(403).set_body_string("<html>blocked</html>")),
+            (200, ResponseTemplate::new(200).set_body_json(serde_json::json!({"errorCode": "errors.com.epicgames.common.throttled"}))),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST")).respond_with(body).mount(&server).await;
+            let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(2), Duration::days(20))));
+            let r = m.access_token().await;
+            assert!(r.is_err() && !matches!(r, Err(AuthError::Expired)), "{status}");
+            assert!(m.store().load().unwrap().is_some(), "{status}: still signed in");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_credential_manager_hiccup_is_not_expired() {
+        let m = AuthManager::new(
+            EpicClient::with_base_url("http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1)),
+            BrokenStore(StoreError::Backend("busy".into())),
+            now,
+        );
+        assert!(matches!(m.access_token().await, Err(AuthError::Storage(_))));
+    }
+
+    #[tokio::test]
+    async fn startup_unexpected_reply_is_offline_and_keeps_session() {
+        // A Wi-Fi login page answering instead of Epic.
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_string("<html>hotel wifi</html>")).mount(&server).await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(1), Duration::days(20))));
+        assert_eq!(m.startup().await, AuthState::Offline { display_name: "FishFan".into() });
+        assert!(m.store().load().unwrap().is_some());
     }
 
     #[tokio::test]

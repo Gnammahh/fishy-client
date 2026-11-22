@@ -46,6 +46,11 @@ fn session_error(e: AuthError) -> LaunchError {
     }
 }
 
+/// Offline play can't sign in again anyway, so a sign-in problem there never forgets anything.
+fn should_expire(signed_out: bool, offline: bool) -> bool {
+    signed_out && !offline
+}
+
 #[tauri::command]
 pub async fn play_game(
     app: tauri::AppHandle,
@@ -59,7 +64,7 @@ pub async fn play_game(
     let result = launch_game(app_name.clone(), offline, auth, library, install, launch).await;
     if let Err(e) = &result {
         tracing::warn!("play {app_name} failed: {}", e.message);
-        if e.signed_out {
+        if should_expire(e.signed_out, offline) {
             crate::session::expire(&app).await;
         }
     }
@@ -101,6 +106,13 @@ async fn launch_game(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_online_sign_in_problem_expires_the_sign_in() {
+        assert!(should_expire(true, false));
+        assert!(!should_expire(true, true), "offline: can't sign in again anyway, keep everything");
+        assert!(!should_expire(false, false));
+    }
 
     #[test]
     fn play_offline_is_offered_only_for_network_errors_on_offline_games() {

@@ -1,3 +1,4 @@
+mod app_update;
 mod data;
 mod downloads;
 mod epic_import;
@@ -473,6 +474,8 @@ pub fn run() {
             data::autostart_set,
             data::default_install_folder,
             data::log_ui_error,
+            app_update::app_update_check,
+            app_update::app_update_install,
             epic_import::epic_import_scan,
             epic_import::epic_import_add,
             epic_import::epic_import_repair

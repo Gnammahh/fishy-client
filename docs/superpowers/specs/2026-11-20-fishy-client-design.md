@@ -1084,7 +1084,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 | First window | 0.1 s | 3.1 s |
 | Windows services added | none | 2 (updater, Online Services) |
 
-Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. Follow-up idea: limit the WebView2 cache size.
+Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
 ### Still to check by hand (milestone 7, sub-project 6)
 - [x] (2026-11-22) Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.

@@ -5,6 +5,7 @@ pub mod launch;
 pub mod library;
 pub mod logs;
 pub mod retry;
+pub mod running;
 pub mod settings;
 pub mod wipe;
 

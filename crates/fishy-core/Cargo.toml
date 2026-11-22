@@ -24,6 +24,7 @@ regex = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 tracing-appender = "0.2"
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 
 [features]
 # Test helpers (manifest builder) for other crates' tests. Never on in the shipped app.

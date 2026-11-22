@@ -959,11 +959,14 @@ The other direction of §6g: games installed with Fishy Client (Bendy, for examp
 
 ### Known limits
 - If Epic's launcher is open while the list changes, it notices only when it next starts.
-- Delete all my data doesn't remove the entries (the switch's "leave them" rule); uninstalling a game with the switch on does.
+- **Delete all my data** (your choice, 2026-11-22): when **Also delete my installed games** is ticked, a second tick box appears under it, **Also remove them from Epic's launcher** (ticked by default). With it ticked, each deleted game's entry is removed like an uninstall (only Fishy Client's entries for that game's folder, never another copy). Unticked, or without deleting games, the entries stay. It works whatever the switch is set to, because the user asked for it right there.
+- Uninstalling Fishy Client itself (Windows' Installed apps) leaves the entries, so Epic's launcher keeps seeing your games.
 
 ### Tests
 - **Rust (tempfile):** writes a new `.item` + `.manifest` + `.mancpn` with the fields above; updates an existing entry for the same folder in place (same GUID, new version); skips a game Epic has in another folder; skips a game missing from the saved Library; does nothing when Epic's folder is missing; removal deletes only its own files and keeps Epic's other `.egstore` files; settings default and old `settings.json` read `show_in_epic` as true.
 - **UI (vitest):** the switch shows on by default and saving it calls `settings_set` with `show_in_epic`.
+- **UI (vitest):** the Epic tick box shows only when games are being deleted, is ticked by default, and its value reaches `delete_all_data` as `alsoEpic`.
+- **Rust:** `delete_everything` with `also_epic` removes the deleted games' entries and leaves others.
 
 ---
 

@@ -111,6 +111,26 @@ Rules (from spec §6h):
 - [ ] **Step 4:** `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings` → PASS/clean.
 - [ ] **Step 5:** Commit `feat(epic-sync): keep Epic's list in step on start, install, update, import and uninstall`.
 
+### Task 3b: Delete all my data can remove Epic entries (spec §6h)
+
+**Files:**
+- Modify: `crates/fishy-core/src/wipe.rs` (`delete_everything` gains `also_epic: Option<&Path>`: the Epic folder when entries should go)
+- Modify: `app/src-tauri/src/data.rs` (`delete_all_data` gains `also_epic: bool`; passes `epic_manifests_dir()` when `also_games && also_epic`)
+- Modify: `app/src/lib/settings/data.ts` (`deleteAllData(alsoGames, alsoEpic)` sends `{ alsoGames, alsoEpic }`), `app/src/lib/settings/DeleteDataBox.svelte` (second tick box under the games one, shown only while `alsoGames` is ticked, `let alsoEpic = $state(true)`, label exactly `Also remove them from Epic's launcher`)
+- Test: `crates/fishy-core/src/wipe.rs`, `app/src/lib/settings/DeleteDataBox.test.ts`
+
+**Interfaces:**
+- Consumes: `epic_sync::remove_entry` (Task 2).
+- Produces: `delete_everything(store, data_root, jobs, also_games, also_epic: Option<&Path>) -> usize` (same return as today). For every game uninstalled successfully, `remove_entry(epic_dir, &record)` runs; its failure doesn't count as "not deleted".
+
+- [ ] **Step 1: Failing tests**
+  - Rust `wipe_with_epic_removes_deleted_games_entries`: two installed games, an Epic entry for each plus one Epic entry for another app; after `delete_everything(.., true, Some(dir))` the two entries are gone, the other stays. `wipe_without_epic_keeps_entries`: `None` → all three stay.
+  - UI `epic_box_only_when_deleting_games_and_ticked_by_default`; `epic_choice_reaches_the_command` (unticking it sends `alsoEpic: false`).
+- [ ] **Step 2:** `cargo test -p fishy-core wipe` and `npm.cmd test -- DeleteDataBox` → FAIL.
+- [ ] **Step 3:** Implement; fix the other callers of `delete_everything` / `deleteAllData`.
+- [ ] **Step 4:** `cargo test --workspace`, `npm.cmd test`, `npm.cmd run check`, clippy → PASS/clean.
+- [ ] **Step 5:** Commit `feat(epic-sync): Delete all my data can remove the games from Epic's list`.
+
 ### Task 4: Docs, review, push, hand check
 
 - [ ] README: "What is stored on your PC" gains a row: `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests\` and each game's `.egstore\` — entries so Epic's launcher sees your games (only while **Show my games in Epic's launcher** is on; off by Settings). Update the "Games from Epic's launcher" section and the "Your files" sentence (Fishy Client now writes these small list files when the switch is on).

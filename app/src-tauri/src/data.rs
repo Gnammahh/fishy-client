@@ -108,6 +108,18 @@ pub async fn delete_all_data(
     Ok(DeleteReport { failed, message: delete_message(failed) })
 }
 
+/// The first `max_chars` characters of `s` (never splitting one).
+pub(crate) fn cut(s: &str, max_chars: usize) -> &str {
+    s.char_indices().nth(max_chars).map_or(s, |(i, _)| &s[..i])
+}
+
+/// A bug in a screen (spec §6f.2). The text goes through the log's secret scrubber like
+/// every other line.
+#[tauri::command]
+pub fn log_ui_error(message: String) {
+    tracing::warn!("ui error: {}", cut(&message, 500));
+}
+
 /// Keeps the log writer alive (and flushing) for as long as the app runs.
 pub struct AppLogs(#[allow(dead_code)] pub Option<logs::LogGuard>);
 
@@ -123,6 +135,15 @@ pub fn open_logs_folder() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cut_keeps_whole_characters() {
+        let long = "aé".repeat(400);
+        let c = cut(&long, 500);
+        assert_eq!(c.chars().count(), 500);
+        assert!(long.starts_with(c));
+        assert_eq!(cut("short", 500), "short");
+    }
 
     #[test]
     fn delete_message_wording() {

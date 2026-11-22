@@ -404,7 +404,8 @@ pub fn run() {
             data::delete_all_data,
             data::autostart_get,
             data::autostart_set,
-            data::default_install_folder
+            data::default_install_folder,
+            data::log_ui_error
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

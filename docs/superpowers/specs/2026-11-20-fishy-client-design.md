@@ -1046,11 +1046,11 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 **Polish 4, Running games (§6f.4), built 2026-11-22:** after Play the card says **Running** while any program from the game's folder is open (checked every 5 s, only while a game runs); Play, Update and Uninstall are greyed out with "Close *Title* first."; a setting **When a game starts** (Keep open / Minimize and bring back); play times saved in `installed.json`, and a **Recently played** sort. Built from a plan (`docs/superpowers/plans/2026-11-22-running-games.md`), then a fresh whole-branch review: three fixes made test-first (games running as administrator or with anti-cheat now count, a second Play can't start a game twice, a game started during a check isn't dropped). Checked in the browser preview with fake data. **Tests now:** Rust 275 (core 244 + app 31), UI 159.
 
 ### Still to check by hand (milestone 7, sub-project 4)
-- [ ] Play a game: the card shows **Starting…**, then **Running**, with Update and Uninstall greyed out and "Close *Title* first."
-- [ ] Close the game: within about 5 seconds the card shows **Play** again
-- [ ] Settings → **When a game starts** → Minimize: Play minimizes Fishy Client, and it comes back when the game closes
-- [ ] Sort → **Recently played** puts the game you just played first
-- [ ] The log shows `… is running` and `… closed`, and nothing about other programs
+- [x] (2026-11-22) Play a game: the card shows **Starting…**, then **Running**, with Update and Uninstall greyed out and "Close *Title* first."
+- [x] (2026-11-22) Close the game: within about 5 seconds the card shows **Play** again
+- [x] (2026-11-22) Settings → **When a game starts** → Minimize: Play minimizes Fishy Client, and it comes back when the game closes
+- [x] (2026-11-22) Sort → **Recently played** puts the game you just played first
+- [x] (2026-11-22) The log shows `… is running` and `… closed`, and nothing about other programs (Bendy's code name shows as `[redacted]`: the log filter hides ID-shaped names)
 
 ### Still to check by hand (milestone 7, sub-project 3)
 - [x] (2026-11-22) The **Sort** menu reorders your real Library (try Size on disk: Bendy first), and the choice is still set after restarting the app
@@ -1174,5 +1174,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22, hand check above. Next: 5 small fixes, 6 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. Next: 5 small fixes, 6 installer (`.msi`).
    - Later: signed updates and a code-signed installer

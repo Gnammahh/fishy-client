@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.2.0",
+    "date": "2026-11-22",
+    "items": [
+      "You can install games into Epic's own folder (C:\\Program Files\\Epic Games): press Use Epic's folder in the Install box or in Settings. Windows asks for permission once per game, the same way Epic's launcher does.",
+      "Games another store installs, such as STAR WARS Battlefront II through the EA app, now show in your Library with \"Installs through the EA app\" instead of under Not on Windows. Fishy Client can't install or start those: use Epic's launcher or the EA app."
+    ]
+  },
+  {
     "version": "1.1.1",
     "date": "2026-11-22",
     "items": [

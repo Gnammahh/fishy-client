@@ -26,19 +26,35 @@ impl SpeedLimiter {
         Self { state: Mutex::new(Bucket { rate: None, tokens: 0.0, last: Instant::now() }), changed: tokio::sync::Notify::new() }
     }
 
-    /// Bytes per second, or None for no limit. Starts again from an empty bucket.
+    /// Bytes per second, or None for no limit. A change starts again from an empty bucket; saving
+    /// the same limit again (any settings save does) changes nothing.
     pub fn set(&self, bytes_per_sec: Option<u64>) {
+        let new = bytes_per_sec.filter(|&r| r > 0);
         let mut b = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        b.rate = bytes_per_sec.filter(|&r| r > 0);
+        if b.rate == new {
+            return;
+        }
+        // Removed or raised: pieces already waiting may go now. Lowered: they keep their wait.
+        let freer = match (b.rate, new) {
+            (_, None) => true,
+            (Some(old), Some(n)) => n > old,
+            (None, Some(_)) => false,
+        };
+        b.rate = new;
         b.tokens = 0.0;
         b.last = Instant::now();
         drop(b);
-        // Waiting pieces go now; the new limit applies from the next one.
-        self.changed.notify_waiters();
+        if freer {
+            self.changed.notify_waiters();
+        }
     }
 
     /// Waits until `bytes` more may be downloaded.
     pub async fn take(&self, bytes: u64) {
+        // Listen for a change before reading the limit, so a change in between isn't missed.
+        let notified = self.changed.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
         let wait = {
             let mut b = self.state.lock().unwrap_or_else(|e| e.into_inner());
             let Some(rate) = b.rate else { return };
@@ -52,7 +68,7 @@ impl SpeedLimiter {
         if !wait.is_zero() {
             tokio::select! {
                 _ = tokio::time::sleep(wait) => {}
-                _ = self.changed.notified() => {}
+                _ = notified => {}
             }
         }
     }
@@ -134,6 +150,39 @@ mod tests {
         waiting.await.unwrap();
         let secs = start.elapsed().as_secs_f64();
         assert!(secs < 1.1, "waited {secs} s after the limit was turned off");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn saving_the_same_limit_again_keeps_pieces_waiting() {
+        // Every settings save sets the limit; an unchanged one must not let a burst through.
+        let l = std::sync::Arc::new(SpeedLimiter::new());
+        l.set(Some(1_000_000));
+        l.take(1_000_000).await;
+        let start = Instant::now();
+        let waiting = {
+            let l = l.clone();
+            tokio::spawn(async move { l.take(4_000_000).await })
+        };
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        l.set(Some(1_000_000));
+        waiting.await.unwrap();
+        assert!(start.elapsed().as_secs_f64() >= 3.9, "waited only {:?}", start.elapsed());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lower_limit_doesnt_free_waiting_pieces() {
+        let l = std::sync::Arc::new(SpeedLimiter::new());
+        l.set(Some(2_000_000));
+        l.take(2_000_000).await;
+        let start = Instant::now();
+        let waiting = {
+            let l = l.clone();
+            tokio::spawn(async move { l.take(8_000_000).await })
+        };
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        l.set(Some(1_000_000));
+        waiting.await.unwrap();
+        assert!(start.elapsed().as_secs_f64() >= 3.9, "waited only {:?}", start.elapsed());
     }
 
     #[test]

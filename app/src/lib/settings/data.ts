@@ -24,10 +24,10 @@ export async function openLogsFolder(): Promise<string | null> {
  * Delete all my data. On success the app is signed out and shows Login; anything that couldn't be
  * deleted is reported there. Returns an error message if the command itself failed.
  */
-export async function deleteAllData(alsoGames: boolean, alsoEpic = false): Promise<string | null> {
+export async function deleteAllData(alsoGames: boolean): Promise<string | null> {
   let report: DeleteReport;
   try {
-    report = await invoke<DeleteReport>("delete_all_data", { alsoGames, alsoEpic });
+    report = await invoke<DeleteReport>("delete_all_data", { alsoGames });
   } catch (e) {
     // The app's own refusal ("A download wouldn't stop…") is a plain message; anything else isn't.
     return typeof e === "string" ? e : DELETE_ERROR;

@@ -19,8 +19,6 @@ pub struct Settings {
     pub library_sort: String,
     /// What Fishy Client does after Play (spec §6f.4): "keep" or "minimize".
     pub when_game_starts: String,
-    /// Keep Epic's launcher's list in step with installed games (spec §6h). On by default.
-    pub show_in_epic: bool,
 }
 
 impl Default for Settings {
@@ -33,7 +31,6 @@ impl Default for Settings {
             reduce_motion: false,
             library_sort: "az".into(),
             when_game_starts: "keep".into(),
-            show_in_epic: true,
         }
     }
 }
@@ -88,16 +85,6 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn show_in_epic_defaults_to_on() {
-        assert!(Settings::default().show_in_epic);
-        let old: Settings = serde_json::from_str(r#"{"auto_update":false}"#).unwrap();
-        assert!(old.show_in_epic);
-        let off = Settings { show_in_epic: false, ..Settings::default() };
-        let back: Settings = serde_json::from_str(&serde_json::to_string(&off).unwrap()).unwrap();
-        assert!(!back.show_in_epic);
-    }
 
     #[test]
     fn settings_default_when_missing_or_damaged() {
@@ -158,7 +145,6 @@ mod tests {
             reduce_motion: true,
             library_sort: "size".into(),
             when_game_starts: "minimize".into(),
-            show_in_epic: false,
         };
         store.save(&s).unwrap();
         assert_eq!(store.load(), s);

@@ -14,8 +14,6 @@ export type Settings = {
   library_sort: LibrarySort;
   /** What happens to the window after Play (spec §6f.4). */
   when_game_starts: WhenGameStarts;
-  /** Keep Epic\'s launcher\'s list in step (spec §6h). */
-  show_in_epic: boolean;
 };
 
 export type LibrarySort = "az" | "za" | "installed" | "size" | "played";
@@ -29,7 +27,6 @@ export const DEFAULT_SETTINGS: Settings = {
   reduce_motion: false,
   library_sort: "az",
   when_game_starts: "keep",
-  show_in_epic: true,
 };
 const SAVE_ERROR = "Couldn't save your settings.";
 

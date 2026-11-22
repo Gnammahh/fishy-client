@@ -81,7 +81,7 @@ fn ignore_missing(r: io::Result<()>) -> io::Result<()> {
 }
 
 /// Writes next to the target, then renames, so a crash never leaves half a JSON file.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

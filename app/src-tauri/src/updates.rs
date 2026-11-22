@@ -107,17 +107,13 @@ pub fn settings_get(settings: tauri::State<'_, AppSettings>) -> Settings {
 }
 
 #[tauri::command]
-pub fn settings_set(app: tauri::AppHandle, value: Settings, settings: tauri::State<'_, AppSettings>, install: tauri::State<'_, AppInstall>) -> Result<Settings, String> {
+pub fn settings_set(value: Settings, settings: tauri::State<'_, AppSettings>, install: tauri::State<'_, AppInstall>) -> Result<Settings, String> {
     value.check().map_err(str::to_string)?;
-    let old = settings.store.load();
     settings.store.save(&value).map_err(|_| {
         tracing::warn!("Couldn't save your settings.");
         "Couldn't save your settings.".to_string()
     })?;
     install.downloads.limiter.set(fishy_core::install::limit::limit_bytes(&value));
-    if crate::epic_sync::turned_on(&old, &value) {
-        tauri::async_runtime::spawn(async move { crate::epic_sync::sync_all(&app).await });
-    }
     Ok(value)
 }
 

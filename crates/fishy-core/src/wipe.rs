@@ -11,10 +11,8 @@ pub fn default_data_root() -> PathBuf {
 
 /// Steps 3 and 5 of "Delete all my data": with `also_games`, uninstalls every game and
 /// discards half-written installs (`jobs`, already taken off the queue); then wipes
-/// `data_root`. With `also_epic` (Epic's list folder), each deleted game's entry in Epic's
-/// launcher goes too (spec §6h); that never counts as "not deleted". Returns how many things
-/// couldn't be deleted.
-pub fn delete_everything(store: &InstallStore, data_root: &Path, jobs: Vec<JobInfo>, also_games: bool, also_epic: Option<&Path>) -> usize {
+/// `data_root`. Returns how many things couldn't be deleted.
+pub fn delete_everything(store: &InstallStore, data_root: &Path, jobs: Vec<JobInfo>, also_games: bool) -> usize {
     let mut failed = 0;
     if also_games {
         // An update's files belong to its installed game, which uninstall handles (both versions).
@@ -26,10 +24,6 @@ pub fn delete_everything(store: &InstallStore, data_root: &Path, jobs: Vec<JobIn
         for game in store.installed() {
             if uninstall(store, &game.app_name).is_err() {
                 failed += 1;
-            } else if let Some(epic) = also_epic {
-                if crate::epic_sync::remove_entry(epic, &game).is_err() {
-                    tracing::warn!("epic sync: couldn't update Epic's list for 1 game ({})", game.app_name);
-                }
             }
         }
     }
@@ -161,7 +155,7 @@ mod tests {
     fn delete_everything_keeps_game_folders_when_not_ticked() {
         let g = games();
         let data = g.dir.path().join("data");
-        assert_eq!(delete_everything(&g.store, &data, g.jobs, false, None), 0);
+        assert_eq!(delete_everything(&g.store, &data, g.jobs, false), 0);
         assert_eq!(remaining(&data), 0);
         assert!(g.dir.path().join("games").join("A").exists());
         assert!(g.dir.path().join("games").join("B").exists());
@@ -171,47 +165,10 @@ mod tests {
     fn delete_everything_removes_games_and_half_downloads_when_ticked() {
         let g = games();
         let data = g.dir.path().join("data");
-        assert_eq!(delete_everything(&g.store, &data, g.jobs, true, None), 0);
+        assert_eq!(delete_everything(&g.store, &data, g.jobs, true), 0);
         assert_eq!(remaining(&data), 0);
         assert!(!g.dir.path().join("games").join("A").exists());
         assert!(!g.dir.path().join("games").join("B").exists());
-    }
-
-    /// Epic entries for installed game A and for another app.
-    fn with_epic(g: &Games) -> std::path::PathBuf {
-        use crate::epic_sync::{write_entry, SyncInfo};
-        let epic = g.dir.path().join("Manifests");
-        fs::create_dir_all(&epic).unwrap();
-        let info = SyncInfo { namespace: "ns".into(), catalog_item_id: "cat".into(), can_run_offline: true, requires_ot: false };
-        let a = g.store.installed().remove(0);
-        write_entry(&epic, &a, &info, b"M", crate::epic_sync::Mode::Update, || "AAAA".into()).unwrap();
-        fs::write(epic.join("OTHER.item"), br#"{"AppName":"Other","InstallLocation":"D:\Other","InstallationGuid":"OTHER"}"#).unwrap();
-        epic
-    }
-
-    fn items(epic: &Path) -> Vec<String> {
-        let mut v: Vec<String> = fs::read_dir(epic).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
-        v.sort();
-        v
-    }
-
-    #[test]
-    fn wipe_with_epic_removes_deleted_games_entries() {
-        let g = games();
-        let epic = with_epic(&g);
-        let data = g.dir.path().join("data");
-        assert_eq!(delete_everything(&g.store, &data, g.jobs, true, Some(&epic)), 0);
-        assert_eq!(items(&epic), vec!["OTHER.item".to_string()]);
-        assert!(!g.dir.path().join("games").join("A").exists(), "the .egstore files went too");
-    }
-
-    #[test]
-    fn wipe_without_epic_keeps_entries() {
-        let g = games();
-        let epic = with_epic(&g);
-        let data = g.dir.path().join("data");
-        delete_everything(&g.store, &data, g.jobs, true, None);
-        assert_eq!(items(&epic), vec!["AAAA.item".to_string(), "OTHER.item".to_string()]);
     }
 
     #[test]

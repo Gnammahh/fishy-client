@@ -12,8 +12,6 @@
   }: { games: InstalledGame[]; downloads?: DownloadItem[]; onclose: () => void } = $props();
 
   let alsoGames = $state(false);
-  /** Remove the deleted games from Epic's launcher too (spec §6h). */
-  let alsoEpic = $state(true);
   let deleting = $state(false);
   let error = $state("");
 
@@ -31,7 +29,7 @@
     if (deleting) return;
     deleting = true;
     error = "";
-    const failed = await deleteAllData(alsoGames && anything, alsoGames && anything && alsoEpic);
+    const failed = await deleteAllData(alsoGames && anything);
     if (failed) {
       error = failed;
       deleting = false;
@@ -62,12 +60,6 @@
         <input type="checkbox" bind:checked={alsoGames} disabled={deleting} />
         <span>{tickLabel}</span>
       </label>
-      {#if alsoGames && games.length > 0}
-        <label class="tick">
-          <input type="checkbox" bind:checked={alsoEpic} disabled={deleting} />
-          <span>Also remove them from Epic's launcher</span>
-        </label>
-      {/if}
       {#if !alsoGames}<p class="note">Your game folders stay on disk, but Fishy Client will forget them.</p>{/if}
     {/if}
     {#if error}<p class="error" role="alert">{error}</p>{/if}

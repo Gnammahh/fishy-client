@@ -30,28 +30,9 @@ describe("SettingsPage", () => {
     await fireEvent.click(auto);
     await waitFor(() =>
       expect(saved).toEqual([
-        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false, library_sort: "az", when_game_starts: "keep", show_in_epic: true },
+        { auto_update: true, warn_outdated_play: true, install_folder: null, speed_limit_mbps: null, reduce_motion: false, library_sort: "az", when_game_starts: "keep" },
       ]),
     );
-  });
-
-  it("show_in_epic_switch_is_on_and_saves", async () => {
-    const saved: { show_in_epic?: boolean }[] = [];
-    mockIPC((cmd, args) => {
-      if (cmd === "settings_get") return { auto_update: false, warn_outdated_play: true };
-      if (cmd === "settings_set") {
-        saved.push((args as { value: { show_in_epic?: boolean } }).value);
-        return (args as { value: unknown }).value;
-      }
-      return null;
-    });
-    await loadSettings();
-    render(SettingsPage);
-    const sw = screen.getByRole("switch", { name: "Show my games in Epic's launcher" }) as HTMLInputElement;
-    expect(sw.checked).toBe(true);
-    expect(screen.getByText("Epic's launcher sees games installed with Fishy Client. Changes show the next time Epic's launcher starts.")).toBeTruthy();
-    await fireEvent.click(sw);
-    await waitFor(() => expect(saved[0]?.show_in_epic).toBe(false));
   });
 
   it("a_failed_save_says_so_and_keeps_the_old_value", async () => {

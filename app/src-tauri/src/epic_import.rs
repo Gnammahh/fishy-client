@@ -171,7 +171,6 @@ pub async fn epic_import_add(
     match epic::add_installed(store, &job, &bytes, &m) {
         Ok(_) => {
             info!("epic import: added {app_name}");
-            crate::epic_sync::sync_one(&app, &app_name).await;
             Ok(AddOutcome::Added)
         }
         Err(e) => {

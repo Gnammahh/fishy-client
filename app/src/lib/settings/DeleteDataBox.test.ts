@@ -76,7 +76,7 @@ describe("DeleteDataBox", () => {
     expect(screen.getByText(NOTE)).toBeTruthy();
     await fireEvent.click(box);
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true, alsoEpic: true }));
+    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true }));
   });
 
   it("games_and_downloads_are_both_named", () => {
@@ -112,7 +112,7 @@ describe("DeleteDataBox", () => {
     await waitFor(() => expect(get(authState)).toEqual({ kind: "SignedOut" }));
     const deletes = seen.filter((c) => c.cmd === "delete_all_data");
     expect(deletes.length).toBe(1);
-    expect(deletes[0].args).toEqual({ alsoGames: false, alsoEpic: false });
+    expect(deletes[0].args).toEqual({ alsoGames: false });
   });
 
   it("ticked_sends_also_games", async () => {
@@ -120,25 +120,7 @@ describe("DeleteDataBox", () => {
     render(DeleteDataBox, { games: [game("A", 1)], onclose: () => {} });
     await fireEvent.click(screen.getByRole("checkbox"));
     await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true, alsoEpic: true }));
-  });
-
-  it("epic_box_only_when_deleting_games_and_ticked_by_default", async () => {
-    calls();
-    render(DeleteDataBox, { games: [game("A", 1)], onclose: () => {} });
-    expect(screen.queryByRole("checkbox", { name: "Also remove them from Epic's launcher" })).toBeNull();
-    await fireEvent.click(screen.getAllByRole("checkbox")[0]);
-    const epic = screen.getByRole("checkbox", { name: "Also remove them from Epic's launcher" }) as HTMLInputElement;
-    expect(epic.checked).toBe(true);
-  });
-
-  it("epic_choice_reaches_the_command", async () => {
-    const seen = calls();
-    render(DeleteDataBox, { games: [game("A", 1)], onclose: () => {} });
-    await fireEvent.click(screen.getAllByRole("checkbox")[0]);
-    await fireEvent.click(screen.getByRole("checkbox", { name: "Also remove them from Epic's launcher" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true, alsoEpic: false }));
+    await waitFor(() => expect(seen.find((c) => c.cmd === "delete_all_data")?.args).toEqual({ alsoGames: true }));
   });
 
   it("partial_failure_is_shown_on_the_login_screen", async () => {

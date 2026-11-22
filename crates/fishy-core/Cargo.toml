@@ -19,7 +19,6 @@ tokio-util = "0.7"
 flate2 = "1"
 sha1 = "0.10"
 hex = "0.4"
-uuid = { version = "1", features = ["v4"] }
 fs4 = { version = "0.13", features = ["sync"] }
 regex = "1"
 tracing = "0.1"

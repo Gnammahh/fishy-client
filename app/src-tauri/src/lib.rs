@@ -2,6 +2,7 @@ mod data;
 mod downloads;
 mod login_window;
 mod play;
+mod running;
 mod session;
 mod updates;
 
@@ -320,7 +321,16 @@ fn installed_list(install: tauri::State<'_, AppInstall>) -> Vec<InstalledGame> {
 }
 
 #[tauri::command]
-async fn uninstall_game(app: tauri::AppHandle, app_name: String, install: tauri::State<'_, AppInstall>) -> Result<Vec<InstalledGame>, String> {
+async fn uninstall_game(
+    app: tauri::AppHandle,
+    app_name: String,
+    install: tauri::State<'_, AppInstall>,
+    running: tauri::State<'_, running::AppRunning>,
+) -> Result<Vec<InstalledGame>, String> {
+    if running.contains(&app_name) {
+        let title = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name).map(|g| g.title).unwrap_or_else(|| app_name.clone());
+        return Err(fishy_core::running::close_first(&title));
+    }
     // A paused update goes with the game (spec §6e); a running one must be paused first.
     if !install.downloads.take_stopped_update(&app_name) {
         return Err("Pause the update first, then uninstall.".to_string());
@@ -366,6 +376,7 @@ pub fn run() {
                 prepared: std::sync::Mutex::new(HashMap::new()),
             });
             app.manage(play::AppLaunch::new());
+            app.manage(running::AppRunning::default());
             let settings = updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() };
             // The saved speed limit applies from the first download, not only after a change.
             app.state::<AppInstall>().downloads.limiter.set(fishy_core::install::limit::limit_bytes(&settings.store.load()));
@@ -397,6 +408,7 @@ pub fn run() {
             installed_list,
             uninstall_game,
             play::play_game,
+            running::running_list,
             updates::update_start,
             updates::settings_get,
             updates::settings_set,

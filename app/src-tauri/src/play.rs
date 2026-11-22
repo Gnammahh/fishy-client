@@ -1,9 +1,13 @@
 //! The Play button's command (spec §6d). The exchange code never leaves fishy-core's launch module
 //! except as the game's argument; nothing here logs it.
+use crate::running::AppRunning;
+use crate::updates::AppSettings;
 use crate::{AppAuth, AppInstall, AppLibrary};
 use fishy_core::auth::AuthError;
 use fishy_core::launch::{clean_ovt_dir, default_ovt_dir, language_from, prepare_launch, start, LaunchClient, LaunchError, Player};
+use fishy_core::running::already_running;
 use serde::Serialize;
+use tauri::Emitter;
 use std::path::PathBuf;
 
 pub struct AppLaunch {
@@ -52,6 +56,7 @@ fn should_expire(signed_out: bool, offline: bool) -> bool {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri states, one each
 pub async fn play_game(
     app: tauri::AppHandle,
     app_name: String,
@@ -60,8 +65,10 @@ pub async fn play_game(
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
     launch: tauri::State<'_, AppLaunch>,
+    running: tauri::State<'_, AppRunning>,
+    settings: tauri::State<'_, AppSettings>,
 ) -> Result<(), PlayError> {
-    let result = launch_game(app_name.clone(), offline, auth, library, install, launch).await;
+    let result = launch_game(&app, app_name.clone(), offline, auth, library, install, launch, running, settings).await;
     if let Err(e) = &result {
         tracing::warn!("play {app_name} failed: {}", e.message);
         if should_expire(e.signed_out, offline) {
@@ -71,18 +78,25 @@ pub async fn play_game(
     result
 }
 
+#[allow(clippy::too_many_arguments)] // Tauri states, one each
 async fn launch_game(
+    app: &tauri::AppHandle,
     app_name: String,
     offline: bool,
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
     launch: tauri::State<'_, AppLaunch>,
+    running: tauri::State<'_, AppRunning>,
+    settings: tauri::State<'_, AppSettings>,
 ) -> Result<(), PlayError> {
     let Some(installed) = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name) else {
         return Err(play_error(LaunchError::NotInstalled, &app_name, false));
     };
     let title = installed.title.clone();
+    if running.contains(&app_name) {
+        return Err(PlayError { message: already_running(&title), can_offline: false, signed_out: false });
+    }
     let Some(game) = library.cache.load().and_then(|c| c.games.into_iter().find(|g| g.app_name == app_name)) else {
         return Err(play_error(LaunchError::NotInLibrary, &title, false));
     };
@@ -100,6 +114,11 @@ async fn launch_game(
     let cmd = prepare_launch(&launch.client, token.as_ref(), &player, &installed, &game, &launch.ovt_dir).await.map_err(fail)?;
     start(&cmd).map_err(fail)?;
     tracing::info!("started {app_name}{}", if offline { " (offline)" } else { "" });
+    if install.downloads.store.mark_played(&app_name, fishy_core::chrono::Utc::now()).is_err() {
+        tracing::warn!("couldn't save play time for {app_name}");
+    }
+    let _ = app.emit("installed-changed", ());
+    crate::running::started(app, &app_name, &installed.install_path, settings.store.load().when_game_starts == "minimize");
     Ok(())
 }
 

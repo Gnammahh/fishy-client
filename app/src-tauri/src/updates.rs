@@ -34,8 +34,9 @@ pub async fn update_start(
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
+    running: tauri::State<'_, crate::running::AppRunning>,
 ) -> Result<DownloadsView, String> {
-    let result = queue_update(app.clone(), app_name.clone(), auth, library, install).await;
+    let result = queue_update(app.clone(), app_name.clone(), auth, library, install, running).await;
     if let Err(m) = &result {
         tracing::warn!("update of {app_name} refused: {m}");
         if m == crate::session::EXPIRED {
@@ -51,12 +52,16 @@ async fn queue_update(
     auth: tauri::State<'_, AppAuth>,
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
+    running: tauri::State<'_, crate::running::AppRunning>,
 ) -> Result<DownloadsView, String> {
     let downloads = &install.downloads;
     if downloads.has_job(&app_name) {
         return Ok(downloads.view());
     }
     let installed = downloads.store.installed().into_iter().find(|g| g.app_name == app_name).ok_or_else(|| InstallError::NotInstalled.user_message())?;
+    if running.contains(&app_name) {
+        return Err(fishy_core::running::close_first(&installed.title));
+    }
     let game = library
         .cache
         .load()

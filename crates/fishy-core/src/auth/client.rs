@@ -18,11 +18,16 @@ pub(crate) fn http_client() -> Client {
 }
 
 /// Talks to Epic's account service. All requests carry the launcher User-Agent.
+/// One sign-in refresh try gives up after this, so a network that goes silent can't hold
+/// Log out, Play or Try again for a minute (spec §6f.2: 3 tries).
+pub const REFRESH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
 #[derive(Clone)]
 pub struct EpicClient {
     http: Client,
     base: String,
     retry_base: std::time::Duration,
+    refresh_timeout: std::time::Duration,
 }
 
 impl Default for EpicClient {
@@ -38,7 +43,7 @@ impl EpicClient {
 
     /// For tests: point the client at a fake Epic server.
     pub fn with_base_url(base: &str) -> Self {
-        Self { http: http_client(), base: base.trim_end_matches('/').to_string(), retry_base: crate::retry::RETRY_BASE }
+        Self { http: http_client(), base: base.trim_end_matches('/').to_string(), retry_base: crate::retry::RETRY_BASE, refresh_timeout: REFRESH_TIMEOUT }
     }
 
     /// For tests: shorter waits between retries.
@@ -47,14 +52,20 @@ impl EpicClient {
         self
     }
 
+    /// For tests: a shorter cap on each refresh try.
+    pub fn with_refresh_timeout(mut self, d: std::time::Duration) -> Self {
+        self.refresh_timeout = d;
+        self
+    }
+
     pub async fn exchange_code(&self, code: &str) -> Result<Session, AuthError> {
-        self.token(&[("grant_type", "authorization_code"), ("code", code), ("token_type", "eg1")]).await
+        self.token(&[("grant_type", "authorization_code"), ("code", code), ("token_type", "eg1")], None).await
     }
 
     /// Retried after connection problems (spec §6f.2). The one-time code exchange above never is.
     pub async fn refresh(&self, refresh_token: &Secret) -> Result<Session, AuthError> {
         let form = [("grant_type", "refresh_token"), ("refresh_token", refresh_token.expose()), ("token_type", "eg1")];
-        crate::retry::with_retries("sign-in refresh", self.retry_base, || self.token(&form)).await
+        crate::retry::with_retries("sign-in refresh", self.retry_base, || self.token(&form, Some(self.refresh_timeout))).await
     }
 
     /// Ends the session on Epic's side.
@@ -70,12 +81,13 @@ impl EpicClient {
         read_json(res).await.map(|_| ())
     }
 
-    async fn token(&self, form: &[(&str, &str)]) -> Result<Session, AuthError> {
-        let res = self
-            .http
-            .post(format!("{}/account/api/oauth/token", self.base))
-            .basic_auth(CLIENT_ID, Some(CLIENT_SECRET))
-            .form(form)
+    /// `timeout`: a cap for this one request instead of the client's 20 s.
+    async fn token(&self, form: &[(&str, &str)], timeout: Option<std::time::Duration>) -> Result<Session, AuthError> {
+        let mut req = self.http.post(format!("{}/account/api/oauth/token", self.base)).basic_auth(CLIENT_ID, Some(CLIENT_SECRET)).form(form);
+        if let Some(t) = timeout {
+            req = req.timeout(t);
+        }
+        let res = req
             .send()
             .await
             .map_err(network)?;
@@ -175,6 +187,25 @@ mod tests {
         Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(token_json())).expect(1).mount(&server).await;
         let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert_eq!(c.refresh(&Secret::new("eg1~OLD")).await.unwrap().display_name, "FishFan");
+    }
+
+    #[tokio::test]
+    async fn a_silent_network_gives_up_quickly_on_refresh() {
+        // Epic never answers: three short tries, not three 20-second waits.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(token_json()).set_delay(std::time::Duration::from_secs(5)))
+            .mount(&server)
+            .await;
+        let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).with_refresh_timeout(std::time::Duration::from_millis(200));
+        let started = std::time::Instant::now();
+        assert!(matches!(c.refresh(&Secret::new("eg1~OLD")).await, Err(AuthError::Network(_))));
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn refresh_tries_are_capped_at_8_seconds() {
+        assert_eq!(REFRESH_TIMEOUT, std::time::Duration::from_secs(8));
     }
 
     #[tokio::test]

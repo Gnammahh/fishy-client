@@ -35,6 +35,19 @@ impl Default for Settings {
     }
 }
 
+/// Shown when a speed limit outside 1 to 1000 MB/s reaches the Rust part.
+pub const SPEED_RANGE_ERROR: &str = "Pick a number from 1 to 1000.";
+
+impl Settings {
+    /// Refuses values the Settings page would never send (spec §6f.1).
+    pub fn check(&self) -> Result<(), &'static str> {
+        match self.speed_limit_mbps {
+            Some(mb) if !(1..=1000).contains(&mb) => Err(SPEED_RANGE_ERROR),
+            _ => Ok(()),
+        }
+    }
+}
+
 pub struct SettingsStore {
     path: PathBuf,
 }
@@ -91,6 +104,16 @@ mod tests {
         assert_eq!(s.library_sort, "az");
         assert_eq!(s.when_game_starts, "keep");
         assert!(s.auto_update && !s.warn_outdated_play);
+    }
+
+    #[test]
+    fn speed_limit_must_be_1_to_1000() {
+        let with = |mb| Settings { speed_limit_mbps: mb, ..Settings::default() };
+        assert_eq!(with(None).check(), Ok(()));
+        assert_eq!(with(Some(1)).check(), Ok(()));
+        assert_eq!(with(Some(1000)).check(), Ok(()));
+        assert_eq!(with(Some(0)).check(), Err(SPEED_RANGE_ERROR));
+        assert_eq!(with(Some(1001)).check(), Err(SPEED_RANGE_ERROR));
     }
 
     #[test]

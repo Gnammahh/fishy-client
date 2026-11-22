@@ -152,7 +152,7 @@ mod tests {
     }
 
     fn manager(server: &str, store: MemoryStore) -> AuthManager<MemoryStore> {
-        AuthManager::new(EpicClient::with_base_url(server), store, now)
+        AuthManager::new(EpicClient::with_base_url(server).with_retry_base(std::time::Duration::from_millis(1)), store, now)
     }
 
     fn signed_in() -> AuthState {
@@ -281,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn backend_read_error_signs_out_without_clearing() {
-        let m = AuthManager::new(EpicClient::with_base_url("http://127.0.0.1:9"), BrokenStore(StoreError::Backend("busy".into())), now);
+        let m = AuthManager::new(EpicClient::with_base_url("http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1)), BrokenStore(StoreError::Backend("busy".into())), now);
         assert_eq!(m.startup().await, AuthState::SignedOut); // BrokenStore::clear would panic
     }
 
@@ -292,7 +292,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(fresh_token_json()))
             .mount(&server)
             .await;
-        let m = AuthManager::new(EpicClient::with_base_url(&server.uri()), BrokenStore(StoreError::Backend("denied".into())), now);
+        let m = AuthManager::new(EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)), BrokenStore(StoreError::Backend("denied".into())), now);
         let err = m.complete_login("abc").await.unwrap_err();
         assert_eq!(err.to_string(), "Couldn't save your sign-in to Windows Credential Manager.");
     }

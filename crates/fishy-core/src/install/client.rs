@@ -36,6 +36,8 @@ pub struct InstallClient {
     cdn: Client,
     launcher_base: String,
     retry_base: Duration,
+    /// Wait before retrying an Epic API call or the file list (spec §6f.2).
+    api_retry_base: Duration,
 }
 
 impl Default for InstallClient {
@@ -51,12 +53,13 @@ impl InstallClient {
 
     /// For tests: a fake launcher service.
     pub fn with_base_url(launcher: &str) -> Self {
-        Self { api: http_client(), cdn: cdn_client(CDN_TIMEOUT), launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1) }
+        Self { api: http_client(), cdn: cdn_client(CDN_TIMEOUT), launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1), api_retry_base: crate::retry::RETRY_BASE }
     }
 
-    /// For tests: shorter waits between chunk retries.
+    /// For tests: shorter waits between retries (chunks and API calls).
     pub fn with_retry_base(mut self, d: Duration) -> Self {
         self.retry_base = d;
+        self.api_retry_base = d;
         self
     }
 
@@ -67,6 +70,10 @@ impl InstallClient {
     }
 
     pub async fn manifest_info(&self, token: &Secret, namespace: &str, catalog_item_id: &str, app_name: &str) -> Result<ManifestInfo, InstallError> {
+        crate::retry::with_retries("download info", self.api_retry_base, || self.manifest_info_once(token, namespace, catalog_item_id, app_name)).await
+    }
+
+    async fn manifest_info_once(&self, token: &Secret, namespace: &str, catalog_item_id: &str, app_name: &str) -> Result<ManifestInfo, InstallError> {
         let url = format!(
             "{}/launcher/api/public/assets/v2/platform/Windows/namespace/{namespace}/catalogItem/{catalog_item_id}/app/{app_name}/label/Live",
             self.launcher_base
@@ -116,6 +123,11 @@ impl InstallClient {
 
     /// Tries each manifest URL in order; the bytes must match `info.hash`.
     pub async fn download_manifest(&self, info: &ManifestInfo) -> Result<Vec<u8>, InstallError> {
+        crate::retry::with_retries("file list", self.api_retry_base, || self.download_manifest_once(info)).await
+    }
+
+    /// Tries each manifest URL once, in order.
+    async fn download_manifest_once(&self, info: &ManifestInfo) -> Result<Vec<u8>, InstallError> {
         let mut last = InstallError::Network("no manifest url".into());
         for url in &info.urls {
             match self.cdn.get(url).send().await {
@@ -214,7 +226,7 @@ mod tests {
         let body = b"real manifest".to_vec();
         Mock::given(method("GET")).and(path("/a.manifest")).respond_with(ResponseTemplate::new(200).set_body_string("<html>portal</html>")).mount(&server).await;
         Mock::given(method("GET")).and(path("/b.manifest")).respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone())).mount(&server).await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let info = ManifestInfo {
             hash: sha_hex(&body),
             urls: vec![format!("{}/a.manifest", server.uri()), format!("{}/b.manifest", server.uri())],
@@ -231,7 +243,7 @@ mod tests {
         async fn status_of(res: ResponseTemplate) -> Result<ManifestInfo, InstallError> {
             let server = MockServer::start().await;
             Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(res).mount(&server).await;
-            InstallClient::with_base_url(&server.uri()).manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await
+            InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await
         }
         assert!(matches!(status_of(ResponseTemplate::new(401)).await, Err(InstallError::Rejected(_))));
         let invalid_token = serde_json::json!({"errorCode": "errors.com.epicgames.common.oauth.invalid_token"});
@@ -265,7 +277,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let info = c.manifest_info(&Secret::new("eg1~A"), "ns", "cat", "Tide").await.unwrap();
         assert_eq!(info.hash, "abc");
         assert_eq!(info.build_version, "1.0");
@@ -278,20 +290,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn manifest_info_retries_after_server_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path(INFO_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "elements": [{"appName": "Tide", "buildVersion": "1.0", "hash": "abc", "manifests": [{"uri": "https://cdn1.example/x/y.manifest"}]}]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+        assert_eq!(c.manifest_info(&Secret::new("eg1~A"), "ns", "cat", "Tide").await.unwrap().build_version, "1.0");
+    }
+
+    #[tokio::test]
+    async fn manifest_info_404_is_asked_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(ResponseTemplate::new(404)).expect(1).mount(&server).await;
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+        assert!(c.manifest_info(&Secret::new("eg1~A"), "ns", "cat", "Tide").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn download_manifest_retries_when_every_server_fails_then_recovers() {
+        let server = MockServer::start().await;
+        let body = b"manifest bytes".to_vec();
+        Mock::given(method("GET")).and(path("/only.manifest")).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(&server).await;
+        Mock::given(method("GET")).and(path("/only.manifest")).respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone())).mount(&server).await;
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+        let info = ManifestInfo { hash: sha_hex(&body), urls: vec![format!("{}/only.manifest", server.uri())], base_urls: vec![], build_version: "1".into() };
+        assert_eq!(c.download_manifest(&info).await.unwrap(), body);
+    }
+
+    #[tokio::test]
     async fn manifest_info_errors() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(ResponseTemplate::new(401)).mount(&server).await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert!(matches!(c.manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await, Err(InstallError::Rejected(_))));
 
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"elements": []}))).mount(&server).await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert!(matches!(c.manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await, Err(InstallError::BadManifest(_))));
 
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path(INFO_PATH)).respond_with(ResponseTemplate::new(503)).mount(&server).await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert!(matches!(c.manifest_info(&Secret::new("x"), "ns", "cat", "Tide").await, Err(InstallError::Network(_))));
     }
 
@@ -301,7 +348,7 @@ mod tests {
         let body = b"manifest bytes".to_vec();
         Mock::given(method("GET")).and(path("/a.manifest")).respond_with(ResponseTemplate::new(500)).mount(&server).await;
         Mock::given(method("GET")).and(path("/b.manifest")).and(query_param("k", "v")).respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone())).mount(&server).await;
-        let c = InstallClient::with_base_url(&server.uri());
+        let c = InstallClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let info = ManifestInfo {
             hash: sha_hex(&body),
             urls: vec![format!("{}/a.manifest", server.uri()), format!("{}/b.manifest?k=v", server.uri())],

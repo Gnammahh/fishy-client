@@ -147,7 +147,7 @@ mod tests {
             .expect(u64::from(ot))
             .mount(&server)
             .await;
-        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri());
+        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         (server, c)
     }
 
@@ -174,7 +174,7 @@ mod tests {
     #[tokio::test]
     async fn offline_never_asks_epic() {
         let (dir, inst, game) = setup(LaunchInfo { requires_ot: true, ..LaunchInfo::default() });
-        let c = LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9");
+        let c = LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1));
         let cmd = prepare_launch(&c, None, &PLAYER, &inst, &game, &dir.path().join("tmp")).await.unwrap();
         assert!(cmd.args.contains(&"-AUTH_PASSWORD=".to_string()));
     }
@@ -182,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn no_internet_is_a_network_error() {
         let (dir, inst, game) = setup(LaunchInfo::default());
-        let c = LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9");
+        let c = LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1));
         let err = prepare_launch(&c, Some(&Secret::new("eg1~A")), &PLAYER, &inst, &game, dir.path()).await.unwrap_err();
         assert_eq!(err, LaunchError::Network);
     }
@@ -193,7 +193,7 @@ mod tests {
         inst.executable = "Gone.exe".into();
         let server = MockServer::start().await;
         Mock::given(method("GET")).respond_with(ResponseTemplate::new(200)).expect(0).mount(&server).await;
-        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri());
+        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let err = prepare_launch(&c, Some(&Secret::new("eg1~A")), &PLAYER, &inst, &game, dir.path()).await.unwrap_err();
         assert_eq!(err, LaunchError::MissingProgram);
     }

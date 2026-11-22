@@ -10,6 +10,7 @@ pub struct LaunchClient {
     http: Client,
     account_base: String,
     ecommerce_base: String,
+    retry_base: std::time::Duration,
 }
 
 impl Default for LaunchClient {
@@ -29,25 +30,39 @@ impl LaunchClient {
             http: http_client(),
             account_base: account.trim_end_matches('/').to_string(),
             ecommerce_base: ecommerce.trim_end_matches('/').to_string(),
+            retry_base: crate::retry::RETRY_BASE,
         }
+    }
+
+    /// For tests: shorter waits between retries.
+    pub fn with_retry_base(mut self, d: std::time::Duration) -> Self {
+        self.retry_base = d;
+        self
     }
 
     /// A fresh one-time code for `-AUTH_PASSWORD` (valid about 5 minutes).
     pub async fn exchange_code(&self, token: &Secret) -> Result<Secret, AuthError> {
-        let res = self
-            .http
-            .get(format!("{}/account/api/oauth/exchange", self.account_base))
-            .header("Authorization", format!("bearer {}", token.expose()))
-            .send()
-            .await
-            .map_err(network)?;
-        let json = read_json(res).await?;
+        let json = crate::retry::with_retries("launch code", self.retry_base, || async {
+            let res = self
+                .http
+                .get(format!("{}/account/api/oauth/exchange", self.account_base))
+                .header("Authorization", format!("bearer {}", token.expose()))
+                .send()
+                .await
+                .map_err(network)?;
+            read_json(res).await
+        })
+        .await?;
         let code = json.get("code").and_then(|c| c.as_str()).filter(|c| !c.is_empty());
         code.map(Secret::new).ok_or_else(|| AuthError::Unexpected("exchange reply has no code".into()))
     }
 
     /// The ownership token file's bytes, for games that need `-epicovt`.
     pub async fn ownership_token(&self, token: &Secret, account_id: &str, namespace: &str, catalog_item_id: &str) -> Result<Vec<u8>, AuthError> {
+        crate::retry::with_retries("ownership token", self.retry_base, || self.ownership_token_once(token, account_id, namespace, catalog_item_id)).await
+    }
+
+    async fn ownership_token_once(&self, token: &Secret, account_id: &str, namespace: &str, catalog_item_id: &str) -> Result<Vec<u8>, AuthError> {
         let res = self
             .http
             .post(format!("{}/ecommerceintegration/api/public/platforms/EPIC/identities/{account_id}/ownershipToken", self.ecommerce_base))
@@ -72,12 +87,29 @@ mod tests {
 
     async fn client() -> (MockServer, LaunchClient) {
         let server = MockServer::start().await;
-        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri());
+        let c = LaunchClient::with_base_urls(&server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         (server, c)
     }
 
     fn dead() -> LaunchClient {
-        LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9")
+        LaunchClient::with_base_urls("http://127.0.0.1:9", "http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1))
+    }
+
+    #[tokio::test]
+    async fn exchange_code_and_ownership_token_retry_after_server_errors() {
+        let (server, c) = client().await;
+        let c = c.with_retry_base(std::time::Duration::from_millis(1));
+        Mock::given(method("GET")).and(path("/account/api/oauth/exchange")).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(&server).await;
+        Mock::given(method("GET"))
+            .and(path("/account/api/oauth/exchange"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"code": "abc123"})))
+            .mount(&server)
+            .await;
+        assert_eq!(c.exchange_code(&Secret::new("eg1~A")).await.unwrap().expose(), "abc123");
+        let ovt = "/ecommerceintegration/api/public/platforms/EPIC/identities/acc/ownershipToken";
+        Mock::given(method("POST")).and(path(ovt)).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(&server).await;
+        Mock::given(method("POST")).and(path(ovt)).respond_with(ResponseTemplate::new(200).set_body_bytes(b"token".to_vec())).mount(&server).await;
+        assert_eq!(c.ownership_token(&Secret::new("eg1~A"), "acc", "ns", "cat").await.unwrap(), b"token".to_vec());
     }
 
     #[tokio::test]

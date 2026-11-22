@@ -2,6 +2,7 @@ use super::{build_library, worth_fetching, CatalogItem, Game, LibraryItem};
 use crate::auth::client::{http_client, network, read_json};
 use crate::auth::{AuthError, Secret};
 use futures::stream::{self, StreamExt};
+use crate::retry::with_retries;
 use reqwest::Client;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -26,6 +27,7 @@ pub struct LibraryClient {
     library_base: String,
     catalog_base: String,
     launcher_base: String,
+    retry_base: std::time::Duration,
 }
 
 impl Default for LibraryClient {
@@ -46,21 +48,31 @@ impl LibraryClient {
             library_base: library.trim_end_matches('/').to_string(),
             catalog_base: catalog.trim_end_matches('/').to_string(),
             launcher_base: launcher.trim_end_matches('/').to_string(),
+            retry_base: crate::retry::RETRY_BASE,
         }
+    }
+
+    /// For tests: shorter waits between retries.
+    pub fn with_retry_base(mut self, d: std::time::Duration) -> Self {
+        self.retry_base = d;
+        self
     }
 
     /// App names that have a Windows build, with their newest build version ("" if Epic gives none)
     /// (Epic's asset list, like Legendary's `get_game_assets`).
     pub async fn windows_assets(&self, token: &Secret) -> Result<HashMap<String, String>, AuthError> {
-        let res = self
-            .http
-            .get(format!("{}/launcher/api/public/assets/Windows", self.launcher_base))
-            .header("Authorization", format!("bearer {}", token.expose()))
-            .query(&[("label", "Live")])
-            .send()
-            .await
-            .map_err(network)?;
-        let json = read_json(res).await?;
+        let json = with_retries("Windows downloads list", self.retry_base, || async {
+            let res = self
+                .http
+                .get(format!("{}/launcher/api/public/assets/Windows", self.launcher_base))
+                .header("Authorization", format!("bearer {}", token.expose()))
+                .query(&[("label", "Live")])
+                .send()
+                .await
+                .map_err(network)?;
+            read_json(res).await
+        })
+        .await?;
         let assets = json.as_array().ok_or_else(|| AuthError::Unexpected("asset list is not a list".into()))?;
         Ok(assets
             .iter()
@@ -77,15 +89,18 @@ impl LibraryClient {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
         loop {
-            let mut req = self
-                .http
-                .get(format!("{}/library/api/public/items", self.library_base))
-                .header("Authorization", format!("bearer {}", token.expose()))
-                .query(&[("includeMetadata", "true")]);
-            if let Some(c) = &cursor {
-                req = req.query(&[("cursor", c.as_str())]);
-            }
-            let json = read_json(req.send().await.map_err(network)?).await?;
+            let json = with_retries("library items", self.retry_base, || async {
+                let mut req = self
+                    .http
+                    .get(format!("{}/library/api/public/items", self.library_base))
+                    .header("Authorization", format!("bearer {}", token.expose()))
+                    .query(&[("includeMetadata", "true")]);
+                if let Some(c) = &cursor {
+                    req = req.query(&[("cursor", c.as_str())]);
+                }
+                read_json(req.send().await.map_err(network)?).await
+            })
+            .await?;
             let records: Vec<LibraryItem> = serde_json::from_value(json.get("records").cloned().unwrap_or(Value::Array(vec![])))
                 .map_err(|e| AuthError::Unexpected(e.to_string()))?;
             all.extend(records);
@@ -102,21 +117,24 @@ impl LibraryClient {
 
     /// Game info for one item, or None if Epic has none.
     pub async fn catalog_item(&self, token: &Secret, namespace: &str, id: &str) -> Result<Option<CatalogItem>, AuthError> {
-        let res = self
-            .http
-            .get(format!("{}/catalog/api/shared/namespace/{namespace}/bulk/items", self.catalog_base))
-            .header("Authorization", format!("bearer {}", token.expose()))
-            .query(&[
-                ("id", id),
-                ("includeDLCDetails", "true"),
-                ("includeMainGameDetails", "true"),
-                ("country", "US"),
-                ("locale", "en"),
-            ])
-            .send()
-            .await
-            .map_err(network)?;
-        let json = read_json(res).await?;
+        let json = with_retries("game details", self.retry_base, || async {
+            let res = self
+                .http
+                .get(format!("{}/catalog/api/shared/namespace/{namespace}/bulk/items", self.catalog_base))
+                .header("Authorization", format!("bearer {}", token.expose()))
+                .query(&[
+                    ("id", id),
+                    ("includeDLCDetails", "true"),
+                    ("includeMainGameDetails", "true"),
+                    ("country", "US"),
+                    ("locale", "en"),
+                ])
+                .send()
+                .await
+                .map_err(network)?;
+            read_json(res).await
+        })
+        .await?;
         Ok(json.get(id).cloned().and_then(|v| serde_json::from_value(v).ok()))
     }
 
@@ -158,6 +176,71 @@ mod tests {
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Answers 503 twice, then falls through to the next mock mounted on the same path.
+    async fn fail_twice(server: &MockServer, p: &str) {
+        Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(server).await;
+    }
+
+    fn fast(server: &MockServer) -> LibraryClient {
+        LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1))
+    }
+
+    #[tokio::test]
+    async fn items_retry_after_server_errors() {
+        let server = MockServer::start().await;
+        fail_twice(&server, "/library/api/public/items").await;
+        Mock::given(method("GET"))
+            .and(path("/library/api/public/items"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "records": [{"namespace": "n1", "catalogItemId": "a", "appName": "A"}], "responseMetadata": {}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        assert_eq!(fast(&server).items(&Secret::new("eg1~A")).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn windows_assets_retry_after_server_errors() {
+        let server = MockServer::start().await;
+        fail_twice(&server, "/launcher/api/public/assets/Windows").await;
+        Mock::given(method("GET"))
+            .and(path("/launcher/api/public/assets/Windows"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"appName": "A", "buildVersion": "1"}])))
+            .mount(&server)
+            .await;
+        assert_eq!(fast(&server).windows_assets(&Secret::new("eg1~A")).await.unwrap().get("A").map(String::as_str), Some("1"));
+    }
+
+    #[tokio::test]
+    async fn a_catalog_lookup_that_fails_twice_still_fills_in_the_game() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/library/api/public/items"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "records": [{"namespace": "n1", "catalogItemId": "a", "appName": "AppA"}], "responseMetadata": {}
+            })))
+            .mount(&server)
+            .await;
+        fail_twice(&server, "/catalog/api/shared/namespace/n1/bulk/items").await;
+        Mock::given(method("GET"))
+            .and(path("/catalog/api/shared/namespace/n1/bulk/items"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "a": {"title": "Tidepool Odyssey", "categories": [{"path": "games"}]}
+            })))
+            .mount(&server)
+            .await;
+        let data = fast(&server).fetch_library(&Secret::new("eg1~A")).await.unwrap();
+        assert_eq!(data.games.iter().map(|g| g.title.as_str()).collect::<Vec<_>>(), vec!["Tidepool Odyssey"]);
+    }
+
+    #[tokio::test]
+    async fn a_404_is_asked_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/library/api/public/items")).respond_with(ResponseTemplate::new(404)).expect(1).mount(&server).await;
+        assert!(fast(&server).items(&Secret::new("eg1~A")).await.is_err());
+    }
+
     #[tokio::test]
     async fn items_follow_the_cursor_and_send_the_bearer_token() {
         let server = MockServer::start().await;
@@ -183,7 +266,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let items = c.items(&Secret::new("eg1~A")).await.unwrap();
         let ids: Vec<&str> = items.iter().map(|i| i.catalog_item_id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b"]);
@@ -225,7 +308,7 @@ mod tests {
             .expect(0) // Unreal assets are never looked up
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         assert_eq!(games.len(), 2);
         assert_eq!(games[0].title, "AppB"); // fallback title, sorted A-Z
@@ -257,7 +340,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         let flags: Vec<(&str, bool)> = games.iter().map(|g| (g.app_name.as_str(), g.installable)).collect();
         assert_eq!(flags, vec![("AppA", true), ("AppB", false)]);
@@ -282,7 +365,7 @@ mod tests {
             ])))
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let data = c.fetch_library(&Secret::new("eg1~A")).await.unwrap();
         assert_eq!(data.latest_versions.get("AppA").map(String::as_str), Some("2.0-CL9"));
         assert!(!data.latest_versions.contains_key("NoVersion"));
@@ -305,7 +388,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(503))
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         let games = c.fetch_library(&Secret::new("eg1~A")).await.unwrap().games;
         assert!(games[0].installable);
     }
@@ -317,7 +400,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({"errorCode": "errors.com.epicgames.common.authentication.token_verification_failed"})))
             .mount(&server)
             .await;
-        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri());
+        let c = LibraryClient::with_base_urls(&server.uri(), &server.uri(), &server.uri()).with_retry_base(std::time::Duration::from_millis(1));
         assert!(matches!(c.fetch_library(&Secret::new("x")).await, Err(AuthError::Rejected { .. })));
     }
 }

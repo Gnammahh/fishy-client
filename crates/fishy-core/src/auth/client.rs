@@ -22,6 +22,7 @@ pub(crate) fn http_client() -> Client {
 pub struct EpicClient {
     http: Client,
     base: String,
+    retry_base: std::time::Duration,
 }
 
 impl Default for EpicClient {
@@ -37,20 +38,23 @@ impl EpicClient {
 
     /// For tests: point the client at a fake Epic server.
     pub fn with_base_url(base: &str) -> Self {
-        Self { http: http_client(), base: base.trim_end_matches('/').to_string() }
+        Self { http: http_client(), base: base.trim_end_matches('/').to_string(), retry_base: crate::retry::RETRY_BASE }
+    }
+
+    /// For tests: shorter waits between retries.
+    pub fn with_retry_base(mut self, d: std::time::Duration) -> Self {
+        self.retry_base = d;
+        self
     }
 
     pub async fn exchange_code(&self, code: &str) -> Result<Session, AuthError> {
         self.token(&[("grant_type", "authorization_code"), ("code", code), ("token_type", "eg1")]).await
     }
 
+    /// Retried after connection problems (spec §6f.2). The one-time code exchange above never is.
     pub async fn refresh(&self, refresh_token: &Secret) -> Result<Session, AuthError> {
-        self.token(&[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token.expose()),
-            ("token_type", "eg1"),
-        ])
-        .await
+        let form = [("grant_type", "refresh_token"), ("refresh_token", refresh_token.expose()), ("token_type", "eg1")];
+        crate::retry::with_retries("sign-in refresh", self.retry_base, || self.token(&form)).await
     }
 
     /// Ends the session on Epic's side.
@@ -141,7 +145,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let s = EpicClient::with_base_url(&server.uri()).exchange_code("abc").await.unwrap();
+        let s = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).exchange_code("abc").await.unwrap();
         assert_eq!(s.display_name, "FishFan");
         assert_eq!(s.access_token.expose(), "eg1~A");
     }
@@ -159,8 +163,25 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let s = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~OLD")).await.unwrap();
+        let s = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).refresh(&Secret::new("eg1~OLD")).await.unwrap();
         assert_eq!(s.refresh_token.expose(), "eg1~R");
+    }
+
+    #[tokio::test]
+    async fn refresh_retries_after_server_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(503)).up_to_n_times(2).mount(&server).await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(token_json())).expect(1).mount(&server).await;
+        let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+        assert_eq!(c.refresh(&Secret::new("eg1~OLD")).await.unwrap().display_name, "FishFan");
+    }
+
+    #[tokio::test]
+    async fn exchange_code_is_tried_once() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(503)).expect(1).mount(&server).await;
+        let c = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1));
+        assert!(matches!(c.exchange_code("abc").await, Err(AuthError::Network(_))));
     }
 
     #[tokio::test]
@@ -172,7 +193,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let e = EpicClient::with_base_url(&server.uri()).exchange_code("abc").await.unwrap_err();
+        let e = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).exchange_code("abc").await.unwrap_err();
         assert!(matches!(e, AuthError::Network(_)), "{e:?}");
     }
 
@@ -185,7 +206,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let e = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~OLD")).await.unwrap_err();
+        let e = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).refresh(&Secret::new("eg1~OLD")).await.unwrap_err();
         assert!(matches!(e, AuthError::Rejected { .. }), "{e:?}");
     }
 
@@ -199,7 +220,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let err = EpicClient::with_base_url(&server.uri()).exchange_code("abc").await.unwrap_err();
+        let err = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).exchange_code("abc").await.unwrap_err();
         assert_eq!(
             err,
             AuthError::Rejected { code: "errors.com.epicgames.account.oauth.authorization_code_not_found".into() }
@@ -216,7 +237,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let err = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("eg1~SECRET-REFRESH")).await.unwrap_err();
+        let err = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).refresh(&Secret::new("eg1~SECRET-REFRESH")).await.unwrap_err();
         assert!(!format!("{err:?}").contains("SECRET-REFRESH"));
         assert!(!err.to_string().contains("SECRET-REFRESH"));
     }
@@ -231,13 +252,13 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let err = EpicClient::with_base_url(&server.uri()).refresh(&Secret::new("x")).await.unwrap_err();
+        let err = EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).refresh(&Secret::new("x")).await.unwrap_err();
         assert!(matches!(err, AuthError::Rejected { .. }));
     }
 
     #[tokio::test]
     async fn connection_refused_is_network() {
-        let err = EpicClient::with_base_url("http://127.0.0.1:9").exchange_code("abc").await.unwrap_err();
+        let err = EpicClient::with_base_url("http://127.0.0.1:9").with_retry_base(std::time::Duration::from_millis(1)).exchange_code("abc").await.unwrap_err();
         assert!(matches!(err, AuthError::Network(_)));
     }
 
@@ -251,7 +272,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        EpicClient::with_base_url(&server.uri()).kill_session(&Secret::new("eg1~A")).await.unwrap();
+        EpicClient::with_base_url(&server.uri()).with_retry_base(std::time::Duration::from_millis(1)).kill_session(&Secret::new("eg1~A")).await.unwrap();
     }
 
     #[test]

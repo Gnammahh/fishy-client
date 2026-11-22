@@ -971,7 +971,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ---
 
-## 12. Progress log (updated 2026-11-21)
+## 12. Progress log (updated 2026-11-22)
 
 ### Where everything is
 - **Project folder:** `Desktop\fishy-client`.
@@ -1143,6 +1143,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 **Polish 6, Installer (§6f.6), built 2026-11-22:** `npm.cmd run tauri build` (from `app/`) makes `target\release\bundle\msi\Fishy Client_0.1.0_x64_en-US.msi` (4.6 MB, about 3 minutes; the first build also downloads Microsoft's WiX tools). Checked without installing: unpacked with `msiexec /a`, it holds `Program Files\Fishy Client\fishy-client.exe`; its details read Fishy Client / Fishy Client / 0.1.0, the fixed upgrade code and the GitHub link. A Rust test guards the bundle settings. **Tests now:** Rust 294 (core 256 + app 38), UI 162.
 
+**Version 1.1, Import from Epic's launcher (§6g), built 2026-11-22 on `feat/import`:** the Library note "N games installed by Epic's launcher can be added." with **Add them**; each game's `.egstore` file list is used and every file's size checked (Rocket League's 21,000 files in 1.7 s on this PC); all there → Installed at once; some missing → "**Download them**" fetches only those (Cancel keeps the game's files). Also: the game's size in the "⋯" menu (§6g.2), the Install box refusing folders that need admin rights, such as `C:\Program Files\Epic Games` (§6g.3), and not-installed games looking a bit grey (§6g.4). Found with this PC's real Epic games: Epic's file lists often name the build, not the game (`SugarStaging` for Rocket League), so that isn't compared; Fortnite was installed with optional parts, which can't be imported yet (it says so plainly). Built from a plan (`docs/superpowers/plans/2026-11-22-import-from-epic.md`), then a fresh whole-branch review. **Tests now:** Rust 324 (core 283 + app 41), UI 174.
+
 **Benchmark against the Epic Games Launcher (2026-11-22, version 1.0.0, this PC: 16 cores, Windows 11).** Each launcher was started from fully closed, left idle for 30 s, then measured with all its helper processes for 20 s:
 
 | | Fishy Client | Epic Games Launcher |
@@ -1157,6 +1159,16 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 | Windows services added | none | 2 (updater, Online Services) |
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
+
+### Still to check by hand (version 1.1, import from Epic's launcher)
+- [ ] The Library note shows the right number (on this PC: Rocket League, Sol Cesto, We Were Here Together and Fortnite; the two Fortnite add-ons are left out)
+- [ ] **Add them**: Sol Cesto and We Were Here Together become Installed at once; Play starts one
+- [ ] Rocket League says 1 file is missing; **Download them** fetches only that file, then it's Installed
+- [ ] Fortnite says it was installed with only some of its parts
+- [ ] Epic's launcher still shows the games as installed afterwards
+- [ ] The "⋯" menu shows the size
+- [ ] Picking `C:\Program Files\Epic Games` in the Install box shows the admin message and greys out Install
+- [ ] Not-installed games look a bit grey, and full colour on hover
 
 ### Still to check by hand (milestone 7, sub-project 6)
 - [x] (2026-11-22) Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
@@ -1236,6 +1248,7 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **Security policy (CSP) is on.** The unused "open links" plugin was removed, and the Tauri version is pinned to 2.12.
 - **Running games (§6f.4):** the paths of other programs on your PC are only compared in memory to spot a game's folder. They're never logged, saved or sent.
 - **README "Privacy" section (2026-11-22):** lists every Epic address contacted, everything stored on the PC and how to delete it, for users of the installer. Delete all my data now also empties the app window's WebView2 browser data (cached cover images in `%LOCALAPPDATA%\com.fishyclient.app\`); a failure there counts as one thing not deleted.
+- **Import from Epic's launcher (§6g):** Epic's `Manifests` folder and each game's `.egstore` are only read, never changed. Logs say counts and game IDs, never folder paths or file names.
 - **Dependency check:** 0 known problems in what ships. The warnings come from a development-only tool and are left as is.
 
 ### Bugs found while testing for real, and fixed

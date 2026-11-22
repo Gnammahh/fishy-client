@@ -9,6 +9,15 @@ describe("progress", () => {
     expect(formatProgress(3.1 * GiB, 7.4 * GiB, 18.2 * MiB)).toBe("42% · 3.1 GB / 7.4 GB · 18.2 MB/s · ~4 min left");
   });
 
+  it("long waits_say_hours_and_minutes", () => {
+    const left = (seconds: number) => formatProgress(0, seconds * MiB, MiB).split(" · ").at(-1);
+    expect(left(30)).toBe("~30 s left");
+    expect(left(59 * 60)).toBe("~59 min left");
+    expect(left(59 * 60 + 50)).toBe("~1 h left");
+    expect(left(95 * 60)).toBe("~1 h 35 min left");
+    expect(left(600 * 60)).toBe("~10 h left");
+  });
+
   it("unknown total shows 0% and no infinity", () => {
     expect(formatProgress(0, 0, 0)).toBe("0% · 0.0 B / — · 0.0 B/s · —");
   });

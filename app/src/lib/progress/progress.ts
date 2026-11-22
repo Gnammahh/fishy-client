@@ -36,13 +36,21 @@ export function percent(downloaded: number, total: number): number {
 
 const totalText = (total: number) => (knownTotal(total) ? formatBytes(total) : "—");
 
+/** "4 min", "1 h 35 min", "10 h" */
+function minutesText(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
 /** "42% · 3.1 GB / 7.4 GB · 18.2 MB/s · ~4 min left" */
 export function formatProgress(downloaded: number, total: number, bytesPerSec: number): string {
   const speed = safeBytes(bytesPerSec);
   let left = "—";
   if (speed > 0 && knownTotal(total)) {
     const seconds = Math.max(0, total - safeBytes(downloaded)) / speed;
-    left = seconds < 60 ? `~${Math.round(seconds)} s left` : `~${Math.round(seconds / 60)} min left`;
+    left = seconds < 60 ? `~${Math.round(seconds)} s left` : `~${minutesText(Math.round(seconds / 60))} left`;
   }
   return `${percent(downloaded, total)}% · ${formatBytes(downloaded)} / ${totalText(total)} · ${formatBytes(speed)}/s · ${left}`;
 }

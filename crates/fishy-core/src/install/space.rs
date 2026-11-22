@@ -71,6 +71,25 @@ pub fn reserved_on_drive(path: &Path, others: &[(PathBuf, u64)]) -> u64 {
     others.iter().filter(|(p, _)| drive_label(p) == drive).map(|(_, bytes)| bytes).sum()
 }
 
+/// Whether a folder can be made at `path`: an empty test folder is created in the nearest
+/// folder that exists (spec §6g.3) and removed again. `Err` names that folder.
+pub fn can_create_in(path: &Path) -> Result<(), PathBuf> {
+    let existing = path.ancestors().find(|p| p.exists()).unwrap_or(path);
+    let probe = existing.join(".fishy-write-test");
+    match std::fs::create_dir(&probe) {
+        Ok(()) => {
+            let _ = std::fs::remove_dir(&probe);
+            Ok(())
+        }
+        // Left over from a check that was cut short: creating worked once, so it's writable.
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists && probe.is_dir() => {
+            let _ = std::fs::remove_dir(&probe);
+            Ok(())
+        }
+        Err(_) => Err(existing.to_path_buf()),
+    }
+}
+
 pub fn check_space(path: &Path, needed: u64, free: u64) -> Result<(), InstallError> {
     if needed > free {
         return Err(InstallError::NoSpace { drive: drive_label(path), needed, free });
@@ -81,6 +100,34 @@ pub fn check_space(path: &Path, needed: u64, free: u64) -> Result<(), InstallErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn can_create_in_temp_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(can_create_in(dir.path()), Ok(()));
+    }
+
+    #[test]
+    fn can_create_in_missing_child_checks_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(can_create_in(&dir.path().join("Games").join("Tide")), Ok(()));
+        assert!(!dir.path().join("Games").exists(), "the check creates nothing it leaves behind");
+    }
+
+    #[test]
+    fn cannot_create_under_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not a folder");
+        std::fs::write(&file, b"x").unwrap();
+        assert_eq!(can_create_in(&file.join("Tide")), Err(file));
+    }
+
+    #[test]
+    fn test_folder_is_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        can_create_in(dir.path()).unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 
     #[test]
     fn a_folder_another_game_uses_gets_a_number() {

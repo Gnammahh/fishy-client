@@ -12,6 +12,7 @@ const options = (over: Record<string, unknown> = {}) => ({
   install_size: 7.4 * GB,
   free_space: 695 * GB,
   enough_space: true,
+  folder_ok: true,
   error: null,
   ...over,
 });
@@ -54,6 +55,14 @@ describe("InstallDialog", () => {
     mock({ install_options: () => options({ enough_space: false, error: "Not enough space on C:. Needs 900.0 GB, 695.0 GB free." }) });
     render(InstallDialog, { game, onclose: () => {} });
     expect(await screen.findByText("Not enough space on C:. Needs 900.0 GB, 695.0 GB free.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("folder_not_ok_disables_install_and_shows_message", async () => {
+    const error = "Fishy Client can't create folders in C:\\Program Files\\Epic Games without administrator rights. Pick a different folder.";
+    mock({ install_options: () => options({ folder_ok: false, error }) });
+    render(InstallDialog, { game, onclose: () => {} });
+    expect(await screen.findByText(error)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(true);
   });
 

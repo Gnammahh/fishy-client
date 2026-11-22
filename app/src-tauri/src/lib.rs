@@ -180,6 +180,8 @@ struct InstallOptions {
     install_size: u64,
     free_space: u64,
     enough_space: bool,
+    /// False when Windows won't let Fishy Client create the folder (spec §6g.3).
+    folder_ok: bool,
     error: Option<String>,
     note: Option<String>,
 }
@@ -214,6 +216,15 @@ fn install_path(game: &Game, parent: Option<String>, p: &Prepared, settings: &up
     (unique_folder(folder_for(&root, p.folder.as_deref(), &game.title), &downloads.taken_folders(&game.app_name)), note)
 }
 
+/// Can Fishy Client create the install folder? Places like `C:\Program Files` need admin rights.
+async fn folder_check(path: &std::path::Path) -> Result<(), InstallError> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || fishy_core::install::space::can_create_in(&path))
+        .await
+        .unwrap_or(Ok(()))
+        .map_err(|folder| InstallError::NoWriteAccess { folder: folder.display().to_string() })
+}
+
 /// Everything the Install box shows: folder, sizes and free space.
 #[tauri::command]
 async fn install_options(
@@ -240,13 +251,15 @@ async fn install_options(
     // Games already waiting in the queue on the same drive need their space too.
     let reserved = reserved_on_drive(&path, &install.downloads.left_to_write(&game.app_name));
     let space = check_space(&path, install_size + reserved, free);
+    let folder = folder_check(&path).await;
     Ok(InstallOptions {
         install_path: path.display().to_string(),
         download_size: p.manifest.chunks.iter().map(|c| c.file_size).sum(),
         install_size,
         free_space: free,
         enough_space: space.is_ok(),
-        error: space.err().map(|e| e.user_message()),
+        folder_ok: folder.is_ok(),
+        error: folder.err().or(space.err()).map(|e| e.user_message()),
         note,
     })
 }
@@ -280,6 +293,7 @@ async fn install_start(
         }
     };
     let (path, _) = install_path(&game, parent, &p, &settings, downloads);
+    folder_check(&path).await.map_err(refused)?;
     let install_size = p.manifest.install_size();
     let reserved = reserved_on_drive(&path, &downloads.left_to_write(&game.app_name));
     check_space(&path, install_size + reserved, free_space(&path).unwrap_or(0)).map_err(refused)?;

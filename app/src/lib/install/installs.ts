@@ -35,6 +35,8 @@ export type InstallOptions = {
   install_size: number;
   free_space: number;
   enough_space: boolean;
+  /** False when Windows won't let Fishy Client create the folder (spec §6g.3). */
+  folder_ok?: boolean;
   error: string | null;
   /** Set when the saved default folder couldn't be used (spec §6f.1). */
   note?: string | null;

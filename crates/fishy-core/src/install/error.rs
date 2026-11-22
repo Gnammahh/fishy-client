@@ -35,6 +35,9 @@ pub enum InstallError {
     /// The saved sign-in is gone (spec §6f.2); the app sends the user back to Login.
     #[error("sign-in expired")]
     Expired,
+    /// Windows won't let Fishy Client create folders there without admin rights (spec §6g.3).
+    #[error("no write access in {folder}")]
+    NoWriteAccess { folder: String },
 }
 
 impl InstallError {
@@ -53,6 +56,9 @@ impl InstallError {
             Self::NotInstalled => "That game isn't installed any more. Refresh your Library.".into(),
             Self::FilesInUse(title) => format!("Some of {title}'s files are in use. Close the game, then press Retry."),
             Self::Expired => "Your sign-in has expired. Please sign in again.".into(),
+            Self::NoWriteAccess { folder } => {
+                format!("Fishy Client can't create folders in {folder} without administrator rights. Pick a different folder.")
+            }
             Self::NoDownload => {
                 "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one.".into()
             }
@@ -113,6 +119,10 @@ mod tests {
         assert_eq!(InstallError::DamagedFile("a".into()).user_message(), "A downloaded file was damaged. Press Retry to download it again.");
         assert_eq!(InstallError::BadChunk("a".into()).user_message(), "A downloaded file was damaged. Press Retry to download it again.");
         assert_eq!(InstallError::InUse.user_message(), "Couldn't delete some files. Close the game and try again.");
+        assert_eq!(
+            InstallError::NoWriteAccess { folder: r"C:\Program Files\Epic Games".into() }.user_message(),
+            r"Fishy Client can't create folders in C:\Program Files\Epic Games without administrator rights. Pick a different folder."
+        );
         assert_eq!(InstallError::Rejected("x".into()).user_message(), "That sign-in didn't work. Please try again.");
         assert_eq!(
             InstallError::NoDownload.user_message(),

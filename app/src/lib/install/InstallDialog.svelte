@@ -97,7 +97,7 @@
         <PixelButton variant="ghost" onclick={changeFolder}>Change folder</PixelButton>
         <span class="spacer"></span>
         <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
-        <PixelButton disabled={!options.enough_space || busy} onclick={install}>Install</PixelButton>
+        <PixelButton disabled={!options.enough_space || options.folder_ok === false || busy} onclick={install}>Install</PixelButton>
       </div>
     {/if}
   </div>

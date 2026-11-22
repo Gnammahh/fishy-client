@@ -1073,8 +1073,8 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 ### Still to check by hand (milestone 7, sub-project 6)
 - [x] (2026-11-22) Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
-- [ ] (signed in: yes, 2026-11-22) Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works
-- [ ] If Start with Windows was on: turn it off and on again in Settings (so it points at the installed program)
+- [x] (2026-11-22) Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works
+- [x] (2026-11-22) If Start with Windows was on: turn it off and on again in Settings (so it points at the installed program)
 - [ ] Optional: **Settings → Apps → Installed apps → Fishy Client → Uninstall** removes the program; your games and settings stay
 
 ### Still to check by hand (milestone 7, sub-project 5)

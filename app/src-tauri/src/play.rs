@@ -42,7 +42,7 @@ fn play_error(e: LaunchError, title: &str, game_can_run_offline: bool) -> PlayEr
 fn session_error(e: AuthError) -> LaunchError {
     match e {
         AuthError::Network(_) | AuthError::Unexpected(_) => LaunchError::Network,
-        AuthError::Rejected { .. } | AuthError::Storage(_) => LaunchError::SignedOut,
+        AuthError::Rejected { .. } | AuthError::Storage(_) | AuthError::Expired => LaunchError::SignedOut,
     }
 }
 

@@ -43,6 +43,7 @@ impl From<AuthError> for LaunchError {
             AuthError::Network(_) => Self::Network,
             AuthError::Rejected { code } => Self::Rejected(code),
             AuthError::Unexpected(_) | AuthError::Storage(_) => Self::Rejected("unexpected_reply".into()),
+            AuthError::Expired => Self::SignedOut,
         }
     }
 }

@@ -29,6 +29,9 @@ pub enum InstallError {
     /// Epic has no Windows download for this library entry.
     #[error("no download")]
     NoDownload,
+    /// The saved sign-in is gone (spec §6f.2); the app sends the user back to Login.
+    #[error("sign-in expired")]
+    Expired,
 }
 
 impl InstallError {
@@ -45,6 +48,7 @@ impl InstallError {
             Self::InUse => "Couldn't delete some files. Close the game and try again.".into(),
             Self::Stopped => "Download paused.".into(),
             Self::NotInstalled => "That game isn't installed.".into(),
+            Self::Expired => "Your sign-in has expired. Please sign in again.".into(),
             Self::NoDownload => {
                 "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one.".into()
             }
@@ -58,6 +62,7 @@ impl From<AuthError> for InstallError {
             AuthError::Network(d) => Self::Network(d),
             AuthError::Rejected { code } => Self::Rejected(code),
             AuthError::Unexpected(d) | AuthError::Storage(d) => Self::Network(d),
+            AuthError::Expired => Self::Expired,
         }
     }
 }
@@ -104,6 +109,13 @@ mod tests {
             InstallError::NoDownload.user_message(),
             "Epic doesn't offer a Windows download for this item. If the game is in your library twice, try the other one."
         );
+    }
+
+    #[test]
+    fn expired_sign_in_converts_and_says_so() {
+        assert_eq!(InstallError::from(AuthError::Expired), InstallError::Expired);
+        assert_eq!(InstallError::Expired.user_message(), "Your sign-in has expired. Please sign in again.");
+        assert_eq!(AuthError::Expired.to_string(), "Your sign-in has expired. Please sign in again.");
     }
 
     #[test]

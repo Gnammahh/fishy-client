@@ -16,4 +16,7 @@ pub enum AuthError {
     /// Windows Credential Manager refused to store the session.
     #[error("Couldn't save your sign-in to Windows Credential Manager.")]
     Storage(String),
+    /// Epic refused the saved sign-in (or there is none): it has been forgotten (spec §6f.2).
+    #[error("Your sign-in has expired. Please sign in again.")]
+    Expired,
 }

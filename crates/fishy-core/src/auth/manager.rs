@@ -76,7 +76,7 @@ impl<S: SessionStore> AuthManager<S> {
     }
 
     /// A usable access token for Epic API calls, refreshed first if it expires within
-    /// 5 minutes. Not signed in → `Rejected { code: "signed_out" }`.
+    /// 5 minutes. Not signed in, or Epic refuses the refresh → `Expired` (and it's forgotten).
     pub async fn access_token(&self) -> Result<super::Secret, AuthError> {
         Ok(self.session().await?.access_token)
     }
@@ -86,12 +86,21 @@ impl<S: SessionStore> AuthManager<S> {
         let _turn = self.one_at_a_time.lock().await;
         let session = match self.store.load() {
             Ok(Some(s)) => s,
-            _ => return Err(AuthError::Rejected { code: "signed_out".into() }),
+            _ => return Err(AuthError::Expired),
         };
         if session.expires_at - (self.now)() > Duration::minutes(REFRESH_MARGIN_MINUTES) {
             return Ok(session);
         }
-        let fresh = self.client.refresh(&session.refresh_token).await?;
+        let fresh = match self.client.refresh(&session.refresh_token).await {
+            Ok(fresh) => fresh,
+            // Epic said no: the sign-in is over. Forget it so nothing keeps trying (spec §6f.2).
+            Err(AuthError::Rejected { .. }) => {
+                let _ = self.store.clear();
+                return Err(AuthError::Expired);
+            }
+            // Can't reach Epic (or an odd reply): keep the sign-in for later.
+            Err(e) => return Err(e),
+        };
         let _ = self.store.save(&fresh);
         Ok(fresh)
     }
@@ -320,9 +329,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn access_token_without_session_is_rejected() {
+    async fn no_saved_sign_in_is_expired() {
         let m = manager("http://127.0.0.1:9", MemoryStore::default());
-        assert!(matches!(m.access_token().await, Err(AuthError::Rejected { .. })));
+        assert!(matches!(m.access_token().await, Err(AuthError::Expired)));
+    }
+
+    #[tokio::test]
+    async fn a_refused_refresh_is_expired_and_forgets_the_sign_in() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({"errorCode": "errors.com.epicgames.account.auth_token.invalid_refresh_token"})))
+            .mount(&server)
+            .await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(2), Duration::days(20))));
+        assert!(matches!(m.access_token().await, Err(AuthError::Expired)));
+        assert!(m.store().load().unwrap().is_none(), "the expired sign-in is forgotten");
+    }
+
+    #[tokio::test]
+    async fn a_refresh_epic_cant_answer_keeps_the_sign_in() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(503)).expect(3).mount(&server).await;
+        let m = manager(&server.uri(), MemoryStore::with(session(Duration::minutes(2), Duration::days(20))));
+        assert!(matches!(m.access_token().await, Err(AuthError::Network(_))));
+        assert!(m.store().load().unwrap().is_some(), "still signed in");
     }
 
     #[tokio::test]

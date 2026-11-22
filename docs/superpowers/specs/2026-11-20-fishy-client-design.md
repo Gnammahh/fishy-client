@@ -29,7 +29,7 @@ Fishy Client is a lightweight, open-source replacement for the Epic Games Launch
 - Store or shop pages, buying games, claiming free games
 - Friends list and the in-game overlay
 - Linux and Proton support. The design keeps this possible, but it isn't built yet.
-- Importing games already installed by Epic's launcher
+- Importing games already installed by Epic's launcher (added in version 1.1, §6g)
 
 ### Known limits, the same ones Heroic and Legendary have
 - **Fortnite: not tested with Fishy Client.** Tools built on Legendary report that it starts on Windows (the "doesn't work" reports are mostly from Linux, where its anti-cheat can't run). It's the game Epic watches most closely, so if you want to try it, use a second account first.
@@ -843,6 +843,59 @@ A small change to the existing Library screen, so it was designed in chat (no se
 - A Rust test reads `tauri.conf.json` and checks the bundle: target `msi` only, the fixed upgrade code, the product name and publisher.
 - Build check: the `.msi` is built, then unpacked with `msiexec /a` into a temporary folder (this doesn't install anything) to check it holds `fishy-client.exe` (in `Program Files\Fishy Client\`).
 - Hand check (yours): install, start from the Start menu, sign in still works, uninstall from Installed apps.
+
+---
+
+## 6g. Import games from Epic's launcher (version 1.1), approved 2026-11-22 on branch `feat/import`
+
+For a friend who already has games installed with Epic's own launcher: Fishy Client adds them as installed, without downloading them again.
+
+### What the user sees
+- **A note at the top of the Library** when Epic's launcher has games that are (1) in the user's Library, (2) fully installed by Epic, and (3) not yet installed in Fishy Client: "3 games installed by Epic's launcher can be added." with **Add them** and a **×**. The × hides the note until the app is started again.
+- **Add them** checks each game in turn. The note shows "Checking *Title*…" while it works, then one line per game:
+  - **All files there:** the game becomes **Installed** at once. Play, Update and Uninstall work as for any game. No line is needed; the card changes.
+  - **Some files missing or the wrong size:** "*Title*: 12 files are missing or damaged (340 MB)." with **Download them**. That queues the game on the Downloads page like an install; only those files are downloaded, into the same folder. It can be paused, resumed and cancelled like an install (Cancel removes only Fishy Client's download folder; the game's files are left as they are, so Epic's launcher can still repair it).
+  - **Can't be read:** "Couldn't read *Title*'s files from Epic's launcher. Press Install to download it."
+- **Left out:** add-ons (DLC, which come with their game), installs Epic marks as unfinished, entries whose game folder no longer exists, and games not in the Library.
+- Third-party-store games and games needing a newer version get the existing messages (§6d, §6e) when played or updated.
+
+### Where Epic keeps its list (checked against Legendary `models/egl.py` and `core.py` `egl_import`, and against this PC's files, 2026-11-22)
+- Folder: `%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests\`, one JSON `<InstallationGuid>.item` file per installed app.
+- Fields used: `AppName`, `DisplayName`, `InstallLocation`, `InstallationGuid`, `AppVersionString`, `CatalogNamespace`, `CatalogItemId`, `MainGameAppName`, `bIsIncompleteInstall`.
+  - An add-on has a `MainGameAppName` different from its own `AppName`.
+- The game's file list: `<InstallLocation>\.egstore\<InstallationGuid>.manifest` (Epic's normal manifest format, §6c).
+  - If it's missing or can't be parsed, Epic's current manifest is downloaded with the normal install calls (§6c). Files that differ from it then count as damaged and are downloaded.
+- **Read-only:** Fishy Client never changes, moves or deletes anything in Epic's folder or `.egstore`. Unreadable `.item` files are skipped.
+
+### How a game is added
+1. Get the manifest (the `.egstore` copy, else download it) and parse it.
+2. **Check:** every file in the manifest must exist in the install folder with the manifest's size. File names go through the same safety check as installs (§6c), so a bad manifest can't point outside the folder. No SHA-1: hashing a 30 GB game takes minutes, and Legendary's import doesn't hash either.
+3. **All good:** write the download folder's `job.json`, manifest and `resume.txt` (every file), then finish it as an install (§6c): the record gets the manifest's version, executable and launch command, the manifest is saved under `manifests\`, the download folder is deleted.
+4. **Some bad:** the same `job.json`, manifest and `resume.txt`, but `resume.txt` lists only the good files. The download is left **Paused** with a message, and **Download them** resumes it. The existing resume rules (§6c) skip the listed files, so only the bad ones are downloaded. `job.json` gains `imported: bool` (default false), so Cancel deletes no game files.
+5. The CDN addresses (`base_urls`) come from the manifest-info call, which needs the sign-in; it's made only when files must be downloaded (step 4) or the manifest is missing.
+
+### Sharing the folder with Epic's launcher (known limits)
+- The game stays in Epic's folder, so both launchers see it.
+- Uninstalling in Fishy Client deletes the game's files; Epic's launcher then shows it as broken.
+- Updating in one launcher can make the other think it needs an update or a repair.
+- Epic gives normal users full control of each game folder, so Fishy Client's updates and uninstall need no administrator rights there. Epic's `.egstore` folder isn't in the manifest, so it stays behind after an uninstall.
+
+### Privacy
+- `.item` files hold no account data. Only the fields above are read.
+- Logs say only counts and app names ("import: 3 found", "import: added", "import: 12 files to download"). Never folder paths or file names, which can contain the Windows user name.
+
+### Errors
+| Situation | Message |
+|---|---|
+| Manifest missing and no internet | "Couldn't reach Epic to check *Title*. Check your internet." |
+| Manifest can't be used (encrypted, unknown format) | "Couldn't read *Title*'s files from Epic's launcher. Press Install to download it." |
+| Session expired while fetching | Back to the login screen (§7) |
+| Download errors after **Download them** | As for installs (§6c) |
+
+### Tests
+- **Rust (tempfile):** reading `.item` files (good, broken JSON, add-on, unfinished, missing folder); finding the `.egstore` manifest; the check (all good, missing file, wrong size, unsafe name); all-good import writes the record and saved manifest and leaves no download folder; partial import leaves a paused job whose `resume.txt` lists only good files; old `job.json` without `imported`; Cancel of an imported repair deletes no game files.
+- **Rust (wiremock):** missing `.egstore` manifest downloaded; a repair downloads only the missing file.
+- **UI (vitest):** the note and its count, × hides it, Add them, "Checking…", each result line, Download them.
 
 ---
 

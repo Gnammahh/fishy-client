@@ -32,6 +32,16 @@ impl AppRunning {
         self.lock().list.names()
     }
 
+    /// Games running or starting (Play pressed, not in the list yet), sorted.
+    pub fn in_use(&self) -> Vec<String> {
+        let w = self.lock();
+        let mut all = w.list.names();
+        all.extend(w.launching.iter().cloned());
+        all.sort();
+        all.dedup();
+        all
+    }
+
     pub fn contains(&self, app_name: &str) -> bool {
         self.lock().list.contains(app_name)
     }
@@ -95,6 +105,8 @@ pub fn started(app: &AppHandle, app_name: &str, folder: &Path, minimize: bool) {
 struct ResetIfStopped<'a> {
     running: &'a AppRunning,
     finished: bool,
+    /// Tells the screen nothing runs any more (a callback, so tests don't link Tauri's window code).
+    on_reset: Option<Box<dyn Fn() + Send + Sync + 'a>>,
 }
 
 impl Drop for ResetIfStopped<'_> {
@@ -104,6 +116,10 @@ impl Drop for ResetIfStopped<'_> {
             w.list = RunningList::default();
             w.watching = false;
             w.minimized_by_us = false;
+            drop(w);
+            if let Some(tell) = &self.on_reset {
+                tell();
+            }
         }
     }
 }
@@ -111,7 +127,11 @@ impl Drop for ResetIfStopped<'_> {
 /// Every 5 seconds: drop the games with nothing open. Ends when the list is empty.
 async fn watch(app: AppHandle) {
     let state = app.state::<AppRunning>();
-    let mut guard = ResetIfStopped { running: state.inner(), finished: false };
+    let tell_app = app.clone();
+    let on_reset: Box<dyn Fn() + Send + Sync> = Box::new(move || {
+        let _ = tell_app.emit("running-changed", Vec::<String>::new());
+    });
+    let mut guard = ResetIfStopped { running: state.inner(), finished: false, on_reset: Some(on_reset) };
     loop {
         tokio::time::sleep(CHECK_EVERY).await;
         let taken_at = std::time::Instant::now();
@@ -185,11 +205,19 @@ mod tests {
             w.watching = true;
         }
         {
-            let _guard = ResetIfStopped { running: &r, finished: false };
+            let _guard = ResetIfStopped { running: &r, finished: false, on_reset: None };
             // the loop panics here
         }
         let w = r.lock();
         assert!(!w.watching && w.list.is_empty(), "the next Play starts a fresh check");
+    }
+
+    #[test]
+    fn games_in_use_include_one_that_is_starting() {
+        let r = AppRunning::default();
+        let _starting = r.begin_launch("reef").unwrap();
+        r.lock().list.add("kelp", std::path::Path::new("C:/Games/Kelp"));
+        assert_eq!(r.in_use(), vec!["kelp".to_string(), "reef".to_string()]);
     }
 
     #[test]

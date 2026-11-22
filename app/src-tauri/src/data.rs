@@ -74,7 +74,7 @@ pub async fn delete_all_data(
     running: tauri::State<'_, crate::running::AppRunning>,
 ) -> Result<DeleteReport, String> {
     tracing::info!("delete all my data (games too: {also_games})");
-    games_free_to_delete(also_games, &running.names())?;
+    games_free_to_delete(also_games, &running.in_use())?;
     // 1. Stop every download and forget prepared Install boxes.
     let jobs = install.downloads.stop_for_wipe(std::time::Duration::from_secs(60)).await.map_err(|_| {
         tracing::warn!("{STOP_ERROR}");

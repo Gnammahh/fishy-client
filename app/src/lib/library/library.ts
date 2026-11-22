@@ -33,6 +33,8 @@ export type LibraryView = {
 };
 
 const LIBRARY_ERROR = "Couldn't load your library from Epic. Check your internet, then press Try again.";
+/** The Rust side's message when the sign-in expired (spec §6f.2): the app goes to Login. */
+const EXPIRED = "Your sign-in has expired. Please sign in again.";
 const initial: LibraryView = { status: "loading", games: [], updating: false, error: "", latestVersions: {} };
 const versionsOf = (c: CachedLibrary | null) => (c?.latest_versions && typeof c.latest_versions === "object" ? c.latest_versions : {});
 
@@ -128,7 +130,9 @@ export async function refreshLibrary() {
     const latestVersions = versionsOf(fresh);
     library.set({ status: "ready", games: fresh.games, updating: false, error: "", latestVersions });
     if ((await loadSettings()).auto_update) await autoUpdate(latestVersions);
-  } catch {
+  } catch (e) {
+    // Expired: the old account's games are gone and Login shows; leave a clean library behind.
+    if (e === EXPIRED) return resetLibrary();
     library.update((v) =>
       hadGames ? { ...v, updating: false, error: LIBRARY_ERROR } : { ...initial, status: "error", error: LIBRARY_ERROR },
     );

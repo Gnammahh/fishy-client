@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/svelte";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
-import { filterGames, sortGames, resetLibrary, type Game } from "./library";
+import { filterGames, sortGames, resetLibrary, refreshLibrary, library, type Game } from "./library";
+import { get } from "svelte/store";
 import { downloads, installed, running, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
 import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
@@ -96,6 +97,18 @@ describe("sortGames", () => {
     const copy = [...games];
     sortGames(games, "za", installedList);
     expect(games).toEqual(copy);
+  });
+});
+
+describe("refreshLibrary", () => {
+  it("an_expired_sign_in_leaves_a_clean_library_not_an_error", async () => {
+    mockCommands({
+      library_refresh: () => {
+        throw "Your sign-in has expired. Please sign in again.";
+      },
+    });
+    await refreshLibrary();
+    expect(get(library)).toEqual({ status: "loading", games: [], updating: false, error: "", latestVersions: {} });
   });
 });
 

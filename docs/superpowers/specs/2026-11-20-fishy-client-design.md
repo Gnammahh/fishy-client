@@ -955,7 +955,7 @@ The fish components come first, in milestone 1, because they don't depend on Epi
   - Allowing more lookups at once didn't help, so Epic's server sets the pace.
   - A faster way (only looking up new games or games whose version changed, as Legendary does) would bring it to about 1–1.5 s. You chose to keep it as it is for now.
   - The Library now says so next to "Refreshing…", and on the Refresh button's hover tip.
-- **Small things noticed:** updating a game while it's running fails with the folder message ("Couldn't write to…") instead of "close the game first".
+- **Small things noticed:** ~~updating a game while it's running fails with the folder message instead of "close the game first".~~ Fixed in Polish 2 (§6f.2).
 - **Tests now:** Rust 195 (core 183 + app 12), UI 105. New: 19 core, 5 app, 13 UI.
 
 **Milestone 7, Polish (started 2026-11-21 on branch `feat/polish`):** split into five sub-projects (§6f). Sub-project 1, **Settings, logs and your data**, is built:
@@ -969,6 +969,21 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 - Checked in the browser preview with fake data: all three Settings sections, the speed box, the Delete box (ticked and not), Delete leading to Login; no console errors.
 - **Independent code review: "with fixes", no critical findings.** The 4 important ones were fixed test-first (Reduce motion reaching the ocean and sidebar fish; a first unfinished download offered for deletion; no download can start or keep writing during the delete; a failed Start with Windows turn-off is reported). 6 minor ones are listed under "Small things deferred".
 - **Tests now:** Rust 228 (core 205 + app 23), UI 136. New: 22 core, 11 app, 31 UI.
+
+**Polish 2, Friendlier errors (§6f.2), built 2026-11-22:**
+- **Messages say what to do next:** 8 messages gained a next step (for example "Check your internet, then press Try again"). A game that's open gets "Some of *Title*'s files are in use. Close the game, then press Retry." when installing, updating or replacing a file, instead of the folder message.
+- **Automatic retries:** library, sign-in refresh, a game's file list and the two Play calls try 3 times (½ s, then 1 s) on connection problems, Epic's server errors, "too many requests" and timeouts. Never retried: the one-time sign-in code and Log out. Each retry is logged.
+- **Expired sign-in:** only Epic's "no longer valid" answer counts. Then downloads pause (kept), the sign-in and saved library are removed, and Login says "Your sign-in has expired. Please sign in again." Can't reach Epic, a blocked or throttled answer, a Wi-Fi login page and a Credential Manager hiccup all keep you signed in; offline Play never signs you out.
+- **Crash screen:** "Something went wrong", with Reload and Open logs folder; the error goes to the log through the scrubber. Smaller background errors are only logged.
+- Checked in the browser preview with fake data: the Library error and Try again, an expired sign-in landing on Login, and the crash page; no console errors. (Dev-only switches: `?fail=library`, `?fail=expired`, `?crash=1`.)
+- **Independent code review: "with fixes", no critical findings.** Fixed test-first: a throttled or blocked refresh no longer signs you out; a Credential Manager hiccup no longer counts as expired; a Wi-Fi login page at startup no longer signs you out (an older bug); updating a running game now says "close the game" (Windows reports that case as "access denied"). 6 minor ones are under "Small things deferred".
+- **Tests now:** Rust 263 (core 235 + app 28), UI 144. New: 30 core, 5 app, 8 UI.
+
+### Still to check by hand (milestone 7, sub-project 2)
+- [ ] With Wi-Fi off, **Refresh** shows "Couldn't load your library from Epic. Check your internet, then press Try again." (after about 1.5 s of retries); with Wi-Fi back, **Try again** works
+- [ ] The log shows `retrying …` lines from that refresh
+- [ ] Updating a game while it's running says "Some of *Title*'s files are in use. Close the game, then press Retry." (start Bendy, mark it outdated as in the milestone 6 check, press Update); after closing the game, **Retry** finishes the update
+- [ ] With Wi-Fi off at startup you stay signed in (the "Couldn't reach Epic" banner shows), and nothing is signed out when it comes back
 
 ### Still to check by hand (milestone 7, sub-project 1)
 Checked by you on 2026-11-21 in the real app (the log and secret search were checked by script):
@@ -1026,8 +1041,8 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
 - **"Loading fish" showed as "Loading Ash".** The pixel font's "fi" ligature looks like an "A", so ligatures are turned off.
 
 ### Tests
-- **Rust core:** 205 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 23. (Counts as of 2026-11-21, milestone 7 sub-project 1.)
-- **UI:** 136 tests.
+- **Rust core:** 235 tests, plus 1 that writes to the real Credential Manager (run on purpose only). App: 28. (Counts as of 2026-11-22, milestone 7 sub-project 2.)
+- **UI:** 144 tests.
 - **Two independent code reviews:** every important finding was fixed test-first.
 
 ### Still to check by hand (milestone 2)
@@ -1057,6 +1072,13 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
   - The 1–1000 MB/s range is only checked by the Settings page, not by the Rust side.
   - Old logs are deleted only at startup.
   - A wrong number stays in the speed box until a valid one is typed.
+- From the Polish 2 review (minor):
+  - Sign-in refresh retries wait inside the sign-in lock, so on a network that goes silent (no answer at all) Log out, Play or Try again can wait up to about a minute.
+  - A Library refresh already running when the sign-in expires could still save the old account's games (the same rare race Log out has).
+  - If a refresh reply is lost, the retry uses an already-used refresh token and signs you out a little sooner than otherwise.
+  - A screen error with several lines is logged as several lines.
+  - The log scrubber can't hide names or emails if a screen error ever quotes them (none do today).
+  - After an expired refresh, the Library view can stay in "loading" with an error until you sign in again.
 
 ### Next steps
 1. ~~Finish the hand checks above.~~ Done: all four passed on 2026-11-20 (Credential Manager has 0 FishyClient entries after Log out).
@@ -1067,5 +1089,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21, hand check above. Next: 2 friendlier error screens, 3 Library filters and sort, 4 small fixes, 5 installer (`.msi`).
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. Next: 3 Library filters and sort, 4 small fixes, 5 installer (`.msi`).
    - Later: signed updates and a code-signed installer

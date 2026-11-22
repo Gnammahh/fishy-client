@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/svelte";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
-import { filterGames, sortGames, resetLibrary, refreshLibrary, library, type Game } from "./library";
+import { filterGames, sortGames, resetLibrary, refreshLibrary, loadLibrary, library, type Game } from "./library";
 import { get } from "svelte/store";
 import { downloads, installed, running, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
 import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
@@ -101,6 +101,24 @@ describe("sortGames", () => {
 });
 
 describe("refreshLibrary", () => {
+  it("no_update_is_tried_after_a_game_closes_while_offline", async () => {
+    const started: unknown[] = [];
+    mockCommands({
+      library_cached: () => ({ updated_at: "x", games: [game("Kelp Runner")], latest_versions: { KelpRunner: "2" } }),
+      installed_list: () => [installedGame("KelpRunner")],
+      update_start: (a) => {
+        started.push(a);
+        return { items: [] };
+      },
+    });
+    settings.set({ ...DEFAULT_SETTINGS, auto_update: true });
+    await loadLibrary(true);
+    running.set(["KelpRunner"]);
+    running.set([]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(started).toEqual([]);
+  });
+
   it("an_expired_sign_in_leaves_a_clean_library_not_an_error", async () => {
     mockCommands({
       library_refresh: () => {

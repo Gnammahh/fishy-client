@@ -43,7 +43,11 @@ export const library = writable<LibraryView>({ ...initial });
 /** Forget the in-memory library (used on Log out, and between tests). */
 export function resetLibrary() {
   library.set({ ...initial });
+  online = false;
 }
+
+/** The last Library refresh reached Epic (so an update can be fetched now). */
+let online = false;
 
 const byTitle = (a: Game, b: Game) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
 
@@ -91,7 +95,7 @@ let lastRunning: string[] = [];
 running.subscribe((now) => {
   const closed = lastRunning.some((a) => !now.includes(a));
   lastRunning = now;
-  if (closed && get(settings).auto_update) void autoUpdate(current.latestVersions);
+  if (closed && online && get(settings).auto_update) void autoUpdate(current.latestVersions);
 });
 
 /** Shows the saved library at once (if any), then refreshes it from Epic, unless offline. */
@@ -104,6 +108,7 @@ export async function loadLibrary(offline = false) {
   }
   const hasCache = !!cached && Array.isArray(cached.games);
   if (offline) {
+    online = false;
     // Epic is unreachable: show what's saved and don't add a second error next to the offline banner.
     library.set(
       hasCache
@@ -129,8 +134,10 @@ export async function refreshLibrary() {
     if (!fresh || !Array.isArray(fresh.games)) throw LIBRARY_ERROR;
     const latestVersions = versionsOf(fresh);
     library.set({ status: "ready", games: fresh.games, updating: false, error: "", latestVersions });
+    online = true;
     if ((await loadSettings()).auto_update) await autoUpdate(latestVersions);
   } catch (e) {
+    online = false;
     // Expired: the old account's games are gone and Login shows; leave a clean library behind.
     if (e === EXPIRED) return resetLibrary();
     library.update((v) =>

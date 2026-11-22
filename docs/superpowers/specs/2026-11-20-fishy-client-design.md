@@ -1071,6 +1071,21 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 **Polish 6, Installer (§6f.6), built 2026-11-22:** `npm.cmd run tauri build` (from `app/`) makes `target\release\bundle\msi\Fishy Client_0.1.0_x64_en-US.msi` (4.6 MB, about 3 minutes; the first build also downloads Microsoft's WiX tools). Checked without installing: unpacked with `msiexec /a`, it holds `Program Files\Fishy Client\fishy-client.exe`; its details read Fishy Client / Fishy Client / 0.1.0, the fixed upgrade code and the GitHub link. A Rust test guards the bundle settings. **Tests now:** Rust 294 (core 256 + app 38), UI 162.
 
+**Benchmark against the Epic Games Launcher (2026-11-22, version 1.0.0, this PC: 16 cores, Windows 11).** Each launcher was started from fully closed, left idle for 30 s, then measured with all its helper processes for 20 s:
+
+| | Fishy Client | Epic Games Launcher |
+|---|---|---|
+| Program on disk | 9 MB | 869 MB |
+| Its data on disk | 0.3 MB + WebView2 cache (315 MB, includes development runs) | 564 MB + 342 MB |
+| Memory in use | 429 MB | 1,449 MB |
+| Memory only it uses (private) | 262 MB | 1,340 MB |
+| Processes | 7 (app + 6 WebView2) | 10 (launcher, 4 web helpers, 5 overlay) |
+| Processor use, idle | 0.3 % | 1.7 % |
+| First window | 0.1 s | 3.1 s |
+| Windows services added | none | 2 (updater, Online Services) |
+
+Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. Follow-up idea: limit the WebView2 cache size.
+
 ### Still to check by hand (milestone 7, sub-project 6)
 - [x] (2026-11-22) Close the development app, then double-click the `.msi`. If SmartScreen appears: **More info → Run anyway**. Windows asks for admin rights once.
 - [x] (2026-11-22) Start **Fishy Client** from the Start menu: you're still signed in, your Library and installed games show, Play works

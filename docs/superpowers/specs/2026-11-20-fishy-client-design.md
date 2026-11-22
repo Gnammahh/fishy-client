@@ -605,7 +605,7 @@ Polish is split into five sub-projects, built in this order. Each gets its own d
 1. **Settings, logs and your data** (this section, approved 2026-11-21)
 2. **Friendlier errors** (§6f.2, approved 2026-11-22)
 3. **Library filters and sort** (§6f.3, built 2026-11-22)
-4. **Running games** (added 2026-11-22 at your request):
+4. **Running games** (added 2026-11-22 at your request; designed in §6f.4):
    - the game's card shows **Running** while any program from its install folder is open, checked every few seconds, only after Play and only until the game closes
    - Play, Update and Uninstall wait while it runs
    - a setting "When a game starts": **Keep Fishy Client open** (as now) or **Minimize it, and bring it back when the game closes**; downloads keep going either way
@@ -772,6 +772,53 @@ A small change to the existing Library screen, so it was designed in chat (no se
 - The choice is saved as `library_sort` in `settings.json` (`"az"`, `"za"`, `"installed"`, `"size"`; older files load as `"az"`), so it stays after a restart; Delete all my data resets it.
 - "Recently played" needs play times, which Fishy Client doesn't record yet; it can come with Running games (sub-project 4).
 - **Tests:** each sort order (case, ties, uninstalled games last, the input list unchanged), the Updates tab (shown, counted, filtering, hidden without updates, back to All when empty), the menu saving its choice, and the saved choice used together with search; Rust: the new field's default and round-trip.
+
+### 6f.4 Running games (approved 2026-11-22)
+
+#### What the user sees
+- After a successful **Play**, the card's button says **Running** (greyed out) for as long as the game is open. **Update** and **Uninstall** are greyed out too, with a small note: "Close *Title* first." Everything comes back when the game closes.
+- **Starting…** (§6d) still shows for the first few seconds, then Running takes over while the game is open.
+- **Settings → When a game starts:** **Keep Fishy Client open** (default) or **Minimize it, and bring it back when the game closes**. Downloads keep going either way (they run in the Rust part).
+- **Sort menu** gains **Recently played**: games with a play time first (newest on top), then other installed games A–Z, then the rest A–Z.
+
+#### How a running game is noticed
+- **Only after Play.** A successful Play adds the game (its code name and install folder) to a running list in the Rust part. Games started any other way (Epic's launcher, a shortcut) aren't watched, and the list doesn't survive a restart of Fishy Client.
+- **One check every 5 seconds, only while the list has a game.** The check asks Windows once for every open program's file path (the `sysinfo` crate, file paths only, nothing else read) and keeps the games that have at least one program inside their install folder. When the list is empty, the check stops.
+- **Inside the folder** means the program's path starts with the install folder as whole folder names, with capital letters ignored: `C:\Games\Kelp\Bin\kelp.exe` counts for `C:\Games\Kelp`, `C:\Games\Kelp2\kelp.exe` doesn't.
+- A program whose path Windows won't tell (some protected system programs) is skipped.
+- Each change sends `running-changed` with the list of running code names. `running_list` gives it on demand (the Library asks once when it opens).
+- **Pressing Play on a game that's already running** can't happen from the card (it's greyed out); the command also refuses it with "*Title* is already running."
+- **Update and Uninstall** commands refuse a running game with "Close *Title* first." (the UI already hides the way there).
+- **Automatic updates:** an update a Library refresh finds for a running game isn't queued; it's queued when the game closes (if the setting is still on).
+
+#### Minimize while playing
+- With **Minimize** chosen, a successful Play minimizes the main window.
+- When the running list becomes empty and the window was minimized by Fishy Client, the window is restored and brought to the front. Windows sometimes refuses to let a program jump to the front; then it flashes the taskbar button instead.
+- With **Keep open**, nothing happens to the window.
+
+#### Play times
+- Each successful Play saves `last_played` (the time, UTC) in that game's record in `installed.json`. Older records load with no time. Updating a game keeps it; uninstalling removes it with the record.
+- A failed save of the time doesn't stop the game; it's logged ("couldn't save play time").
+
+#### Saved data
+`settings.json` gains `when_game_starts` (`"keep"` or `"minimize"`; older files load as `"keep"`) and `library_sort` accepts `"played"`. Delete all my data resets both.
+
+#### Logs and privacy
+- The log says `{app_name} is running` and `{app_name} closed`. The paths of other programs on the PC are never logged, saved or sent anywhere.
+
+#### Tests
+- **Rust:**
+  - the folder match: inside counts; a look-alike folder (`Kelp2`), a parent folder or another drive doesn't; capital letters and `/` vs `\` don't matter
+  - the running list: a game with no program left is removed; one check serves several games; the check reports "stop" when the list is empty
+  - minimize: brought back only when the list empties and only if Fishy Client minimized it
+  - play times: saved on Play, kept by an update, old `installed.json` loads without them
+  - settings: `when_game_starts` default and round-trip
+  - Play refuses a running game; Update and Uninstall refuse a running game with the message
+- **UI (vitest):**
+  - Running shown from `running-changed`, Play/Update/Uninstall greyed out with the note, back to normal when it's gone
+  - the "When a game starts" control saves and shows the saved value after a failed save
+  - Recently played order (played newest first, then other installed, then the rest; ties A–Z)
+  - auto-update queues a skipped update when the game closes
 
 ---
 

@@ -91,7 +91,7 @@ impl Inner {
     pub fn left_to_write(&self, except: &str) -> Vec<(std::path::PathBuf, u64)> {
         self.jobs
             .iter()
-            .filter(|j| j.info.app_name != except && j.state != JobState::Removing)
+            .filter(|j| j.info.app_name != except && !matches!(j.state, JobState::Removing | JobState::Error))
             .map(|j| {
                 let to_download = j.info.download_size.saturating_sub(j.downloaded);
                 let bytes = if j.info.update_from.is_some() || j.info.download_size == 0 {
@@ -532,7 +532,8 @@ mod tests {
         let mut upd = job("b", JobState::Queued);
         upd.info.update_from = Some("1".into());
         upd.downloaded = 200; // an update needs what's left to download: 800
-        let inner = Inner { jobs: vec![half, upd, job("c", JobState::Paused)], wiping: false };
+        // A failed download (often: the disk was full) doesn't hold space for others.
+        let inner = Inner { jobs: vec![half, upd, job("c", JobState::Paused), job("d", JobState::Error)], wiping: false };
         let left: Vec<u64> = inner.left_to_write("c").into_iter().map(|(_, b)| b).collect();
         assert_eq!(left, vec![1000, 800]);
     }

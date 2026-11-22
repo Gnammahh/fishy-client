@@ -475,6 +475,9 @@ mod tests {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         let bundle = &conf["bundle"];
         assert_eq!(conf["productName"], "Fishy Client");
+        // Version 1 (spec §1, decided 2026-11-22); the program and the installer must agree.
+        assert_eq!(conf["version"], "1.0.0");
+        assert_eq!(conf["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
         assert_eq!(bundle["publisher"], "Fishy Client");
         assert_eq!(bundle["license"], "GPL-3.0-or-later");

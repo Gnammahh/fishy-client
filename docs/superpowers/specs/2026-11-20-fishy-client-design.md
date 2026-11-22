@@ -825,13 +825,13 @@ A small change to the existing Library screen, so it was designed in chat (no se
 ### 6f.6 Installer (`.msi`) (designed 2026-11-22 while you were away; every choice below is easy to change)
 
 #### What you get
-- One file, `Fishy Client_0.1.0_x64_en-US.msi`, built with `npm.cmd run tauri build` from `app/`. It lands in `target\release\bundle\msi\`.
+- One file, `Fishy Client_1.0.0_x64_en-US.msi`, built with `npm.cmd run tauri build` from `app/`. It lands in `target\release\bundle\msi\`.
 - Double-clicking it installs Fishy Client to `C:\Program Files\Fishy Client\`, with a Start menu shortcut. Windows asks for administrator rights once, as for any `.msi`.
 - **Apps → Installed apps** lists it as "Fishy Client" (publisher Fishy Client), so it can be uninstalled from there.
 
 #### Choices made for you (change any of them)
 - **Only `.msi`.** No `.exe` (NSIS) installer and no `.app`/`.dmg`; Windows is the only platform (§1).
-- **Version stays 0.1.0.** It becomes 1.0.0 when you decide version 1 is done (§1 list).
+- **Version 1.0.0** (you decided version 1 is done on 2026-11-22). Installing it over 0.1.0 replaces the old version; your games, settings and sign-in stay.
 - **Not code-signed** (signing costs money and is listed under "Later"). Windows SmartScreen will show "Windows protected your PC": click **More info → Run anyway**. Same as most open-source apps.
 - **A fixed upgrade code** (`d895a25e-2ca5-44d4-b204-1ee4cb3b89f9`), so a newer `.msi` replaces the old version instead of installing a second copy.
 - **WebView2:** if it's missing (rare on Windows 10/11), the installer downloads Microsoft's small WebView2 setup.
@@ -1200,5 +1200,5 @@ Checked on 2026-11-21 with your real account, installing **Bad Cheese**:
    - ~~Install~~ built (milestone 4)
    - ~~Launch~~ built on 2026-11-21 (milestone 5); Bendy launched by hand on 2026-11-21. Epic's launch code is visible to other programs on the PC while a game starts (§6d).
    - ~~Updates~~ built on 2026-11-21 (milestone 6); hand checks are above.
-   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes and 6 Installer, built 2026-11-22 and hand-checked (the installer installs and runs). That's all of Polish, merged into `master` on 2026-11-22. Later: version 1.0.0 and a code-signed installer.
+   - Polish (milestone 7): 1 Settings, logs and your data, built 2026-11-21 and hand-checked; 2 Friendlier errors, built 2026-11-22, hand check above. 3 Library filters and sort, built 2026-11-22, hand check above. 4 Running games, built 2026-11-22 and hand-checked. 5 Small fixes and 6 Installer, built 2026-11-22 and hand-checked (the installer installs and runs). That's all of Polish, merged into `master` on 2026-11-22. **Version 1.0.0** on 2026-11-22. Later: a code-signed installer.
    - Later: signed updates and a code-signed installer

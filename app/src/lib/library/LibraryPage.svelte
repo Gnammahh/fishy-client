@@ -7,6 +7,8 @@
   import InstallDialog from "$lib/install/InstallDialog.svelte";
   import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
   import EpicImportNote from "$lib/import/EpicImportNote.svelte";
+  import GamePage from "./GamePage.svelte";
+  import { tick } from "svelte";
   import { formatBytes } from "$lib/progress/progress";
   import { formatPlaytime, openGameFolder,
     downloads,
@@ -131,6 +133,30 @@
     setTimeout(() => (starting = starting.filter((a) => a !== game.app_name)), STARTING_MS);
   }
 
+  /** The game whose page is open (spec §6q); its data always comes from the current library. */
+  let openApp = $state<string | null>(null);
+  const openGame = $derived(openApp ? ($library.games.find((g) => g.app_name === openApp) ?? null) : null);
+  // The game left the library (a refresh, another account): back to the grid.
+  $effect(() => {
+    if (openApp && $library.status === "ready" && !openGame) openApp = null;
+  });
+  let gridScroll = 0;
+  function openPage(game: Game) {
+    gridScroll = window.scrollY;
+    menuFor = null;
+    openApp = game.app_name;
+    window.scrollTo?.(0, 0);
+  }
+  async function closePage() {
+    openApp = null;
+    menuFor = null;
+    await tick();
+    window.scrollTo?.(0, gridScroll);
+  }
+  /** Size and playtime, the same lines as the "⋯" menu (spec §6p). */
+  const pageLines = (g: Game) =>
+    [sizeOf(g) !== null ? `Size: ${formatBytes(sizeOf(g) ?? 0)}` : "", formatPlaytime(playtimeOf(g)) ?? ""].filter((l) => l);
+
   // Load on open, and again whenever we come back online (offline → online).
   let loadedOffline: boolean | undefined;
   $effect(() => {
@@ -204,6 +230,8 @@
       <PixelSprite grid={FISH_MOUTH_CLOSED} palette={FISH_PALETTE} scale={4} vflip />
       <p>No fish in this pond yet. Games you own on Epic show up here.</p>
     </div>
+  {:else if openGame}
+    <GamePage game={openGame} {actions} lines={pageLines(openGame)} onback={closePage} />
   {:else}
     <div class="tabs" role="tablist" aria-label="Which games">
       <button role="tab" aria-selected={tab === "all"} class:active={tab === "all"} onclick={() => (tab = "all")}>All</button>
@@ -228,7 +256,7 @@
         {#each shown as game (game.catalog_item_id)}
           {@const s = status(game)}
           <li class="card" class:not-installed={s === "none"}>
-            <div class="cover">
+            <button class="cover" aria-label="Open {game.title}" onclick={() => openPage(game)}>
               {#if game.cover_url}
                 <img src={game.cover_url} alt="{game.title} cover art" loading="lazy" referrerpolicy="no-referrer" />
               {:else}
@@ -239,47 +267,9 @@
               {#if s === "installed"}
                 <span class="badge" class:update={outdated(game)}>{outdated(game) ? "Update available" : "Installed"}</span>
               {/if}
-            </div>
+            </button>
             <span class="title">{game.title}</span>
-            <div class="row">
-              {#if s === "none" && otherStore(game)}
-                <div class="store">
-                  <span class="store-name">Installs through {otherStore(game)}</span>
-                  <span class="store-hint">Fishy Client can't install or start this game. Use Epic's launcher or {otherStore(game)}.</span>
-                </div>
-              {:else if s === "none" && !game.installable}
-                <!-- nothing to install: one explanation sits under the grid -->
-              {:else if s === "none"}
-                <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
-              {:else if s === "installed"}
-                {#if starting.includes(game.app_name)}
-                  <button class="play" aria-label="Starting {game.title}" disabled>Starting…</button>
-                {:else if isRunning(game)}
-                  <button class="play" aria-label="{game.title} is running" disabled>Running</button>
-                {:else}
-                  <button class="play" aria-label="Play {game.title}" onclick={() => askPlay(game)}>Play</button>
-                {/if}
-                {#if outdated(game)}
-                  <button class="update" aria-label="Update {game.title}" disabled={isRunning(game)} onclick={() => doUpdate(game)}>Update</button>
-                {/if}
-                {@render moreMenu(game)}
-              {:else}
-                {@const updating = !!jobOf(game)?.update}
-                <span class="state" class:bad={s === "error"}>{updating ? UPDATE_LABELS[s] : LABELS[s]}</span>
-                {#if updating}{@render moreMenu(game)}{/if}
-              {/if}
-            </div>
-            {#if s === "installed" && isRunning(game)}<p class="note small">Close {game.title} first.</p>{/if}
-            {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
-            {#if playError?.app === game.app_name}
-              <div class="play-error" role="alert">
-                <p class="error small">{playError.message}</p>
-                <div class="actions">
-                  <button class="link" onclick={() => doPlay(game)}>Try again</button>
-                  {#if playError.can_offline}<button class="link" onclick={() => doPlay(game, true)}>Play offline</button>{/if}
-                </div>
-              </div>
-            {/if}
+            {@render actions(game)}
           </li>
         {/each}
       </ul>
@@ -292,6 +282,49 @@
     {/if}
   {/if}
 </section>
+
+{#snippet actions(game: Game)}
+  {@const s = status(game)}
+  <div class="row">
+    {#if s === "none" && otherStore(game)}
+      <div class="store">
+        <span class="store-name">Installs through {otherStore(game)}</span>
+        <span class="store-hint">Fishy Client can't install or start this game. Use Epic's launcher or {otherStore(game)}.</span>
+      </div>
+    {:else if s === "none" && !game.installable}
+      <!-- nothing to install: one explanation sits under the grid -->
+    {:else if s === "none"}
+      <button class="install" aria-label="Install {game.title}" onclick={() => (installing = game)}>Install</button>
+    {:else if s === "installed"}
+      {#if starting.includes(game.app_name)}
+        <button class="play" aria-label="Starting {game.title}" disabled>Starting…</button>
+      {:else if isRunning(game)}
+        <button class="play" aria-label="{game.title} is running" disabled>Running</button>
+      {:else}
+        <button class="play" aria-label="Play {game.title}" onclick={() => askPlay(game)}>Play</button>
+      {/if}
+      {#if outdated(game)}
+        <button class="update" aria-label="Update {game.title}" disabled={isRunning(game)} onclick={() => doUpdate(game)}>Update</button>
+      {/if}
+      {@render moreMenu(game)}
+    {:else}
+      {@const updating = !!jobOf(game)?.update}
+      <span class="state" class:bad={s === "error"}>{updating ? UPDATE_LABELS[s] : LABELS[s]}</span>
+      {#if updating}{@render moreMenu(game)}{/if}
+    {/if}
+  </div>
+  {#if s === "installed" && isRunning(game)}<p class="note small">Close {game.title} first.</p>{/if}
+  {#if cardError?.app === game.app_name}<p class="error small" role="alert">{cardError.message}</p>{/if}
+  {#if playError?.app === game.app_name}
+    <div class="play-error" role="alert">
+      <p class="error small">{playError.message}</p>
+      <div class="actions">
+        <button class="link" onclick={() => doPlay(game)}>Try again</button>
+        {#if playError.can_offline}<button class="link" onclick={() => doPlay(game, true)}>Play offline</button>{/if}
+      </div>
+    </div>
+  {/if}
+{/snippet}
 
 {#snippet moreMenu(game: Game)}
   <div class="more">
@@ -518,6 +551,16 @@
   }
   .cover {
     position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .cover:focus-visible {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
   }
   .store {
     display: grid;

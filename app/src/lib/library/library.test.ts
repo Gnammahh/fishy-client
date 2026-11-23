@@ -796,3 +796,41 @@ describe("Updates tab and Sort menu", () => {
     await waitFor(() => expect(cardTitles()).toEqual(["Kelp Runner", "Kelp Kart"]));
   });
 });
+
+describe("game page (spec §6q)", () => {
+  it("cover_opens_the_game_page_and_back_returns", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Tidepool Odyssey"), game("Kelp Runner")] }),
+      game_achievements: () => ({ total: 0, unlocked: 0, items: [] }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    await fireEvent.input(screen.getByPlaceholderText("Search your library"), { target: { value: "Kelp" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Open Kelp Runner" }));
+    expect(await screen.findByRole("heading", { name: "Kelp Runner" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Install Kelp Runner" })).toBeTruthy();
+    expect(await screen.findByText("This game has no Epic achievements.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "← Library" }));
+    expect(await screen.findByRole("button", { name: "Open Kelp Runner" })).toBeTruthy();
+    expect((screen.getByPlaceholderText("Search your library") as HTMLInputElement).value).toBe("Kelp");
+    expect(screen.queryByText("Tidepool Odyssey")).toBeNull();
+  });
+
+  it("page_closes_when_the_game_leaves_the_library", async () => {
+    let games = [game("Tidepool Odyssey"), game("Kelp Runner")];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games }),
+      game_achievements: () => ({ total: 0, unlocked: 0, items: [] }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    await fireEvent.click(screen.getByRole("button", { name: "Open Kelp Runner" }));
+    await screen.findByRole("button", { name: "← Library" });
+    games = [game("Tidepool Odyssey")];
+    await refreshLibrary();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "← Library" })).toBeNull());
+    expect(screen.getByRole("button", { name: "Open Tidepool Odyssey" })).toBeTruthy();
+  });
+});

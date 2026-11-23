@@ -1201,6 +1201,7 @@ Asked for by the user: Fishy Client should stay light (memory, CPU), measured ag
 
 Asked for by the user: Windows' white title bar didn't match the launcher. Chosen: a **fully custom fish bar** (over a dark Windows bar), accepting that Windows' Snap layouts menu on the maximize button goes away.
 - The main window has no Windows frame (`decorations: false`); Fishy Client draws a 34 px bar fixed at the top (`app/src/lib/shell/TitleBar.svelte`, height in `--titlebar` in `theme.css`): fish icon and "Fishy Client" in the pixel font on the left, **Minimize**, **Maximize/Restore** and **Close** in aqua on the right (Close turns red on hover).
+- The bar is **solid black** (`var(--bg)`), with its thin aqua line underneath; nothing scrolls through it (the user's choice, 2026-11-23; it was 85 % see-through in 1.8.0 and 1.9.0).
 - Dragging the bar moves the window and double-clicking it maximizes (`data-tauri-drag-region`); the edges still resize. Close works as before (closing the main window quits).
 - Full-height screens use `calc(100vh - var(--titlebar))`; the sidebar sticks below the bar.
 - Permissions: `core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`, `allow-start-dragging` (main window only).

@@ -42,3 +42,13 @@ describe("TitleBar (spec §6s)", () => {
     expect(await screen.findByRole("button", { name: "Restore" })).toBeTruthy();
   });
 });
+
+import titleBarSource from "./TitleBar.svelte?raw";
+
+describe("TitleBar look", () => {
+  it("is solid black, nothing shows through it (the user's choice)", () => {
+    const rule = /\.titlebar\s*\{([^}]*)\}/.exec(titleBarSource)?.[1] ?? "";
+    expect(rule).toMatch(/background:\s*var\(--bg\);/);
+    expect(rule).not.toMatch(/background:\s*rgba/);
+  });
+});

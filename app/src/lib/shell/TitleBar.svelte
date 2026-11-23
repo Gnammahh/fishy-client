@@ -70,7 +70,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(0, 0, 0, 0.85);
+    background: var(--bg); /* solid: nothing shows through (user choice, 1.9.1) */
     border-bottom: 2px solid rgba(79, 227, 209, 0.18);
     user-select: none;
   }

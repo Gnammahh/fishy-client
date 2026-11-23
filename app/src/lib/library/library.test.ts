@@ -619,6 +619,25 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan" });
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
   });
+  it("a_games_own_auto_update_switch_wins_over_settings", async () => {
+    const started: unknown[] = [];
+    const own = (app: string, auto_update: boolean | null) => ({
+      ...installedGame(app),
+      options: { auto_update, priority: false, launch_args: "", launch_args_on: false, shortcuts: [] },
+    });
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Kelp Runner"), game("Reef Run"), game("Tide")], { KelpRunner: "2", ReefRun: "2", Tide: "2" }),
+      settings_get: () => ({ auto_update: false, warn_outdated_play: true }),
+      installed_list: () => [own("KelpRunner", true), own("ReefRun", null), own("Tide", false)],
+      update_start: (args) => {
+        started.push(args);
+        return { items: [] };
+      },
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
+  });
   it("auto_update_skips_running_games_and_queues_them_when_closed", async () => {
     const started: unknown[] = [];
     mockCommands({

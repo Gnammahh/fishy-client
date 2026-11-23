@@ -107,7 +107,7 @@ let lastRunning: string[] = [];
 running.subscribe((now) => {
   const closed = lastRunning.some((a) => !now.includes(a));
   lastRunning = now;
-  if (closed && online && get(settings).auto_update) void autoUpdate(current.latestVersions);
+  if (closed && online) void autoUpdate(current.latestVersions, get(settings).auto_update);
 });
 
 /** Shows the saved library at once (if any), then refreshes it from Epic, unless offline. */
@@ -147,7 +147,7 @@ export async function refreshLibrary() {
     const latestVersions = versionsOf(fresh);
     library.set({ status: "ready", games: fresh.games, updating: false, error: "", latestVersions });
     online = true;
-    if ((await loadSettings()).auto_update) await autoUpdate(latestVersions);
+    await autoUpdate(latestVersions, (await loadSettings()).auto_update);
   } catch (e) {
     online = false;
     // Expired: the old account's games are gone and Login shows; leave a clean library behind.

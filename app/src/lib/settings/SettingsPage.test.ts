@@ -35,6 +35,15 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("auto_update_says_a_games_manage_box_wins", async () => {
+    mockIPC((cmd) => (cmd === "settings_get" ? { auto_update: false, warn_outdated_play: true } : null));
+    await loadSettings();
+    render(SettingsPage);
+    const auto = screen.getByRole("switch", { name: "Update games automatically" });
+    expect(auto.getAttribute("aria-describedby")).toBe("auto-hint");
+    expect(document.getElementById("auto-hint")?.textContent).toContain("For every game you haven't set in its Manage box.");
+  });
+
   it("app_update_switch_is_on_and_saves", async () => {
     const saved: { check_app_updates?: boolean }[] = [];
     mockIPC((cmd, args) => {

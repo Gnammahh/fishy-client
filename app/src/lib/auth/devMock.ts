@@ -133,6 +133,57 @@ function devDownloads() {
         }
         case "running_list":
           return [];
+        // Manage box (spec §6t), preview only.
+        case "game_options_set": {
+          const a = args as { appName: string; autoUpdate: boolean | null; priority: boolean; launchArgs: string; launchArgsOn: boolean };
+          const g = installed.find((x) => x.app_name === a.appName);
+          if (!g) throw "This game isn't installed.";
+          if ([...a.launchArgs].length > 1000) throw "Keep it under 1000 characters.";
+          const shortcuts = (g as { options?: { shortcuts: string[] } }).options?.shortcuts ?? [];
+          Object.assign(g, { options: { auto_update: a.autoUpdate, priority: a.priority, launch_args: a.launchArgs, launch_args_on: a.launchArgsOn, shortcuts } });
+          return g;
+        }
+        case "shortcut_create":
+        case "shortcut_add_start_menu":
+        case "shortcut_remove": {
+          const name = (args as { appName: string }).appName;
+          const g = installed.find((x) => x.app_name === name) as (typeof installed)[number] & { options?: Record<string, unknown> };
+          const o = { auto_update: null, priority: false, launch_args: "", launch_args_on: false, shortcuts: [] as string[], ...(g.options ?? {}) };
+          if (cmd === "shortcut_create") o.shortcuts = [`C:\\Users\\you\\Desktop\\${g.title}.lnk`];
+          if (cmd === "shortcut_add_start_menu") o.shortcuts = [...o.shortcuts, `C:\\Users\\you\\Start Menu\\Fishy Client\\${g.title}.lnk`];
+          if (cmd === "shortcut_remove") o.shortcuts = [];
+          g.options = o;
+          return g;
+        }
+        case "verify_start": {
+          const name = (args as { appName: string }).appName;
+          let done = 0;
+          const total = 21000;
+          const t = setInterval(() => {
+            done = Math.min(total, done + 1400);
+            emit("verify-progress", { app_name: name, done, total });
+            if (done >= total) {
+              clearInterval(t);
+              emit("verify-done", { app_name: name, result: { kind: "bad", files: 12, bytes: 340 * 1000 * 1000 } });
+            }
+          }, 250);
+          return null;
+        }
+        case "verify_stop":
+          return null;
+        case "verify_repair":
+          return { items };
+        case "download_start_now": {
+          const i = find(args);
+          const mode = (args as { mode: string }).mode;
+          const now = items.filter((x) => x.state === "downloading");
+          if (i && mode === "pause") now.forEach((x) => (x.state = "queued"));
+          if (i) i.state = "downloading";
+          send();
+          return { items };
+        }
+        case "play_request_take":
+          return null;
       }
       return undefined;
     },

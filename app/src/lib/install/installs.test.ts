@@ -2,7 +2,10 @@ import { describe, it, expect, afterEach } from "vitest";
 import { get } from "svelte/store";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { downloads, installed, running, initInstalls, statusFor, uninstall, formatPlaytime, resetInstalls, type DownloadItem, type InstalledGame } from "./installs";
+import {
+  downloads, installed, running, initInstalls, statusFor, uninstall, formatPlaytime, resetInstalls, wantsAutoUpdate, setGameOptions,
+  createShortcut, removeShortcut, startNow, verifying, playRequest, type DownloadItem, type InstalledGame,
+} from "./installs";
 
 const item = (app_name: string, state: DownloadItem["state"]): DownloadItem => ({
   app_name,
@@ -85,6 +88,74 @@ describe("uninstall", () => {
     installed.set([inst("A")]);
     expect(await uninstall("A")).toBeNull();
     expect(get(installed)).toEqual([]);
+  });
+});
+
+const opts = (auto_update: boolean | null) => ({ auto_update, priority: false, launch_args: "", launch_args_on: false, shortcuts: [] });
+
+describe("wantsAutoUpdate", () => {
+  it("follows Settings until the game has its own choice", () => {
+    expect(wantsAutoUpdate(inst("A"), true)).toBe(true);
+    expect(wantsAutoUpdate(inst("A"), false)).toBe(false);
+    expect(wantsAutoUpdate({ ...inst("A"), options: opts(null) }, true)).toBe(true);
+    expect(wantsAutoUpdate({ ...inst("A"), options: opts(false) }, true)).toBe(false);
+    expect(wantsAutoUpdate({ ...inst("A"), options: opts(true) }, false)).toBe(true);
+  });
+});
+
+describe("Manage box helpers", () => {
+  it("setGameOptions saves and updates the installed list", async () => {
+    const calls: [string, unknown][] = [];
+    const saved = { ...inst("A"), options: { ...opts(false), priority: true } };
+    mockIPC((cmd, args) => {
+      calls.push([cmd, args]);
+      if (cmd === "game_options_set") return saved;
+    });
+    installed.set([inst("A"), inst("B")]);
+    expect(await setGameOptions("A", { auto_update: false, priority: true, launch_args: "", launch_args_on: false })).toBeNull();
+    expect(calls).toEqual([["game_options_set", { appName: "A", autoUpdate: false, priority: true, launchArgs: "", launchArgsOn: false }]]);
+    expect(get(installed)[0]).toEqual(saved);
+    clearMocks();
+    mockIPC(() => {
+      throw "Keep it under 1000 characters.";
+    });
+    expect(await setGameOptions("A", { auto_update: null, priority: false, launch_args: "x", launch_args_on: true })).toBe("Keep it under 1000 characters.");
+  });
+
+  it("shortcut helpers update the record; startNow updates downloads", async () => {
+    const withLink = { ...inst("A"), options: { ...opts(null), shortcuts: ["C:\\Desk\\A.lnk"] } };
+    mockIPC((cmd) => {
+      if (cmd === "shortcut_create" || cmd === "shortcut_add_start_menu") return withLink;
+      if (cmd === "shortcut_remove") return inst("A");
+      if (cmd === "download_start_now") return { items: [item("A", "downloading")] };
+    });
+    installed.set([inst("A")]);
+    expect(await createShortcut("A")).toBeNull();
+    expect(get(installed)[0].options?.shortcuts).toEqual(["C:\\Desk\\A.lnk"]);
+    expect(await removeShortcut("A")).toBeNull();
+    expect(get(installed)[0].options).toBeUndefined();
+    expect(await startNow("A", "both")).toBeNull();
+    expect(get(downloads).map((d) => d.state)).toEqual(["downloading"]);
+  });
+
+  it("verify and play-request events fill their stores", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "play_request_take") return "Tide";
+        if (cmd === "installed_list") return [];
+      },
+      { shouldMockEvents: true },
+    );
+    const stop = await initInstalls();
+    expect(get(playRequest)).toBe("Tide");
+    playRequest.set(null);
+    await emit("verify-progress", { app_name: "A", done: 3, total: 10 });
+    expect(get(verifying)).toEqual({ app: "A", done: 3, total: 10 });
+    await emit("verify-done", { app_name: "A", result: { kind: "bad", files: 2, bytes: 340 } });
+    expect(get(verifying)).toEqual({ app: "A", result: { kind: "bad", files: 2, bytes: 340 } });
+    await emit("play-request", "Reef");
+    expect(get(playRequest)).toBe("Reef");
+    stop();
   });
 });
 

@@ -34,7 +34,22 @@ export type InstalledGame = {
   parts?: string[] | null;
   /** For an add-on piece (Fortnite's Save the World Content): its game. Hidden from the Library. */
   parent?: string | null;
+  /** The game's Manage box choices (spec §6t); missing in old records. */
+  options?: GameOptions;
 };
+/** Mirrors `GameOptions` (fishy-core install::store). */
+export type GameOptions = {
+  /** null: follow the Auto update switch in Settings. */
+  auto_update: boolean | null;
+  priority: boolean;
+  launch_args: string;
+  launch_args_on: boolean;
+  /** The shortcut files Fishy Client made. */
+  shortcuts: string[];
+};
+export type VerifyResult = { kind: "good" } | { kind: "bad"; files: number; bytes: number } | { kind: "stopped" } | { kind: "error"; message: string };
+/** The running (or last) Verify (spec §6t). */
+export type VerifyState = { app: string; done: number; total: number } | { app: string; result: VerifyResult };
 export type InstallOptions = {
   install_path: string;
   download_size: number;
@@ -59,12 +74,18 @@ export const downloads = writable<DownloadItem[]>([]);
 export const installed = writable<InstalledGame[]>([]);
 /** Code names of games started by Play that are still open (spec §6f.4). */
 export const running = writable<string[]>([]);
+/** The running or last finished Verify (spec §6t). */
+export const verifying = writable<VerifyState | null>(null);
+/** A game a desktop shortcut asked to play (spec §6t); the Library plays it and clears this. */
+export const playRequest = writable<string | null>(null);
 
 /** Forget everything in memory (between tests). */
 export function resetInstalls() {
   downloads.set([]);
   installed.set([]);
   running.set([]);
+  verifying.set(null);
+  playRequest.set(null);
 }
 
 const asNames = (v: unknown) => (Array.isArray(v) ? v.filter((n): n is string => typeof n === "string") : []);
@@ -94,6 +115,21 @@ export async function initInstalls(): Promise<() => void> {
   const stopDownloads = await safeListen("downloads-changed", (p) => downloads.set(asItems(p as DownloadsView)));
   const stopInstalled = await safeListen("installed-changed", () => void refreshInstalled());
   const stopRunning = await safeListen("running-changed", (p) => running.set(asNames(p)));
+  const stopProgress = await safeListen("verify-progress", (p) => {
+    const v = p as { app_name: string; done: number; total: number };
+    verifying.set({ app: v.app_name, done: v.done, total: v.total });
+  });
+  const stopDone = await safeListen("verify-done", (p) => {
+    const v = p as { app_name: string; result: VerifyResult };
+    verifying.set({ app: v.app_name, result: v.result });
+  });
+  const stopPlay = await safeListen("play-request", (p) => typeof p === "string" && playRequest.set(p));
+  try {
+    const waiting = await invoke<string | null>("play_request_take");
+    if (typeof waiting === "string" && waiting) playRequest.set(waiting);
+  } catch {
+    /* none */
+  }
   try {
     running.set(asNames(await invoke<string[]>("running_list")));
   } catch {
@@ -109,6 +145,9 @@ export async function initInstalls(): Promise<() => void> {
     stopDownloads();
     stopInstalled();
     stopRunning();
+    stopProgress();
+    stopDone();
+    stopPlay();
   };
 }
 
@@ -229,9 +268,81 @@ export async function startUpdate(appName: string): Promise<string | null> {
   }
 }
 
-/** Auto-update: queues every installed game that has a newer version and no download yet.
- * A running game waits; it's queued when it closes (spec §6f.4). */
-export async function autoUpdate(latest: Record<string, string>) {
+/** A game's own Auto update switch, or the Settings one until it has its own (spec §6t). */
+export function wantsAutoUpdate(g: InstalledGame, settingsDefault: boolean): boolean {
+  return g.options?.auto_update ?? settingsDefault;
+}
+
+/** Puts a changed record in the installed list. */
+function replaceInstalled(g: InstalledGame) {
+  installed.update((list) => (list.some((x) => x.app_name === g.app_name) ? list.map((x) => (x.app_name === g.app_name ? g : x)) : list));
+}
+
+/** Runs a command that returns the game's record. Returns an error message, or null. */
+async function withRecord(cmd: string, args: Record<string, unknown>): Promise<string | null> {
+  try {
+    const g = await invoke<InstalledGame>(cmd, args);
+    if (g && typeof g === "object" && typeof g.app_name === "string") replaceInstalled(g);
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
+/** Saves the Manage box's switches and launch options (spec §6t). */
+export function setGameOptions(appName: string, o: Omit<GameOptions, "shortcuts">): Promise<string | null> {
+  return withRecord("game_options_set", {
+    appName,
+    autoUpdate: o.auto_update,
+    priority: o.priority,
+    launchArgs: o.launch_args,
+    launchArgsOn: o.launch_args_on,
+  });
+}
+
+export const createShortcut = (appName: string) => withRecord("shortcut_create", { appName });
+export const addStartMenu = (appName: string) => withRecord("shortcut_add_start_menu", { appName });
+export const removeShortcut = (appName: string) => withRecord("shortcut_remove", { appName });
+
+/** Starts checking the game's files; progress arrives in `verifying`. Returns an error, or null. */
+export async function verifyStart(appName: string): Promise<string | null> {
+  try {
+    verifying.set({ app: appName, done: 0, total: 0 });
+    await invoke("verify_start", { appName });
+    return null;
+  } catch (e) {
+    verifying.set(null);
+    return message(e);
+  }
+}
+
+export const verifyStop = (appName: string) => invoke("verify_stop", { appName }).catch(() => {});
+
+/** Download them: queues the missing or damaged files. Returns an error message, or null. */
+export async function verifyRepair(appName: string): Promise<string | null> {
+  try {
+    downloads.set(asItems(await invoke<DownloadsView>("verify_repair", { appName })));
+    verifying.set(null);
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
+/** Start now on a waiting game (spec §6t). Returns an error message, or null. */
+export async function startNow(appName: string, mode: "pause" | "both"): Promise<string | null> {
+  try {
+    downloads.set(asItems(await invoke<DownloadsView>("download_start_now", { appName, mode })));
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
+/** Auto-update: queues every installed game that wants it (its own switch, else Settings') and
+ * has a newer version and no download yet. A running game waits; it's queued when it closes
+ * (spec §6f.4, §6t). */
+export async function autoUpdate(latest: Record<string, string>, settingsDefault: boolean) {
   let list: InstalledGame[] = [];
   try {
     const fresh = await invoke<InstalledGame[]>("installed_list");
@@ -242,6 +353,6 @@ export async function autoUpdate(latest: Record<string, string>) {
   const busy = new Set([...get(downloads).map((d) => d.app_name), ...get(running)]);
   for (const g of list) {
     // A piece is updated with its game.
-    if (!g.parent && !busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
+    if (!g.parent && wantsAutoUpdate(g, settingsDefault) && !busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
   }
 }

@@ -157,7 +157,7 @@
     />
     <span>
       <span class="name" id="auto-name">Update games automatically</span>
-      <span class="hint" id="auto-hint">When your Library finds a new version of an installed game, it starts downloading by itself.</span>
+      <span class="hint" id="auto-hint">When your Library finds a new version of an installed game, it starts downloading by itself. For every game you haven't set in its Manage box.</span>
     </span>
   </label>
   <label class="row">

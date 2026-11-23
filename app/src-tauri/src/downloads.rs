@@ -184,6 +184,30 @@ impl Inner {
         Ok(None)
     }
 
+    /// The user's Pause: a running job is asked to stop and then pauses (even after Start now →
+    /// Pause asked it to wait again); a waiting one pauses at once.
+    pub fn pause_job(&mut self, app: &str) {
+        let Some(i) = self.find(app) else { return };
+        let job = &mut self.jobs[i];
+        job.requeue = false;
+        match job.state {
+            // The task notices, stops and marks it Paused.
+            JobState::Downloading => job.stop.iter().for_each(CancellationToken::cancel),
+            JobState::Queued => job.state = JobState::Paused,
+            _ => {}
+        }
+    }
+
+    /// A running job failed: it stops with the reason (and doesn't wait again).
+    pub fn failed(&mut self, app: &str, message: String) {
+        let Some(i) = self.find(app) else { return };
+        let job = &mut self.jobs[i];
+        job.state = JobState::Error;
+        job.error = Some(message);
+        job.stop = None;
+        job.requeue = false;
+    }
+
     /// A running job stopped writing without an error: Paused, or (after Start now → Pause)
     /// waiting again right behind the first waiting job.
     pub fn stopped(&mut self, app: &str) {
@@ -330,6 +354,8 @@ impl Downloads {
                         .map(|m| Arc::new(keep_siblings_files(only_parts(m, old_parts.as_deref()), &job.manifest, &siblings)));
                 }
                 job.downloaded = already_downloaded(&store, &job.info, &job.manifest, job.old.as_deref());
+                // The Priority download switch is kept through a restart (spec §6t).
+                job.priority = store.installed().iter().any(|g| g.app_name == job.info.app_name && g.options.priority);
                 Some(job)
             })
             .collect();
@@ -407,17 +433,7 @@ impl Downloads {
 
     pub fn pause(&self, app: &AppHandle, app_name: &str) {
         tracing::info!("pause {app_name}");
-        {
-            let mut inner = self.lock();
-            let Some(i) = inner.find(app_name) else { return };
-            let job = &mut inner.jobs[i];
-            match job.state {
-                // The task notices, stops and marks it Paused.
-                JobState::Downloading => job.stop.iter().for_each(CancellationToken::cancel),
-                JobState::Queued => job.state = JobState::Paused,
-                _ => {}
-            }
-        }
+        self.lock().pause_job(app_name);
         self.emit(app);
     }
 
@@ -535,6 +551,7 @@ impl Downloads {
                 job.state = JobState::Downloading;
                 job.stop = Some(stop.clone());
                 job.cancel_requested = false;
+                job.requeue = false;
                 (job.info.clone(), job.manifest.clone(), job.old.clone(), stop)
             })
         };
@@ -625,9 +642,7 @@ impl Downloads {
             Err(e) => {
                 let m = e.user_message();
                 tracing::warn!("download of {} failed: {m}", info.app_name);
-                inner.jobs[i].state = JobState::Error;
-                inner.jobs[i].error = Some(m);
-                inner.jobs[i].stop = None;
+                inner.failed(&info.app_name, m);
             }
         }
     }
@@ -809,6 +824,46 @@ mod tests {
     fn queue_never_starts_a_third() {
         let inner = Inner { jobs: vec![job("r1", JobState::Downloading), job("r2", JobState::Downloading), job("q", JobState::Queued)], wiping: false };
         assert_eq!(inner.next_to_start(), None);
+    }
+
+    #[test]
+    fn pause_and_errors_clear_requeue() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("a", JobState::Queued)], wiping: false };
+        inner.start_now("a", StartNow::Pause).unwrap();
+        inner.pause_job("run"); // the user's Pause wins over Start now's
+        inner.stopped("run");
+        assert_eq!(inner.jobs[inner.find("run").unwrap()].state, JobState::Paused);
+
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("a", JobState::Queued)], wiping: false };
+        inner.start_now("a", StartNow::Pause).unwrap();
+        inner.failed("run", "boom".into());
+        let i = inner.find("run").unwrap();
+        assert_eq!((inner.jobs[i].state, inner.jobs[i].requeue), (JobState::Error, false));
+        assert_eq!(inner.jobs[i].error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn a_queued_pause_still_pauses() {
+        let mut inner = Inner { jobs: vec![job("q", JobState::Queued)], wiping: false };
+        inner.pause_job("q");
+        assert_eq!(inner.jobs[0].state, JobState::Paused);
+    }
+
+    #[test]
+    fn priority_survives_a_restart() {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let mut info = job("Tidepool", JobState::Paused).info;
+        info.install_path = dir.path().join("game");
+        let bytes = build_binary(&sample(), true);
+        store.save_job(&info, &bytes).unwrap();
+        store.finish_install(&info, &sample()).unwrap();
+        store.set_options("Tidepool", None, true, "", false).unwrap();
+        let update = JobInfo { update_from: Some("0.9".into()), ..info };
+        store.save_job(&update, &bytes).unwrap();
+        let d = Downloads::new(store, InstallClient::new());
+        assert!(d.lock().jobs[0].priority);
     }
 
     #[test]

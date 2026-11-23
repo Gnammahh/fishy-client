@@ -55,6 +55,12 @@ fn should_expire(signed_out: bool, offline: bool) -> bool {
     signed_out && !offline
 }
 
+/// A game whose files are being downloaded (an update, a repair) isn't started, even from a
+/// desktop shortcut (spec §6t): it would run on half-written files.
+pub(crate) fn download_blocks_play(has_job: bool) -> Option<PlayError> {
+    has_job.then(|| PlayError { message: "Wait for its download to finish.".into(), can_offline: false, signed_out: false })
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Tauri states, one each
 pub async fn play_game(
@@ -93,6 +99,9 @@ async fn launch_game(
     let Some(installed) = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name) else {
         return Err(play_error(LaunchError::NotInstalled, &app_name, false));
     };
+    if let Some(e) = download_blocks_play(install.downloads.has_job(&app_name)) {
+        return Err(e);
+    }
     let title = installed.title.clone();
     // Held until the game is in the running list (or Play failed), so a second click can't
     // start it twice.
@@ -127,6 +136,14 @@ async fn launch_game(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_game_with_a_download_cant_be_played() {
+        let e = download_blocks_play(true).unwrap();
+        assert_eq!(e.message, "Wait for its download to finish.");
+        assert!(!e.can_offline && !e.signed_out);
+        assert!(download_blocks_play(false).is_none());
+    }
 
     #[test]
     fn only_an_online_sign_in_problem_expires_the_sign_in() {

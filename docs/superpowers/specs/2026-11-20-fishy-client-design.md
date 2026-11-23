@@ -344,7 +344,7 @@ Launch and Updates are later milestones and are left out here.
 - **Folder name:** the catalog item (§6b) `customAttributes.FolderName.value`.
 - **Chunk download:** `GET {base_url}/{chunk_dir}/{group:02}/{hash:016X}_{guid}.chunk`, no auth.
   - `guid` is the four u32 words as `%08X`, joined with no separator.
-  - `chunk_dir` depends on the manifest's feature level: ≥15 `ChunksV4`, ≥6 `ChunksV3`, ≥3 `ChunksV2`, else `Chunks`.
+  - `chunk_dir` depends on the manifest's feature level: ≥22 `ChunksV5`, ≥15 `ChunksV4`, ≥6 `ChunksV3`, ≥3 `ChunksV2`, else `Chunks`.
   - User-Agent `EpicGamesLauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit`. Timeout 10 s, up to 7 tries with waits of 1, 2, 4… s.
 
 ### Manifest format (ported from Legendary `models/manifest.py`)
@@ -358,7 +358,7 @@ Launch and Updates are later milestones and are left out here.
   - Sections follow, each starting with its own byte size: Meta, Chunk list, File list, Custom fields. The reader always skips to `start + size`, so unknown newer fields are ignored.
   - The full field layout is in `crates/fishy-core/src/install/manifest/binary.rs` comments.
 - **JSON format:** numbers are "blobs" (each 3-digit decimal group is one byte, little-endian), and GUIDs are 32 hex characters read as four big-endian u32.
-- **Not supported:** encrypted manifests or chunks (feature level ≥ 22 with secrets). These show "This game uses a download format Fishy Client can't install yet."
+- **Not supported:** encrypted manifests or chunks (the `stored_as` encrypted flag), and feature levels above 24. Levels 22 to 24 without encryption are read since 2026-11-24 (found with Agent A, level 24): a longer header and extra chunk columns, skipped by their stated sizes, and chunks under `ChunksV5`. These show "This game uses a download format Fishy Client can't install yet."
 
 ### Chunk files (ported from Legendary `models/chunk.py`)
 - Header: magic `0xB1FE3AA2`, header version, header size, compressed size, guid, rolling hash, stored-as; from v2, SHA-1 and hash type; from v3, uncompressed size.

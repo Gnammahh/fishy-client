@@ -82,6 +82,7 @@ impl Manifest {
     /// CDN folder for chunks, by feature level (Legendary `get_chunk_dir`).
     pub fn chunk_dir(&self) -> &'static str {
         match self.meta.feature_level {
+            22.. => "ChunksV5",
             15.. => "ChunksV4",
             6.. => "ChunksV3",
             3.. => "ChunksV2",

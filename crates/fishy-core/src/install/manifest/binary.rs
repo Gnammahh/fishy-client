@@ -9,7 +9,8 @@
 //! - Meta: u32 feature_level, u8 is_file_data, u32 app_id, FString app_name, build_version,
 //!   launch_exe, launch_command, u32 n + n FString prereq ids, FString prereq name/path/args, ...
 //! - Chunk list: u32 count, then columns: guid (4×u32), u64 hash, [20] sha1, u8 group,
-//!   u32 window_size, i64 file_size.
+//!   u32 window_size, i64 file_size; level 22+ adds secret guid, compressed window size and
+//!   encryption tag columns after those (skipped).
 //! - File list: u32 count, then columns: FString filename, FString symlink target, [20] sha1,
 //!   u8 flags (0x4 = executable), install tags (u32 n + n FString), chunk parts
 //!   (u32 n, each: u32 struct_size, guid, u32 offset, u32 size), newer extras ignored.
@@ -23,8 +24,10 @@ use std::io::Read;
 const MAGIC: u32 = 0x44BE_C00C;
 const COMPRESSED: u8 = 0x1;
 const ENCRYPTED: u8 = 0x2;
-/// From feature level 22 on, chunks are encrypted (ChunksV5) and need secrets we don't have.
-const FIRST_UNSUPPORTED_LEVEL: u32 = 22;
+/// Levels 22 to 24 add a longer header and extra chunk columns, which the section sizes let us
+/// skip; their chunks live in ChunksV5. Encrypted lists or chunks (the `stored_as` flag) are
+/// still refused: they need secrets we don't have. 24 is the highest level Legendary knows.
+const FIRST_UNSUPPORTED_LEVEL: u32 = 25;
 
 fn bad(why: &str) -> InstallError {
     InstallError::BadManifest(why.into())
@@ -223,10 +226,28 @@ mod tests {
     }
 
     #[test]
-    fn feature_level_22_is_unsupported() {
+    fn feature_levels_22_to_24_are_read_when_not_encrypted() {
+        // Agent A's file list is level 24 (found 2026-11-24): longer header, extra chunk columns.
+        for level in [22, 23, 24] {
+            let mut m = sample();
+            m.meta.feature_level = level;
+            assert_eq!(parse_manifest(&build_binary(&m, true)).unwrap(), m, "level {level}");
+        }
+    }
+
+    #[test]
+    fn feature_level_25_is_unsupported() {
         let mut m = sample();
-        m.meta.feature_level = 22;
+        m.meta.feature_level = 25;
         assert_eq!(parse_manifest(&build_binary(&m, true)), Err(InstallError::Unsupported));
+    }
+
+    #[test]
+    fn an_encrypted_level_24_list_is_still_unsupported() {
+        let mut m = sample();
+        m.meta.feature_level = 24;
+        let bytes = build_with(&m, BuildOpts { stored_as: Some(3), compress: true, ..Default::default() });
+        assert_eq!(parse_manifest(&bytes), Err(InstallError::Unsupported));
     }
 
     #[test]
@@ -256,7 +277,7 @@ mod tests {
     #[test]
     fn chunk_dir_by_feature_level() {
         let mut m = sample();
-        for (level, dir) in [(2, "Chunks"), (3, "ChunksV2"), (6, "ChunksV3"), (14, "ChunksV3"), (15, "ChunksV4"), (21, "ChunksV4")] {
+        for (level, dir) in [(2, "Chunks"), (3, "ChunksV2"), (6, "ChunksV3"), (14, "ChunksV3"), (15, "ChunksV4"), (21, "ChunksV4"), (22, "ChunksV5"), (24, "ChunksV5")] {
             m.meta.feature_level = level;
             assert_eq!(m.chunk_dir(), dir, "level {level}");
         }

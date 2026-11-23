@@ -2,7 +2,8 @@
 //!
 //! Header: u32 magic 0xB1FE3AA2, u32 header_version, u32 header_size, u32 compressed_size,
 //! guid (4×u32), u64 rolling hash, u8 stored_as (1 = zlib, 2 = encrypted); from version 2:
-//! [20] SHA-1, u8 hash_type; from version 3: u32 uncompressed_size. Data runs from header_size
+//! [20] SHA-1, u8 hash_type; from version 3: u32 uncompressed_size; from version 4 a 16-byte
+//! secret guid and a 16-byte tag (level 22+ games). Data runs from header_size
 //! to the end. We check the inflated data against the manifest's SHA-1 for that chunk.
 use super::manifest::ChunkInfo;
 use super::InstallError;
@@ -146,6 +147,17 @@ mod tests {
         let info = info_for([1, 2, 3, 4], &small, 0);
         let bomb = build_chunk(info.guid, &vec![0u8; 64 << 20], true, None);
         assert_eq!(decode_chunk(&bomb, &info), Err(InstallError::BadChunk("too big".into())));
+    }
+
+    #[test]
+    fn a_version_4_header_is_skipped() {
+        // Level 22+ games: the chunk header adds a 16-byte secret guid and a 16-byte tag.
+        let data = b"fish data".repeat(10);
+        let mut bytes = build_chunk([7, 1, 2, 3], &data, true, None);
+        bytes[4..8].copy_from_slice(&4u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&98u32.to_le_bytes());
+        bytes.splice(66..66, [0u8; 32]);
+        assert_eq!(decode_chunk(&bytes, &info_for([7, 1, 2, 3], &data, bytes.len() as u64)).unwrap(), data);
     }
 
     #[test]

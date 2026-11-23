@@ -71,6 +71,12 @@ pub fn build_with(m: &Manifest, opts: BuildOpts) -> Vec<u8> {
     m.chunks.iter().for_each(|c| cdl.push(c.group));
     m.chunks.iter().for_each(|c| cdl.extend(c.window_size.to_le_bytes()));
     m.chunks.iter().for_each(|c| cdl.extend((c.file_size as i64).to_le_bytes()));
+    if m.meta.feature_level >= 22 {
+        // Version 22+ columns (Legendary CDL): secret guid, compressed window size, encryption tag.
+        m.chunks.iter().for_each(|_| cdl.extend([0u8; 16]));
+        m.chunks.iter().for_each(|c| cdl.extend(c.window_size.to_le_bytes()));
+        m.chunks.iter().for_each(|_| cdl.extend([0u8; 16]));
+    }
     section(&mut body, 0, &cdl, 0);
     // File list
     let mut fml = (m.files.len() as u32).to_le_bytes().to_vec();
@@ -103,14 +109,19 @@ pub fn build_with(m: &Manifest, opts: BuildOpts) -> Vec<u8> {
     } else {
         body.clone()
     };
+    // Version 22+ headers carry a 16-byte secret guid and a 16-byte tag after the version.
+    let v22 = m.meta.feature_level >= 22;
     let mut out = Vec::new();
     out.extend(opts.magic.unwrap_or(0x44BE_C00C).to_le_bytes());
-    out.extend(41u32.to_le_bytes());
+    out.extend((if v22 { 73u32 } else { 41u32 }).to_le_bytes());
     out.extend((body.len() as u32).to_le_bytes());
     out.extend((stored.len() as u32).to_le_bytes());
     out.extend(sha);
     out.push(opts.stored_as.unwrap_or(if opts.compress { 1 } else { 0 }));
-    out.extend(18u32.to_le_bytes());
+    out.extend((if v22 { m.meta.feature_level } else { 18 }).to_le_bytes());
+    if v22 {
+        out.extend([0u8; 32]);
+    }
     out.extend(stored);
     out
 }

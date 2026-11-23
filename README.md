@@ -51,7 +51,7 @@ If Epic's launcher already installed some of your games, the Library shows "3 ga
 - **Online games with anti-cheat** (Easy Anti-Cheat, BattlEye) may refuse to start or go online without Epic's own launcher. **Don't try to force them** (for example by changing their files): that's the kind of thing anti-cheat systems ban for.
 - Games that start through **Ubisoft Connect, the EA app or Rockstar's launcher** aren't supported yet.
 - There's **no Epic overlay**: no in-game friends list or achievement pop-ups.
-- **No store:** buying games, refunds and gifts happen on Epic's website or in Epic's launcher.
+- **The Store is Epic's own website** in a Fishy Client window: Fishy Client shows this week's free games and opens Epic's pages, but buying, getting free games, refunds and gifts are things you do yourself on Epic's page. Fishy Client never clicks anything there for you.
 
 ### It can stop working
 - Epic can change how its sign-in or downloads work at any time. Signing in, downloading or starting games may then **break until Fishy Client is updated**, and there's no promise when that will be.
@@ -83,6 +83,8 @@ Only to Epic, always over HTTPS with normal certificate checks:
 | `launcher-public-service-prod06.ol.epicgames.com` | where to download a game and its newest version |
 | `ecommerceintegration-public-service-ecomprod02.ol.epicgames.com` | an ownership token, only for the few games that need one to start |
 | Epic's download servers (addresses Epic gives for each game) | the game files themselves |
+| `store-site-backend-static-ipv4.ak.epicgames.com` | the list of this week's free games on the Store page (nothing about you is sent) |
+| `store.epicgames.com` and Epic's image servers | the Store window is Epic's own website, so Epic sees what you do there, as in any browser. Your sign-in there is remembered until you **Log out** in Fishy Client |
 | `github.com` | checking at start-up whether a newer Fishy Client exists, and downloading it after you press **Update now**. Only a normal download request is sent: no account details, no game list. Turn it off in **Settings → Check for Fishy Client updates** |
 
 Each downloaded piece is checked against Epic's file list, so a changed file is never installed. Fishy Client updates itself only after you press **Update now**, and only installs updates signed with the maintainer's private key, so a changed or fake update is refused.

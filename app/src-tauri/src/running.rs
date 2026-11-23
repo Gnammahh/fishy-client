@@ -148,11 +148,17 @@ async fn watch(app: AppHandle) {
             }
             (closed, w.list.names(), restore, empty)
         };
-        for name in &closed {
+        let store = app.state::<crate::AppInstall>().downloads.store.clone();
+        for (name, ran) in &closed {
             tracing::info!("{name} closed");
+            // Playtime counted by Fishy Client (spec §6p).
+            if store.add_playtime(name, ran.as_secs()).is_err() {
+                tracing::warn!("couldn't save the playtime of {name}");
+            }
         }
         if !closed.is_empty() {
             let _ = app.emit("running-changed", names);
+            let _ = app.emit("installed-changed", ());
         }
         if restore {
             bring_back(&app);

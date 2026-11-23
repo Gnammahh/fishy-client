@@ -49,6 +49,9 @@ pub struct InstalledGame {
     /// When Play last started it (spec §6f.4). Records from before then have none.
     #[serde(default)]
     pub last_played: Option<DateTime<Utc>>,
+    /// Seconds played through Fishy Client (spec §6p).
+    #[serde(default)]
+    pub playtime_secs: u64,
     /// The installed optional parts (spec §6n). None: every file.
     #[serde(default)]
     pub parts: Option<Vec<String>>,
@@ -209,7 +212,8 @@ impl InstallStore {
         // An update keeps the original install date and the last play time.
         let before = self.installed().into_iter().find(|g| g.app_name == job.app_name);
         let installed_at = before.as_ref().map(|g| g.installed_at).unwrap_or_else(Utc::now);
-        let last_played = before.and_then(|g| g.last_played);
+        let last_played = before.as_ref().and_then(|g| g.last_played);
+        let playtime_secs = before.map_or(0, |g| g.playtime_secs);
         let game = InstalledGame {
             app_name: job.app_name.clone(),
             title: job.title.clone(),
@@ -220,6 +224,7 @@ impl InstallStore {
             install_size: m.install_size(),
             installed_at,
             last_played,
+            playtime_secs,
             parts: job.parts.clone(),
             parent: job.parent.clone(),
             namespace: job.namespace.clone(),
@@ -243,6 +248,15 @@ impl InstallStore {
         let mut games = self.installed();
         let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
         game.last_played = Some(at);
+        self.save_installed(&games)
+    }
+
+    /// Adds time played through Fishy Client (spec §6p). Nothing happens if it isn't installed.
+    pub fn add_playtime(&self, app: &str, secs: u64) -> io::Result<()> {
+        let _lock = installed_lock();
+        let mut games = self.installed();
+        let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
+        game.playtime_secs = game.playtime_secs.saturating_add(secs);
         self.save_installed(&games)
     }
 
@@ -427,6 +441,21 @@ mod tests {
     }
 
     #[test]
+    fn playtime_adds_up_and_survives_an_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let j = job(&dir.path().join("Games").join("Tide"));
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        assert_eq!(store.finish_install(&j, &sample()).unwrap().playtime_secs, 0);
+        store.add_playtime("Tide", 90).unwrap();
+        store.add_playtime("Tide", 30).unwrap();
+        store.add_playtime("Nope", 10).unwrap();
+        assert_eq!(store.installed()[0].playtime_secs, 120);
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        assert_eq!(store.finish_install(&j, &sample()).unwrap().playtime_secs, 120, "an update keeps it");
+    }
+
+    #[test]
     fn records_from_1_3_0_read_without_parts() {
         let j: JobInfo = serde_json::from_value(serde_json::json!({
             "app_name": "Tide", "title": "T", "namespace": "ns", "catalog_item_id": "c",
@@ -440,6 +469,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!((g.parts, g.parent, g.namespace.as_str(), g.catalog_item_id.as_str()), (None, None, "", ""));
+        assert_eq!(g.playtime_secs, 0);
     }
 
     #[test]

@@ -47,15 +47,15 @@ impl RunningList {
         self.games.is_empty()
     }
 
-    /// Removes the games with no program open from their folder and returns their code names.
-    /// `taken_at` is when `programs` was listed: a game Play added after that is kept for the
-    /// next check, since the list couldn't include it.
-    pub fn check(&mut self, programs: &[PathBuf], taken_at: Instant) -> Vec<String> {
+    /// Removes the games with no program open from their folder and returns their code names
+    /// with how long they ran (spec §6p). `taken_at` is when `programs` was listed: a game Play
+    /// added after that is kept for the next check, since the list couldn't include it.
+    pub fn check(&mut self, programs: &[PathBuf], taken_at: Instant) -> Vec<(String, std::time::Duration)> {
         let mut closed = Vec::new();
         self.games.retain(|(app, folder, added)| {
             let open = *added > taken_at || programs.iter().any(|p| is_inside(p, folder));
             if !open {
-                closed.push(app.clone());
+                closed.push((app.clone(), taken_at.saturating_duration_since(*added)));
             }
             open
         });
@@ -172,10 +172,10 @@ mod tests {
         assert!(!list.add("kelp", Path::new(r"C:\Games\Kelp")));
         list.add("reef", Path::new(r"C:\Games\Reef"));
         let open = vec![PathBuf::from(r"C:\Games\Kelp\Binaries\Win64\kelp.exe"), PathBuf::from(r"C:\Windows\explorer.exe")];
-        assert_eq!(list.check(&open, Instant::now()), vec!["reef".to_string()]);
+        assert_eq!(names_of(list.check(&open, Instant::now())), vec!["reef".to_string()]);
         assert_eq!(list.names(), vec!["kelp".to_string()]);
         assert!(list.contains("kelp") && !list.contains("reef"));
-        assert_eq!(list.check(&[], Instant::now()), vec!["kelp".to_string()]);
+        assert_eq!(names_of(list.check(&[], Instant::now())), vec!["kelp".to_string()]);
         assert!(list.is_empty());
     }
 
@@ -185,7 +185,21 @@ mod tests {
         let taken = Instant::now();
         list.add("kelp", Path::new(r"C:\Games\Kelp"));
         assert!(list.check(&[], taken).is_empty(), "the list was taken before Play added it");
-        assert_eq!(list.check(&[], Instant::now()), vec!["kelp".to_string()]);
+        assert_eq!(names_of(list.check(&[], Instant::now())), vec!["kelp".to_string()]);
+    }
+
+    fn names_of(closed: Vec<(String, std::time::Duration)>) -> Vec<String> {
+        closed.into_iter().map(|(n, _)| n).collect()
+    }
+
+    #[test]
+    fn closed_games_report_how_long_they_ran() {
+        let mut list = RunningList::default();
+        list.add("kelp", Path::new("C:/Games/Kelp"));
+        let later = Instant::now() + std::time::Duration::from_secs(90);
+        let closed = list.check(&[], later);
+        assert_eq!(closed.len(), 1);
+        assert!(closed[0].1 >= std::time::Duration::from_secs(90) && closed[0].1 < std::time::Duration::from_secs(95), "{:?}", closed[0].1);
     }
 
     #[test]

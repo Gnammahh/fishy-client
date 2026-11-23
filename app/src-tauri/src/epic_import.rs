@@ -318,6 +318,7 @@ mod tests {
             install_size: 1,
             installed_at: fishy_core::chrono::Utc::now(),
             last_played: None,
+            playtime_secs: 0,
             parts: None,
             parent: None,
             namespace: String::new(),

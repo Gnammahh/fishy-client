@@ -1174,6 +1174,29 @@ Asked for by the user: clicking a game's cover opens a page for that game with a
 - **UI (vitest):** clicking the cover opens the page and ← Library goes back; the page shows the card's buttons; filter All/Unlocked/Locked; empty texts; error + Try again; "no achievements" text; date and % formatting.
 - **By hand:** open Rocket League's page: 63 / 88, filter works, icons show; Play from the page; a not-installed game's page shows Install; a game without achievements.
 
+## 6r. Light at rest: animations pause (version 1.7.1, decided 2026-11-23)
+
+Asked for by the user: Fishy Client should stay light (memory, CPU), measured against Epic's launcher.
+
+### Measured (2026-11-23, installed 1.7.0, user's PC)
+- Start-up: window and saved Library at once (log "started" after 0.5 s); fresh Library refresh about 7 s, of which about 6 s are the 164 per-game catalog lookups (8 at a time). Achievements on a game page: about 0.5 s.
+- Memory: about 300 MB in all (Fishy 16 MB, WebView2 the rest). Epic's launcher, open at the same time: about 1,400 MB in 12 processes.
+- CPU at rest: Fishy's own code 0 %, WebView2 about 24 % of one core (GPU process 18.5 %, page 5.4 %). With **Reduce motion** on: 0 %. So the waves and swimming fish cost it. Epic's launcher at rest: about 3 %.
+
+### Rule (the user's choice)
+- The ocean waves and the sidebar fish **pause** while Fishy Client's window is **minimized** or while **a game started from Fishy Client is running** (the running list of §6f.4). They never pause while the window can be seen and no game runs, so the look stays as it is.
+- Pausing freezes them where they are (`animation-play-state: paused`) and they continue from there; no jump.
+- The fish loader and download progress bars aren't touched (short-lived, or something is happening).
+
+### How it's built
+- Rust: the main window's events send `window-minimized` (true/false) to the page whenever its size changes (minimize and restore both change it).
+- `app/src/lib/motion.ts`: a `minimized` store set from that event, `pausedMotion` = minimized or the running list isn't empty, and `syncPausedAttribute()` mirroring it onto `data-paused` on `<html>` (like `data-reduce-motion`). Started in `+layout.svelte`.
+- CSS in `OceanBackground.svelte` and `Sidebar.svelte`: `html[data-paused]` pauses the animations.
+
+### Tests
+- **UI (vitest):** `data-paused` is set when minimized, when a game is in the running list, and removed when neither.
+- **By hand:** CPU measured with a game running (or Fishy minimized) is about 0 %; restoring the window, the fish swim on from where they stopped.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

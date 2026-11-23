@@ -2,7 +2,7 @@
 //! file's SHA-1 and notes it in resume.txt. Stopping (pause or cancel) returns `Stopped`.
 //! Updates (spec §6e) also copy parts from the old files, swap changed files in through a
 //! temporary file and delete removed files at the end.
-use super::client::InstallClient;
+use super::client::{host_of, InstallClient};
 use super::limit::SpeedLimiter;
 use super::manifest::{FileEntry, Manifest};
 use super::plan::build_update_plan;
@@ -145,7 +145,7 @@ fn read_old(old: &mut Option<std::fs::File>, path: &Path, pos: u64, size: usize)
 #[allow(clippy::too_many_arguments)]
 async fn rebuild_from_downloads(
     client: &InstallClient,
-    base: &str,
+    base: &[String],
     dir: &'static str,
     manifest: &Manifest,
     entry: &FileEntry,
@@ -206,7 +206,9 @@ pub async fn run_job(
     opts: RunOptions,
 ) -> Result<(), InstallError> {
     let plan = build_update_plan(manifest, old, &store.finished_files(job))?;
-    let base = job.base_urls.first().ok_or_else(|| InstallError::BadManifest("no CDN".into()))?.clone();
+    if job.base_urls.is_empty() {
+        return Err(InstallError::BadManifest("no CDN".into()));
+    }
     let dir = manifest.chunk_dir();
 
     // Space for what's left, checked on every start and resume (spec §6c, §6e).
@@ -218,17 +220,33 @@ pub async fn run_job(
     let total = job.download_size.max(downloaded);
     on_progress(Progress { downloaded, total });
 
+    // The fastest server first (spec §6m.2). With a speed limit, the server's speed doesn't matter.
+    let limited = opts.limiter.as_ref().is_some_and(|l| l.is_limited());
+    let bases: Arc<Vec<String>> = Arc::new(if limited || plan.chunk_order.is_empty() {
+        job.base_urls.clone()
+    } else {
+        let sample: Vec<_> = plan.chunk_order.iter().take(2).filter_map(|g| manifest.chunk(g).cloned()).collect();
+        tokio::select! {
+            biased;
+            _ = stop.cancelled() => return Err(InstallError::Stopped),
+            order = client.fastest_first(&job.base_urls, dir, &sample) => order,
+        }
+    });
+    tracing::info!("download: using {}", host_of(&bases[0]));
+    let started = std::time::Instant::now();
+    let first_downloaded = downloaded;
+
     let mut chunks: ChunkStream = Box::pin(
         stream::iter(plan.chunk_order.clone())
             .map(|guid| {
                 let info = manifest.chunk(&guid).expect("plan checked every chunk").clone();
-                let base = base.clone();
+                let bases = bases.clone();
                 let limiter = opts.limiter.clone();
                 async move {
                     if let Some(l) = &limiter {
                         l.take(info.file_size).await;
                     }
-                    let result = client.download_chunk(&base, dir, &info).await;
+                    let result = client.download_chunk(&bases, dir, &info).await;
                     (guid, info.file_size, result)
                 }
             })
@@ -274,7 +292,7 @@ pub async fn run_job(
                         let data = tokio::select! {
                             biased;
                             _ = stop.cancelled() => return Err(InstallError::Stopped),
-                            d = client.download_chunk(&base, dir, info) => d?,
+                            d = client.download_chunk(&bases, dir, info) => d?,
                         };
                         (info.file_size, data)
                     } else {
@@ -316,7 +334,7 @@ pub async fn run_job(
                 downloaded += bytes;
                 on_progress(Progress { downloaded: downloaded.min(total), total });
             };
-            sha = rebuild_from_downloads(client, &base, dir, manifest, entry, &path, &job.title, &stop, opts.limiter.as_deref(), add).await?;
+            sha = rebuild_from_downloads(client, &bases, dir, manifest, entry, &path, &job.title, &stop, opts.limiter.as_deref(), add).await?;
         }
         if sha != entry.sha1 {
             return Err(InstallError::DamagedFile(entry.filename.clone()));
@@ -330,7 +348,14 @@ pub async fn run_job(
         // Best effort: a removed file that can't be deleted doesn't stop the update.
         delete_named_files(&job.install_path, plan.removed.iter().map(String::as_str), false);
     }
+    tracing::info!("{}", speed_line(downloaded.saturating_sub(first_downloaded), started.elapsed().as_secs_f64()));
     Ok(())
+}
+
+/// "download: 1432 MB at 8.1 MB/s" for the log (1 MB = 1,000,000 bytes, as in Settings).
+fn speed_line(bytes: u64, secs: f64) -> String {
+    let mb = bytes as f64 / 1_000_000.0;
+    format!("download: {mb:.0} MB at {:.1} MB/s", if secs > 0.0 { mb / secs } else { 0.0 })
 }
 
 #[cfg(test)]
@@ -465,6 +490,46 @@ mod tests {
         for (name, content) in &f.expected {
             assert_eq!(&read(&e.job.install_path, name), content, "{name}");
         }
+    }
+
+    /// Two servers with the same chunks; the job lists `first` then `second`.
+    async fn two_servers(f: &Fixture) -> (MockServer, MockServer, Env) {
+        let first = MockServer::start().await;
+        let second = MockServer::start().await;
+        serve(&first, f, None, None).await;
+        serve(&second, f, None, None).await;
+        let mut e = env(&first, f);
+        e.job.base_urls.push(format!("{}/base", second.uri()));
+        (first, second, e)
+    }
+
+    #[tokio::test]
+    async fn every_server_gets_the_quick_test() {
+        let f = basic();
+        let (first, second, e) = two_servers(&f).await;
+        run_job(&e.client, &e.store, &e.job, &f.manifest, None, CancellationToken::new(), |_| {}, RunOptions::default()).await.unwrap();
+        assert!(!first.received_requests().await.unwrap().is_empty());
+        assert!(!second.received_requests().await.unwrap().is_empty(), "the second server was never tried");
+        for (name, content) in &f.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn with_a_speed_limit_there_is_no_quick_test() {
+        let f = basic();
+        let (_first, second, e) = two_servers(&f).await;
+        let limiter = Arc::new(super::super::limit::SpeedLimiter::new());
+        limiter.set(Some(1_000_000_000));
+        let options = RunOptions { limiter: Some(limiter), ..RunOptions::default() };
+        run_job(&e.client, &e.store, &e.job, &f.manifest, None, CancellationToken::new(), |_| {}, options).await.unwrap();
+        assert!(second.received_requests().await.unwrap().is_empty(), "the limit means Epic's order is kept");
+    }
+
+    #[test]
+    fn speed_line_in_mb_per_second() {
+        assert_eq!(speed_line(1_500_000_000, 187.0), "download: 1500 MB at 8.0 MB/s");
+        assert_eq!(speed_line(0, 0.0), "download: 0 MB at 0.0 MB/s");
     }
 
     #[tokio::test]

@@ -49,6 +49,11 @@ impl SpeedLimiter {
         }
     }
 
+    /// Whether a limit is set right now.
+    pub fn is_limited(&self) -> bool {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).rate.is_some()
+    }
+
     /// Waits until `bytes` more may be downloaded.
     pub async fn take(&self, bytes: u64) {
         // Listen for a change before reading the limit, so a change in between isn't missed.

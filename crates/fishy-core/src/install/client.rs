@@ -149,28 +149,66 @@ impl InstallClient {
     }
 
     /// One chunk, decoded and verified. Retried up to 7 times, waiting 1, 2, 4… × retry_base.
-    pub async fn download_chunk(&self, base_url: &str, dir: &str, chunk: &ChunkInfo) -> Result<Vec<u8>, InstallError> {
-        let url = format!("{}/{}", base_url.trim_end_matches('/'), chunk_path(dir, chunk));
+    /// Each try goes to the next server in `bases` (spec §6m.2), wrapping round.
+    pub async fn download_chunk(&self, bases: &[String], dir: &str, chunk: &ChunkInfo) -> Result<Vec<u8>, InstallError> {
+        if bases.is_empty() {
+            return Err(InstallError::BadManifest("no CDN".into()));
+        }
         let mut last = InstallError::Network("not tried".into());
         for attempt in 0..CHUNK_TRIES {
             if attempt > 0 {
                 tokio::time::sleep(self.retry_base * 2u32.pow(attempt - 1)).await;
             }
-            last = match self.cdn.get(&url).send().await {
-                Ok(res) if res.status().is_success() => match res.bytes().await {
-                    Ok(bytes) => match decode_chunk(&bytes, chunk) {
-                        Ok(data) => return Ok(data),
-                        Err(InstallError::Unsupported) => return Err(InstallError::Unsupported),
-                        Err(e) => e,
-                    },
-                    Err(e) => InstallError::Network(e.without_url().to_string()),
-                },
-                Ok(res) => InstallError::Network(format!("http_{}", res.status().as_u16())),
-                Err(e) => InstallError::Network(e.without_url().to_string()),
-            };
+            match self.fetch_chunk_once(&bases[attempt as usize % bases.len()], dir, chunk).await {
+                Ok(data) => return Ok(data),
+                Err(InstallError::Unsupported) => return Err(InstallError::Unsupported),
+                Err(e) => last = e,
+            }
         }
         Err(last)
     }
+
+    /// One try at one chunk from one server.
+    async fn fetch_chunk_once(&self, base_url: &str, dir: &str, chunk: &ChunkInfo) -> Result<Vec<u8>, InstallError> {
+        let url = format!("{}/{}", base_url.trim_end_matches('/'), chunk_path(dir, chunk));
+        match self.cdn.get(&url).send().await {
+            Ok(res) if res.status().is_success() => match res.bytes().await {
+                Ok(bytes) => decode_chunk(&bytes, chunk),
+                Err(e) => Err(InstallError::Network(e.without_url().to_string())),
+            },
+            Ok(res) => Err(InstallError::Network(format!("http_{}", res.status().as_u16()))),
+            Err(e) => Err(InstallError::Network(e.without_url().to_string())),
+        }
+    }
+
+    /// The servers, fastest first (spec §6m.2): each fetches `sample` once, all at the same time.
+    /// Servers that fail go last, in their old order. One server (or none) is returned as is.
+    pub async fn fastest_first(&self, bases: &[String], dir: &str, sample: &[ChunkInfo]) -> Vec<String> {
+        if bases.len() < 2 || sample.is_empty() {
+            return bases.to_vec();
+        }
+        let timed = futures::future::join_all(bases.iter().map(|base| async move {
+            let start = std::time::Instant::now();
+            for chunk in sample {
+                self.fetch_chunk_once(base, dir, chunk).await.ok()?;
+            }
+            Some(start.elapsed())
+        }))
+        .await;
+        let mut order: Vec<(usize, Option<std::time::Duration>)> = timed.into_iter().enumerate().collect();
+        // None sorts after every time; a stable sort keeps failed servers in their old order.
+        order.sort_by_key(|&(_, t)| (t.is_none(), t));
+        order.into_iter().map(|(i, _)| bases[i].clone()).collect()
+    }
+}
+
+/// Just the server's name from a download address, for the log (never the path).
+pub fn host_of(url: &str) -> String {
+    url.split_once("://")
+        .map(|(_, rest)| rest.split('/').next().unwrap_or_default())
+        .filter(|h| !h.is_empty())
+        .unwrap_or("?")
+        .to_string()
 }
 
 #[cfg(test)]
@@ -217,7 +255,7 @@ mod tests {
         // 5 pieces 250 ms apart: about 1.25 s in total, never silent for 400 ms.
         let base = trickle_server(build_chunk(info.guid, &data, false, None), 5, Duration::from_millis(250)).await;
         let c = InstallClient::with_base_url(&base).with_retry_base(Duration::from_millis(1)).with_cdn_timeout(Duration::from_millis(400));
-        assert_eq!(c.download_chunk(&base, "ChunksV4", &info).await.unwrap(), data);
+        assert_eq!(c.download_chunk(std::slice::from_ref(&base), "ChunksV4", &info).await.unwrap(), data);
     }
 
     #[tokio::test]
@@ -376,7 +414,7 @@ mod tests {
             .mount(&server)
             .await;
         let c = InstallClient::with_base_url(&server.uri()).with_retry_base(Duration::from_millis(1));
-        let r = c.download_chunk(&format!("{}/base", server.uri()), "ChunksV4", &info).await;
+        let r = c.download_chunk(&[format!("{}/base", server.uri())], "ChunksV4", &info).await;
         assert!(matches!(r, Err(InstallError::BadChunk(_))), "{r:?}");
     }
 
@@ -389,7 +427,7 @@ mod tests {
         Mock::given(method("GET")).and(path(p.clone())).respond_with(ResponseTemplate::new(503)).up_to_n_times(1).mount(&server).await;
         Mock::given(method("GET")).and(path(p)).respond_with(ResponseTemplate::new(200).set_body_bytes(build_chunk(info.guid, &data, true, None))).mount(&server).await;
         let c = InstallClient::with_base_url(&server.uri()).with_retry_base(Duration::from_millis(1));
-        assert_eq!(c.download_chunk(&format!("{}/base", server.uri()), "ChunksV4", &info).await.unwrap(), data);
+        assert_eq!(c.download_chunk(&[format!("{}/base", server.uri())], "ChunksV4", &info).await.unwrap(), data);
         for req in server.received_requests().await.unwrap() {
             assert!(req.headers.get("authorization").is_none());
             assert!(req.headers.get("user-agent").unwrap().to_str().unwrap().starts_with("EpicGamesLauncher/"));
@@ -406,6 +444,68 @@ mod tests {
             .mount(&server)
             .await;
         let c = InstallClient::with_base_url(&server.uri()).with_retry_base(Duration::from_millis(1));
-        assert_eq!(c.download_chunk(&server.uri(), "ChunksV4", &info).await, Err(InstallError::Unsupported));
+        assert_eq!(c.download_chunk(&[server.uri()], "ChunksV4", &info).await, Err(InstallError::Unsupported));
+    }
+
+    /// A server at `/base` that answers this chunk with `res`.
+    async fn chunk_server(info: &ChunkInfo, res: ResponseTemplate) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path(format!("/base/{}", chunk_path("ChunksV4", info)))).respond_with(res).mount(&server).await;
+        server
+    }
+
+    fn good(info: &ChunkInfo, data: &[u8]) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_bytes(build_chunk(info.guid, data, true, None))
+    }
+
+    #[tokio::test]
+    async fn a_failed_chunk_is_tried_on_the_next_server() {
+        let data = b"fishy data".repeat(10);
+        let info = info_for([1, 2, 3, 4], &data, 10);
+        let broken = chunk_server(&info, ResponseTemplate::new(500)).await;
+        let fine = chunk_server(&info, good(&info, &data)).await;
+        let c = InstallClient::with_base_url(&fine.uri()).with_retry_base(Duration::from_millis(1));
+        let bases = [format!("{}/base", broken.uri()), format!("{}/base", fine.uri())];
+        assert_eq!(c.download_chunk(&bases, "ChunksV4", &info).await.unwrap(), data);
+        assert_eq!(broken.received_requests().await.unwrap().len(), 1, "only the first try goes to the broken server");
+        assert_eq!(fine.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_server_is_an_error() {
+        let info = info_for([1, 2, 3, 4], b"x", 1);
+        let c = InstallClient::with_base_url("http://127.0.0.1:9").with_retry_base(Duration::from_millis(1));
+        assert!(matches!(c.download_chunk(&[], "ChunksV4", &info).await, Err(InstallError::BadManifest(_))));
+    }
+
+    #[tokio::test]
+    async fn fastest_first_orders_servers_by_the_quick_test() {
+        let data = b"fishy data".repeat(10);
+        let info = info_for([1, 2, 3, 4], &data, 10);
+        let slow = chunk_server(&info, good(&info, &data).set_delay(Duration::from_millis(400))).await;
+        let fast = chunk_server(&info, good(&info, &data)).await;
+        let broken = chunk_server(&info, ResponseTemplate::new(404)).await;
+        let c = InstallClient::with_base_url(&fast.uri()).with_retry_base(Duration::from_millis(1));
+        let b = |s: &MockServer| format!("{}/base", s.uri());
+        let order = c.fastest_first(&[b(&broken), b(&slow), b(&fast)], "ChunksV4", std::slice::from_ref(&info)).await;
+        assert_eq!(order, vec![b(&fast), b(&slow), b(&broken)]);
+        assert_eq!(broken.received_requests().await.unwrap().len(), 1, "the quick test doesn't retry");
+    }
+
+    #[tokio::test]
+    async fn one_server_needs_no_quick_test() {
+        let info = info_for([1, 2, 3, 4], b"x", 1);
+        let server = MockServer::start().await;
+        let c = InstallClient::with_base_url(&server.uri());
+        let only = vec![format!("{}/base", server.uri())];
+        assert_eq!(c.fastest_first(&only, "ChunksV4", std::slice::from_ref(&info)).await, only);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn host_of_keeps_only_the_server_name() {
+        assert_eq!(host_of("https://download.epicgames.com/Builds/Org/o-1/abc/default"), "download.epicgames.com");
+        assert_eq!(host_of("http://127.0.0.1:8080/base"), "127.0.0.1:8080");
+        assert_eq!(host_of("not a url"), "?");
     }
 }

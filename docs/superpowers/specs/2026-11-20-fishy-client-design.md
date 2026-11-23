@@ -1025,6 +1025,14 @@ Asked for by the user's friend: install games into `C:\Program Files\Epic Games`
 - Only the page changes; the limit itself works as before (§6e, §6f.1).
 - **Tests (vitest):** the line with a limit, no line without one, the link opens Settings.
 
+### 6m.2 Use the fastest Epic download server (measured 2026-11-23)
+- **Measured on the user's PC:** the internet does 55 MB/s or more, Epic's four servers (Akamai, Fastly, Cloudflare, Epic's own) each gave 20–38 MB/s with big pieces, and no server was fastest every time (Fastly once gave 8 MB/s on one connection). The user's last real download in Fishy averaged about 8 MB/s. Fishy only ever used the first server in Epic's list. Keeping downloads going while files are saved was also tried in a throwaway test and made no difference, so it's not part of this.
+- **Quick test at the start:** when Epic lists more than one server and no speed limit is on, every download, update and resume first fetches the same 2 pieces from each server at the same time and uses the servers fastest first. A server that fails the test goes to the end. The test costs a few MB, which are fetched again later. With a speed limit on, or with one server, the order stays as Epic sent it.
+- **Retries switch server:** a piece that fails is tried again on the next server in that order (1st try fastest server, 2nd try the next, and so on, wrapping round), with the same waits as before (§6c).
+- **Logs:** "download: using *host*" (just the server's name, for example `download.epicgames.com`, never the full address) and at the end "download: *N* MB at *X* MB/s".
+- **Tests (Rust):** the order (fastest first, failed last, one server unchanged); a failing piece is fetched from the next server; with a limit no test happens; `host_of` gives only the host; the speed line.
+- **By hand:** download a game and read the speed line in the log; compare with the 8 MB/s before.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

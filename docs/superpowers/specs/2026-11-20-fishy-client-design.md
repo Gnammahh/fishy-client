@@ -1116,6 +1116,29 @@ Chosen by the user: **Epic's real store in a Fishy Client window, plus our own "
 - **UI (vitest):** Store in the sidebar; the two sections with dates and buttons; "In your Library" instead of Get; empty and error states with Try again; Get calls the open-window command with the page address.
 - **By hand:** the Store page shows this week's free games; Get opens Epic's page in the Store window; sign in there, close, reopen: still signed in; Log out in Fishy, open the Store: signed out; get a free game, close the window: it appears in the Library.
 
+## 6p. Game folder and playtime (version 1.6.0, decided 2026-11-24)
+
+Asked for by the user: open a game's files from the ⋯ menu, achievements and playtime. The user left the choices to Claude.
+
+### Research (2026-11-24)
+- **Playtime:** neither Legendary nor Heroic reads or sends Epic's playtime, and no documented Epic playtime endpoint was found. So Fishy Client counts playtime itself.
+- **Achievements:** Legendary has store GraphQL queries for a game's achievements and the user's unlocked ones (`launcher.store.epicgames.com/graphql`, with the launcher sign-in), but nobody shows them working and the answer's shape is unchecked. **Not in 1.6.0**; a later small test with the real sign-in decides.
+
+### Open game folder
+- The ⋯ menu of an installed game gains **Open game folder** (above Uninstall). It opens the game's install folder in Windows Explorer. Fortnite opens its one folder (its pieces share it).
+- If the folder isn't there any more: "Couldn't find *Title*'s folder."
+- Rust command `open_game_folder(app_name)`: the folder comes only from the installed record (never from the page), must be an existing folder, and is opened with `explorer.exe <folder>`. Log: "opened a game folder" (no path).
+
+### Playtime
+- **Counted by Fishy Client:** from Play until the running-games watch (§6f.4) sees the game close, in whole seconds, added to the installed record's new `playtime_secs: u64` (default 0, old records read as 0). Games played through Epic's launcher, or while Fishy Client was closed, aren't counted. An update keeps it; Uninstall forgets it (the record goes).
+- **Shown** in the ⋯ menu under the size: "Played: 12 h 5 min" ("Played: 25 min", "Played: under a minute"); nothing when 0.
+- A game Fishy Client was watching when it quits isn't counted for that session (known limit).
+
+### Tests
+- **Rust:** the running list reports how long each closed game ran; `add_playtime` adds and keeps on update; old `installed.json` reads 0; the folder command refuses a missing folder.
+- **UI (vitest):** the menu shows "Open game folder" and calls the command; the playtime line formats (0 → none, 30 s, 25 min, 12 h 5 min).
+- **By hand:** Open game folder opens Explorer in the game's folder; play a game for a few minutes, close it: the menu shows the time.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

@@ -319,6 +319,7 @@
     box-shadow: 6px 6px 0 rgba(79, 227, 209, 0.15);
     width: min(560px, calc(100vw - 32px));
     max-height: calc(100vh - var(--titlebar) - 32px);
+    box-sizing: border-box; /* padding and border count inside the cap */
     overflow-y: auto;
     padding: 18px 20px 20px;
     display: grid;

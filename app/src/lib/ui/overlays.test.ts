@@ -17,7 +17,10 @@ describe("dialog overlays", () => {
   it.each(overlays.map(([file]) => file))("%s starts under the title bar and fits below it", (file) => {
     const src = sources[file];
     expect(overlayRule(src)).toMatch(/inset:\s*var\(--titlebar\)\s+0\s+0\s+0;/);
-    // The box itself never grows taller than the space under the title bar.
-    expect(src).toMatch(/max-height:\s*calc\(100vh - var\(--titlebar\) - 32px\)/);
+    // The box itself never grows taller than the space under the title bar, padding and
+    // border included (without border-box they're added on top and it sticks out again).
+    const box = /\{([^}]*max-height:\s*calc\(100vh - var\(--titlebar\) - 32px\)[^}]*)\}/.exec(src)?.[1];
+    expect(box).toBeTruthy();
+    expect(box).toMatch(/box-sizing:\s*border-box;/);
   });
 });

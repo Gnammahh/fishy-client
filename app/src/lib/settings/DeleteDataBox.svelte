@@ -88,6 +88,7 @@
     gap: 14px;
     max-width: min(480px, calc(100vw - 32px));
     max-height: calc(100vh - var(--titlebar) - 32px);
+    box-sizing: border-box; /* padding and border count inside the cap */
     overflow-y: auto;
   }
   h3 {

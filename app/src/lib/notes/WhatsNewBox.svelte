@@ -57,6 +57,7 @@
     border: 2px solid var(--aqua);
     color: var(--text);
     max-height: calc(100vh - var(--titlebar) - 32px);
+    box-sizing: border-box; /* padding and border count inside the cap */
     overflow-y: auto;
   }
   h3 {

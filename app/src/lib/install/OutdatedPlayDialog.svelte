@@ -60,6 +60,7 @@
     flex-direction: column;
     gap: 14px;
     max-height: calc(100vh - var(--titlebar) - 32px);
+    box-sizing: border-box; /* padding and border count inside the cap */
     overflow-y: auto;
   }
   p {

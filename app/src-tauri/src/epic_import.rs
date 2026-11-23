@@ -4,6 +4,7 @@ use crate::{AppAuth, AppInstall, AppLibrary};
 use fishy_core::epic_import::{self as epic, EpicItem};
 use fishy_core::install::client::ManifestInfo;
 use fishy_core::install::manifest::Manifest;
+use fishy_core::install::parts::{chosen_on_disk, only_parts};
 use fishy_core::install::store::InstalledGame;
 use fishy_core::install::InstallError;
 use fishy_core::library::Game;
@@ -74,12 +75,16 @@ pub enum AddOutcome {
     Error { message: String, signed_out: bool },
 }
 
+fn piece_missing(title: &str) -> String {
+    format!("Couldn't import {title}: a part of it is missing. Open it once in Epic's launcher, then try again.")
+}
+
 /// Epic's games that are in the Library, not installed here and not in the Downloads list.
-/// Games installed with only some optional parts (Fortnite) are left out: they can't be added yet.
+/// Add-on pieces (Fortnite's Save the World Content) come with their game, never on their own.
 fn candidates(items: Vec<EpicItem>, games: &[Game], installed: &[InstalledGame], has_job: impl Fn(&str) -> bool) -> Vec<(EpicItem, Game)> {
     items
         .into_iter()
-        .filter(|i| !i.partial && !installed.iter().any(|g| g.app_name == i.app_name) && !has_job(&i.app_name))
+        .filter(|i| i.parent.is_none() && !installed.iter().any(|g| g.app_name == i.app_name) && !has_job(&i.app_name))
         .filter_map(|i| games.iter().find(|g| g.app_name == i.app_name).cloned().map(|g| (i, g)))
         .collect()
 }
@@ -97,18 +102,18 @@ fn find(app_name: &str, library: &AppLibrary, install: &AppInstall) -> Option<(E
 
 /// The manifest: the game's own `.egstore` copy, else Epic's current one. With `need_info`, the
 /// manifest info is fetched too (its CDN addresses are needed to download anything).
-async fn manifest_for(item: &EpicItem, game: &Game, auth: &AppAuth, install: &AppInstall, need_info: bool) -> Result<(Vec<u8>, Manifest, Option<ManifestInfo>), InstallError> {
+async fn manifest_for(item: &EpicItem, auth: &AppAuth, install: &AppInstall, need_info: bool) -> Result<(Vec<u8>, Manifest, Option<ManifestInfo>), InstallError> {
     let local = epic::local_manifest(item).and_then(|b| epic::usable_manifest(item, &b).map(|m| (b, m)));
     if let (Some((bytes, m)), false) = (&local, need_info) {
         return Ok((bytes.clone(), m.clone(), None));
     }
     let client = &install.downloads.client;
     let token = auth.manager.access_token().await?;
-    let info = client.manifest_info(&token, &game.namespace, &game.catalog_item_id, &game.app_name).await?;
+    let info = client.manifest_info(&token, &item.namespace, &item.catalog_item_id, &item.app_name).await?;
     if let Some((bytes, m)) = local {
         return Ok((bytes, m, Some(info)));
     }
-    info!("epic import: {} has no usable file list, downloading Epic's", game.app_name);
+    info!("epic import: {} has no usable file list, downloading Epic's", item.app_name);
     let bytes = client.download_manifest(&info).await?;
     let m = epic::usable_manifest(item, &bytes).ok_or(InstallError::Unsupported)?;
     Ok((bytes, m, Some(info)))
@@ -139,7 +144,42 @@ pub fn epic_import_scan(library: tauri::State<'_, AppLibrary>, install: tauri::S
     found
 }
 
-/// Checks one game and adds it if every file is there.
+/// The game or one of its add-on pieces, ready to check: its manifest filtered to the parts on
+/// disk (spec §6n).
+struct Piece {
+    item: EpicItem,
+    title: String,
+    bytes: Vec<u8>,
+    m: Manifest,
+    parts: Option<Vec<String>>,
+    base_urls: Vec<String>,
+}
+
+/// The game first, then its pieces. A piece whose file list can't be had refuses the whole game.
+async fn pieces(app: &tauri::AppHandle, item: &EpicItem, game: &Game, auth: &AppAuth, install: &AppInstall, need_info: bool) -> Result<Vec<Piece>, (String, bool)> {
+    let all = epic::epic_manifests_dir().map(|d| epic::scan(&d)).unwrap_or_default();
+    let list: Vec<(EpicItem, String)> =
+        std::iter::once((item.clone(), game.title.clone())).chain(epic::pieces_of(&all, item).into_iter().map(|p| (p.clone(), p.title.clone()))).collect();
+    let mut out = Vec::new();
+    for (n, (it, title)) in list.into_iter().enumerate() {
+        let (bytes, m, info) = match manifest_for(&it, auth, install, need_info).await {
+            Ok(x) => x,
+            Err(e) if n == 0 || matches!(e, InstallError::Expired) => return Err(failure(app, &game.title, e).await),
+            Err(_) => return Err((piece_missing(&game.title), false)),
+        };
+        let (root, m2) = (it.install_path.clone(), m.clone());
+        let parts = tokio::task::spawn_blocking(move || chosen_on_disk(&root, &m2)).await.unwrap_or(None);
+        if let Some(p) = &parts {
+            let names: HashSet<&String> = m.files.iter().flat_map(|f| &f.install_tags).collect();
+            info!("epic import: {} with optional parts ({} of {} part names)", it.app_name, p.len(), names.len());
+        }
+        let m = only_parts(m, parts.as_deref());
+        out.push(Piece { item: it, title, bytes, m, parts, base_urls: info.map(|i| i.base_urls).unwrap_or_default() });
+    }
+    Ok(out)
+}
+
+/// Checks one game (with its pieces) and adds it if every file is there.
 #[tauri::command]
 pub async fn epic_import_add(
     app: tauri::AppHandle,
@@ -151,37 +191,40 @@ pub async fn epic_import_add(
     let error = |message: String, signed_out: bool| Ok(AddOutcome::Error { message, signed_out });
     let Some((item, game)) = find(&app_name, &library, &install) else { return error(REFRESH.into(), false) };
     let Some(_checking) = install.checking.take(&app_name) else { return error(being_checked(&game.title), false) };
-    let (bytes, m, _) = match manifest_for(&item, &game, &auth, &install, false).await {
-        Ok(x) => x,
-        Err(e) => {
-            let (message, signed_out) = failure(&app, &game.title, e).await;
-            return error(message, signed_out);
-        }
+    let list = match pieces(&app, &item, &game, &auth, &install, false).await {
+        Ok(l) => l,
+        Err((message, signed_out)) => return error(message, signed_out),
     };
-    let result = check(&item, &m).await;
-    if !result.all_good() {
-        info!("epic import: {app_name} has {} files to download", result.bad_files);
-        return Ok(AddOutcome::Missing { files: result.bad_files, bytes: result.bad_bytes });
+    let (mut files, mut bytes) = (0, 0);
+    for p in &list {
+        let result = check(&p.item, &p.m).await;
+        files += result.bad_files;
+        bytes += result.bad_bytes;
+    }
+    if files > 0 {
+        info!("epic import: {app_name} has {files} files to download");
+        return Ok(AddOutcome::Missing { files, bytes });
     }
     let store = &install.downloads.store;
-    if !still_free(&app_name, &store.installed(), |a| install.downloads.has_job(a)) {
+    let installed = store.installed();
+    if list.iter().any(|p| !still_free(&p.item.app_name, &installed, |a| install.downloads.has_job(a))) {
         return error(REFRESH.into(), false);
     }
-    let job = epic::import_job(&item, &game.title, &m, Vec::new());
-    match epic::add_installed(store, &job, &bytes, &m) {
-        Ok(_) => {
-            info!("epic import: added {app_name}");
-            Ok(AddOutcome::Added)
-        }
-        Err(e) => {
-            let _ = store.remove_job(&app_name);
-            warn!("epic import: couldn't save {app_name}: {}", e.kind());
-            error(unreadable(&game.title), false)
+    // Pieces first: the game only shows as installed once everything it needs is recorded.
+    for p in list.iter().rev() {
+        let job = epic::import_job(&p.item, &p.title, &p.m, Vec::new(), p.parts.clone());
+        if let Err(e) = epic::add_installed(store, &job, &p.bytes, &p.m) {
+            let _ = store.remove_job(&p.item.app_name);
+            warn!("epic import: couldn't save {}: {}", p.item.app_name, e.kind());
+            return error(unreadable(&game.title), false);
         }
     }
+    info!("epic import: added {app_name}");
+    Ok(AddOutcome::Added)
 }
 
-/// "Download them": queues a download of only the missing or damaged files.
+/// "Download them": queues a download of only the missing or damaged files, one per piece.
+/// Pieces with nothing missing are recorded as installed right away.
 #[tauri::command]
 pub async fn epic_import_repair(
     app: tauri::AppHandle,
@@ -193,23 +236,34 @@ pub async fn epic_import_repair(
     let downloads = &install.downloads;
     let Some((item, game)) = find(&app_name, &library, &install) else { return Err(REFRESH.into()) };
     let Some(_checking) = install.checking.take(&app_name) else { return Err(being_checked(&game.title)) };
-    let (bytes, m, info) = match manifest_for(&item, &game, &auth, &install, true).await {
-        Ok(x) => x,
-        Err(e) => return Err(failure(&app, &game.title, e).await.0),
-    };
-    let base_urls = info.map(|i| i.base_urls).unwrap_or_default();
-    let result = check(&item, &m).await;
-    if !still_free(&app_name, &downloads.store.installed(), |a| downloads.has_job(a)) {
+    let list = pieces(&app, &item, &game, &auth, &install, true).await.map_err(|(m, _)| m)?;
+    let mut checked = Vec::new();
+    for p in list {
+        let result = check(&p.item, &p.m).await;
+        checked.push((p, result));
+    }
+    let installed = downloads.store.installed();
+    if checked.iter().any(|(p, _)| !still_free(&p.item.app_name, &installed, |a| downloads.has_job(a))) {
         return Err(REFRESH.into());
     }
-    let job = epic::import_job(&item, &game.title, &m, base_urls);
-    if let Err(e) = epic::save_repair(&downloads.store, &job, &bytes, &result) {
-        let _ = downloads.store.remove_job(&app_name);
-        warn!("epic import: couldn't save the repair of {app_name}: {}", e.kind());
-        return Err(unreadable(&game.title));
+    for (p, result) in checked.into_iter().rev() {
+        let job = epic::import_job(&p.item, &p.title, &p.m, p.base_urls.clone(), p.parts.clone());
+        if result.all_good() {
+            if let Err(e) = epic::add_installed(&downloads.store, &job, &p.bytes, &p.m) {
+                let _ = downloads.store.remove_job(&p.item.app_name);
+                warn!("epic import: couldn't save {}: {}", p.item.app_name, e.kind());
+                return Err(unreadable(&game.title));
+            }
+            continue;
+        }
+        if let Err(e) = epic::save_repair(&downloads.store, &job, &p.bytes, &result) {
+            let _ = downloads.store.remove_job(&p.item.app_name);
+            warn!("epic import: couldn't save the repair of {}: {}", p.item.app_name, e.kind());
+            return Err(unreadable(&game.title));
+        }
+        info!("epic import: repair of {} queued ({} files)", p.item.app_name, result.bad_files);
+        downloads.enqueue(&app, job, Arc::new(p.m), None);
     }
-    info!("epic import: repair of {app_name} queued ({} files)", result.bad_files);
-    downloads.enqueue(&app, job, Arc::new(m), None);
     Ok(downloads.view())
 }
 
@@ -227,7 +281,7 @@ mod tests {
             version: "1".into(),
             namespace: "ns".into(),
             catalog_item_id: "cat".into(),
-            partial: false,
+            parent: None,
         }
     }
 
@@ -289,12 +343,12 @@ mod tests {
     }
 
     #[test]
-    fn candidates_skip_partial_installs() {
-        let mut fortnite = item("F");
-        fortnite.partial = true;
-        let got = candidates(vec![fortnite, item("A")], &[game("F"), game("A")], &[], |_| false);
+    fn candidates_skip_add_on_pieces() {
+        let mut piece = item("aa31");
+        piece.parent = Some("Fortnite".into());
+        let got = candidates(vec![item("Fortnite"), piece], &[game("Fortnite"), game("aa31")], &[], |_| false);
         let names: Vec<&str> = got.iter().map(|(i, _)| i.app_name.as_str()).collect();
-        assert_eq!(names, vec!["A"]);
+        assert_eq!(names, vec!["Fortnite"], "a piece is imported with its game, never on its own");
     }
 
     #[test]

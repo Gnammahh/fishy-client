@@ -17,9 +17,9 @@ pub struct EpicItem {
     pub version: String,
     pub namespace: String,
     pub catalog_item_id: String,
-    /// Installed with only some optional parts (Epic's `InstallComponents` / `InstallTags`).
-    /// Fishy Client always installs every file, so these can't be imported yet.
-    pub partial: bool,
+    /// For an add-on piece in its game's folder (Fortnite's Save the World Content), the game's
+    /// app name (spec §6n). Such pieces are imported with their game, never on their own.
+    pub parent: Option<String>,
 }
 
 /// The `.item` file as Epic writes it. Everything else in it is ignored.
@@ -44,10 +44,6 @@ struct RawItem {
     main_game_app_name: String,
     #[serde(default, rename = "bIsIncompleteInstall")]
     incomplete: bool,
-    #[serde(default)]
-    install_components: Vec<String>,
-    #[serde(default)]
-    install_tags: Vec<String>,
 }
 
 /// `%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests`, where Epic keeps one `.item` per install.
@@ -62,12 +58,11 @@ fn read_item(path: &Path) -> Option<EpicItem> {
     let raw: RawItem = serde_json::from_slice(bytes).ok()?;
     let addon = !raw.main_game_app_name.is_empty() && raw.main_game_app_name != raw.app_name;
     let install_path = PathBuf::from(&raw.install_location);
-    if raw.incomplete || addon || raw.app_name.is_empty() || raw.install_location.is_empty() || !install_path.is_dir() {
+    if raw.incomplete || raw.app_name.is_empty() || raw.install_location.is_empty() || !install_path.is_dir() {
         return None;
     }
-    let partial = raw.install_components.iter().chain(&raw.install_tags).any(|t| !t.is_empty());
     Some(EpicItem {
-        partial,
+        parent: addon.then(|| raw.main_game_app_name.clone()),
         app_name: raw.app_name,
         title: raw.display_name,
         install_path,
@@ -91,7 +86,17 @@ pub fn scan(dir: &Path) -> Vec<EpicItem> {
     items.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.app_name.cmp(&b.app_name)));
     let mut seen = std::collections::HashSet::new();
     items.retain(|i| seen.insert(i.app_name.clone()));
+    // An add-on only counts in its game's folder; elsewhere it isn't a piece Fishy can handle.
+    let homes: Vec<(String, PathBuf)> = items.iter().filter(|i| i.parent.is_none()).map(|i| (i.app_name.clone(), i.install_path.clone())).collect();
+    items.retain(|i| i.parent.as_ref().is_none_or(|p| homes.iter().any(|(app, path)| app == p && *path == i.install_path)));
     items
+}
+
+/// A game's add-on pieces from Epic's list (same folder), by app name (spec §6n).
+pub fn pieces_of<'a>(items: &'a [EpicItem], game: &EpicItem) -> Vec<&'a EpicItem> {
+    let mut pieces: Vec<&EpicItem> = items.iter().filter(|i| i.parent.as_deref() == Some(game.app_name.as_str()) && i.install_path == game.install_path).collect();
+    pieces.sort_by(|a, b| a.app_name.cmp(&b.app_name));
+    pieces
 }
 
 /// The game's own copy of its manifest, `<folder>\.egstore\<InstallationGuid>.manifest`.
@@ -141,7 +146,7 @@ pub fn check_files(root: &Path, m: &Manifest) -> FileCheck {
 }
 
 /// The download record for an imported game; `imported` keeps Cancel off its files.
-pub fn import_job(item: &EpicItem, title: &str, m: &Manifest, base_urls: Vec<String>) -> JobInfo {
+pub fn import_job(item: &EpicItem, title: &str, m: &Manifest, base_urls: Vec<String>, parts: Option<Vec<String>>) -> JobInfo {
     JobInfo {
         app_name: item.app_name.clone(),
         title: title.to_string(),
@@ -153,8 +158,8 @@ pub fn import_job(item: &EpicItem, title: &str, m: &Manifest, base_urls: Vec<Str
         base_urls,
         update_from: None,
         imported: true,
-        parts: None,
-        parent: None,
+        parts,
+        parent: item.parent.clone(),
     }
 }
 
@@ -231,21 +236,52 @@ mod tests {
                 version: "1.0.3".into(),
                 namespace: "ns".into(),
                 catalog_item_id: "cat".into(),
-                partial: false,
+                parent: None,
             }]
         );
     }
 
     #[test]
-    fn addons_skipped_main_kept() {
+    fn scan_keeps_add_ons_with_their_game() {
         let e = Env::new();
         let folder = e.game_folder("Fortnite");
         write_item(&e.manifests(), "MAIN", &item_json("Fortnite", "Fortnite", &folder, "MAIN"));
-        let mut addon = item_json("aa31", "Save the World", &folder, "ADD");
+        let mut addon = item_json("aa31", "Fortnite Save the World Content", &folder, "ADD");
         addon["MainGameAppName"] = "Fortnite".into();
         write_item(&e.manifests(), "ADD", &addon);
-        let names: Vec<String> = scan(&e.manifests()).into_iter().map(|i| i.app_name).collect();
-        assert_eq!(names, vec!["Fortnite".to_string()]);
+        let mut elsewhere = item_json("bb42", "Somewhere else", &e.game_folder("Other"), "OTH");
+        elsewhere["MainGameAppName"] = "Fortnite".into();
+        write_item(&e.manifests(), "OTH", &elsewhere);
+        let got: Vec<(String, Option<String>)> = scan(&e.manifests()).into_iter().map(|i| (i.app_name, i.parent)).collect();
+        assert_eq!(got, vec![("Fortnite".into(), None), ("aa31".into(), Some("Fortnite".into()))]);
+    }
+
+    #[test]
+    fn pieces_of_finds_the_add_ons() {
+        let e = Env::new();
+        let folder = e.game_folder("Fortnite");
+        write_item(&e.manifests(), "MAIN", &item_json("Fortnite", "Fortnite", &folder, "MAIN"));
+        for (app, guid) in [("bb", "B"), ("aa", "A")] {
+            let mut addon = item_json(app, app, &folder, guid);
+            addon["MainGameAppName"] = "Fortnite".into();
+            write_item(&e.manifests(), guid, &addon);
+        }
+        write_item(&e.manifests(), "SOL", &item_json("Sol", "Sol", &e.game_folder("Sol"), "SOL"));
+        let items = scan(&e.manifests());
+        let game = items.iter().find(|i| i.app_name == "Fortnite").unwrap();
+        let pieces: Vec<&str> = pieces_of(&items, game).into_iter().map(|i| i.app_name.as_str()).collect();
+        assert_eq!(pieces, vec!["aa", "bb"]);
+    }
+
+    #[test]
+    fn import_job_carries_parts_and_parent() {
+        let e = Env::new();
+        let mut item = epic_game(&e);
+        item.parent = Some("Fortnite".into());
+        let j = import_job(&item, "Piece", &sample(), Vec::new(), Some(vec!["A".into()]));
+        assert_eq!(j.parts, Some(vec!["A".to_string()]));
+        assert_eq!(j.parent.as_deref(), Some("Fortnite"));
+        assert_eq!((j.namespace.as_str(), j.catalog_item_id.as_str()), ("ns", "cat"));
     }
 
     #[test]
@@ -346,7 +382,7 @@ mod tests {
             version: "1.0.0-CL1".into(),
             namespace: "ns".into(),
             catalog_item_id: "cat".into(),
-            partial: false,
+            parent: None,
         }
     }
 
@@ -402,24 +438,6 @@ mod tests {
     }
 
     #[test]
-    fn optional_parts_marked_partial() {
-        let e = Env::new();
-        let folder = e.game_folder("Fortnite");
-        let mut j = item_json("Fortnite", "Fortnite", &folder, "F");
-        j["InstallComponents"] = serde_json::json!(["A17316661F902216B15E8DAB34ECCD71"]);
-        write_item(&e.manifests(), "F", &j);
-        let mut t = item_json("Tagged", "Tagged", &e.game_folder("t"), "T");
-        t["InstallTags"] = serde_json::json!(["chunk0"]);
-        write_item(&e.manifests(), "T", &t);
-        let mut plain = item_json("Sol", "Sol", &e.game_folder("s"), "S");
-        plain["InstallComponents"] = serde_json::json!([]);
-        plain["InstallTags"] = serde_json::json!([""]);
-        write_item(&e.manifests(), "S", &plain);
-        let got: Vec<(String, bool)> = scan(&e.manifests()).into_iter().map(|i| (i.app_name, i.partial)).collect();
-        assert_eq!(got, vec![("Fortnite".into(), true), ("Sol".into(), false), ("Tagged".into(), true)]);
-    }
-
-    #[test]
     fn bad_manifest_bytes_not_used() {
         let e = Env::new();
         let item = epic_game(&e);
@@ -430,7 +448,7 @@ mod tests {
     fn import_job_fields() {
         let e = Env::new();
         let item = epic_game(&e);
-        let j = import_job(&item, "Tidepool (Library)", &sample(), vec!["https://cdn/base".into()]);
+        let j = import_job(&item, "Tidepool (Library)", &sample(), vec!["https://cdn/base".into()], None);
         assert!(j.imported);
         assert_eq!(j.update_from, None);
         assert_eq!(j.title, "Tidepool (Library)");
@@ -444,7 +462,7 @@ mod tests {
         let e = Env::new();
         let item = epic_game(&e);
         let store = InstallStore::at(e.dir.path().join("data"));
-        let job = import_job(&item, "Tidepool", &sample(), vec![]);
+        let job = import_job(&item, "Tidepool", &sample(), vec![], None);
         let game = add_installed(&store, &job, &build_binary(&sample(), true), &sample()).unwrap();
         assert_eq!(game.version, "1.0.0-CL1");
         assert_eq!(game.executable, "Binaries/Tidepool.exe");
@@ -462,7 +480,7 @@ mod tests {
         std::fs::remove_file(item.install_path.join("readme.txt")).unwrap();
         let store = InstallStore::at(e.dir.path().join("data"));
         let check = check_files(&item.install_path, &sample());
-        let job = import_job(&item, "Tidepool", &sample(), vec![]);
+        let job = import_job(&item, "Tidepool", &sample(), vec![], None);
         save_repair(&store, &job, &build_binary(&sample(), true), &check).unwrap();
         let jobs = store.pending_jobs();
         assert!(jobs[0].imported);

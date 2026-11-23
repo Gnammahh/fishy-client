@@ -1507,6 +1507,15 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
+**Version 1.9.0, Manage box (§6t), built 2026-11-23 on `feat/import`:** **Manage…** in every installed game's ⋯ menu (card and game page) opens a box with Auto update (follows Settings until set for the game), Priority download, Shortcut (Desktop, then "Also add it to the Start menu?"; Remove; Uninstall removes them), Installation (size, folder, **Verify** by SHA-1 with Stop and **Download them**, Uninstall) and Launch options. Downloads gets **Start now** on waiting games (pause the other one, or download both; at most two at once, both shown as running). A shortcut runs `Fishy Client.exe --play <game>`; a second start hands it to the open window (single-instance plugin). Built from a plan (`docs/superpowers/plans/2026-11-23-manage-box.md`). **Tests now:** Rust 455 (core 375 + app 80), UI 265. Found on the way: the dev browser preview (`npm run dev`, `?mock=…`) shows the crash page at start-up because the minimize watcher (§6r) calls Tauri with no backend; not fixed here.
+
+### Still to check by hand (version 1.9.0)
+- [ ] Open Manage from a card and from a game page; flip each switch, close, reopen: the choices stayed
+- [ ] Create a shortcut (also in the Start menu); start the game from it with Fishy Client closed, then with it open; Remove deletes both icons
+- [ ] Verify a small game; delete one of its files; Verify again: "1 file is missing or damaged" → Download them repairs it
+- [ ] Launch options (for example `-windowed`) take effect when the switch is on
+- [ ] A priority game jumps the waiting list; Start now → Pause, and → Download both
+
 ### Still to check by hand (version 1.6.0)
 - [x] The installed 1.5.1 updates itself to 1.6.0; Open game folder opens the game's folder in Explorer (2026-11-24)
 - [ ] Play a game from Fishy Client for a few minutes: the ⋯ menu shows "Played: …"

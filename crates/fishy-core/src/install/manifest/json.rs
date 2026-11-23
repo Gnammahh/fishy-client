@@ -21,6 +21,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
     let text = |key: &str| j.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
     let feature_level = j.get("ManifestFileVersion").and_then(Value::as_str).map_or(Some(13), blob_to_num).ok_or_else(|| bad("version"))? as u32;
     if feature_level >= FIRST_UNSUPPORTED_LEVEL {
+        tracing::warn!("manifest: feature level {feature_level} not supported (json)");
         return Err(InstallError::Unsupported);
     }
     let meta = ManifestMeta {

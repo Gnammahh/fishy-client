@@ -363,6 +363,7 @@ async fn install_options(
     let p = match prepare(&game, &auth, &library, &install).await {
         Ok(p) => p,
         Err(e) => {
+            warn!("install box for {} refused: {}", game.app_name, e.log_reason());
             if session::is_expired_install(&e) {
                 session::expire(&app).await;
             }

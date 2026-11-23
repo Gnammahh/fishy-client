@@ -47,6 +47,29 @@ pub enum InstallError {
 }
 
 impl InstallError {
+    /// For the log: which kind of problem, in Fishy Client's own words. Never Epic's error text,
+    /// tokens or URLs (spec §12). A bad manifest's reason is Fishy's own parser text.
+    pub fn log_reason(&self) -> String {
+        match self {
+            Self::Network(_) => "network".into(),
+            Self::Rejected(_) => "rejected by Epic".into(),
+            Self::Unsupported => "unsupported format".into(),
+            Self::BadManifest(why) => format!("manifest unreadable ({why})"),
+            Self::BadChunk(_) => "damaged chunk".into(),
+            Self::DamagedFile(_) => "damaged file".into(),
+            Self::Io { .. } => "disk error".into(),
+            Self::NoSpace { .. } => "not enough space".into(),
+            Self::InUse | Self::FilesInUse(_) => "files in use".into(),
+            Self::Stopped => "stopped".into(),
+            Self::NotInstalled => "not installed".into(),
+            Self::NoDownload => "no Windows download".into(),
+            Self::Expired => "sign-in expired".into(),
+            Self::NoWriteAccess { .. } => "no write access".into(),
+            Self::PermissionDeclined => "permission declined".into(),
+            Self::FolderFailed { .. } => "folder not created".into(),
+        }
+    }
+
     pub fn user_message(&self) -> String {
         match self {
             Self::Network(_) => "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.".into(),
@@ -100,6 +123,17 @@ pub fn format_bytes(bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_reason_says_which_kind_without_epics_text() {
+        assert_eq!(InstallError::Unsupported.log_reason(), "unsupported format");
+        assert_eq!(InstallError::BadManifest("zlib".into()).log_reason(), "manifest unreadable (zlib)");
+        // Epic's own error text never reaches the log (spec §12).
+        assert_eq!(InstallError::Rejected("errors.com.epicgames.secret".into()).log_reason(), "rejected by Epic");
+        assert_eq!(InstallError::Network("https://x?token=1".into()).log_reason(), "network");
+        assert_eq!(InstallError::NoDownload.log_reason(), "no Windows download");
+        assert_eq!(InstallError::Expired.log_reason(), "sign-in expired");
+    }
 
     #[test]
     fn format_bytes_uses_binary_units() {

@@ -42,6 +42,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
     let stored_as = r.u8()?;
     let _version = r.u32()?;
     if stored_as & ENCRYPTED != 0 {
+        tracing::warn!("manifest: encrypted (binary)");
         return Err(InstallError::Unsupported);
     }
     let raw = bytes.get(header_size..).ok_or_else(|| bad("truncated"))?;
@@ -59,6 +60,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
     let mut r = Reader::new(&body);
     let meta = read_meta(&mut r)?;
     if meta.feature_level >= FIRST_UNSUPPORTED_LEVEL {
+        tracing::warn!("manifest: feature level {} not supported (binary)", meta.feature_level);
         return Err(InstallError::Unsupported);
     }
     let chunks = read_chunks(&mut r)?;

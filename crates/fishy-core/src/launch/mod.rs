@@ -123,6 +123,7 @@ mod tests {
             installed_at: Utc::now(),
             last_played: None,
             playtime_secs: 0,
+            options: Default::default(),
             parts: None,
             parent: None,
             namespace: String::new(),

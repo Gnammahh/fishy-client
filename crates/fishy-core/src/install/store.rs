@@ -63,6 +63,36 @@ pub struct InstalledGame {
     pub namespace: String,
     #[serde(default)]
     pub catalog_item_id: String,
+    /// The game's choices in its Manage box (spec §6t). Old records have the defaults.
+    #[serde(default)]
+    pub options: GameOptions,
+}
+
+/// One game's Manage box choices (spec §6t).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GameOptions {
+    /// None: follow the Auto update switch in Settings.
+    pub auto_update: Option<bool>,
+    /// Its downloads go in front of the waiting non-priority ones.
+    pub priority: bool,
+    /// Extra command-line words, used only while `launch_args_on`.
+    pub launch_args: String,
+    pub launch_args_on: bool,
+    /// The shortcut files Fishy Client made; only these are ever deleted.
+    pub shortcuts: Vec<PathBuf>,
+}
+
+pub const LAUNCH_ARGS_MAX: usize = 1000;
+pub const LAUNCH_ARGS_TOO_LONG: &str = "Keep it under 1000 characters.";
+
+/// Launch options longer than 1000 characters are refused.
+pub fn check_launch_args(text: &str) -> Result<(), &'static str> {
+    if text.chars().count() > LAUNCH_ARGS_MAX {
+        Err(LAUNCH_ARGS_TOO_LONG)
+    } else {
+        Ok(())
+    }
 }
 
 /// Where a manifest file goes inside the install folder. Refuses names that would escape it
@@ -213,7 +243,8 @@ impl InstallStore {
         let before = self.installed().into_iter().find(|g| g.app_name == job.app_name);
         let installed_at = before.as_ref().map(|g| g.installed_at).unwrap_or_else(Utc::now);
         let last_played = before.as_ref().and_then(|g| g.last_played);
-        let playtime_secs = before.map_or(0, |g| g.playtime_secs);
+        let playtime_secs = before.as_ref().map_or(0, |g| g.playtime_secs);
+        let options = before.map(|g| g.options).unwrap_or_default();
         let game = InstalledGame {
             app_name: job.app_name.clone(),
             title: job.title.clone(),
@@ -229,6 +260,7 @@ impl InstallStore {
             parent: job.parent.clone(),
             namespace: job.namespace.clone(),
             catalog_item_id: job.catalog_item_id.clone(),
+            options,
         };
         let mut games: Vec<InstalledGame> = self.installed().into_iter().filter(|g| g.app_name != job.app_name).collect();
         games.push(game.clone());
@@ -257,6 +289,30 @@ impl InstallStore {
         let mut games = self.installed();
         let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
         game.playtime_secs = game.playtime_secs.saturating_add(secs);
+        self.save_installed(&games)
+    }
+
+    /// Saves the Manage box choices (spec §6t), keeping the recorded shortcuts.
+    /// None: the game isn't installed.
+    pub fn set_options(&self, app: &str, auto_update: Option<bool>, priority: bool, launch_args: &str, launch_args_on: bool) -> io::Result<Option<InstalledGame>> {
+        let _lock = installed_lock();
+        let mut games = self.installed();
+        let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(None) };
+        game.options.auto_update = auto_update;
+        game.options.priority = priority;
+        game.options.launch_args = launch_args.to_string();
+        game.options.launch_args_on = launch_args_on;
+        let saved = game.clone();
+        self.save_installed(&games)?;
+        Ok(Some(saved))
+    }
+
+    /// Records the shortcut files made for the game. Nothing happens if it isn't installed.
+    pub fn set_shortcuts(&self, app: &str, paths: Vec<PathBuf>) -> io::Result<()> {
+        let _lock = installed_lock();
+        let mut games = self.installed();
+        let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
+        game.options.shortcuts = paths;
         self.save_installed(&games)
     }
 
@@ -386,6 +442,63 @@ mod tests {
         let second = store.finish_install(&update, &sample()).unwrap();
         assert_eq!(second.installed_at, first.installed_at);
         assert_eq!(store.installed().len(), 1);
+    }
+
+    fn installed_tide(dir: &Path) -> (InstallStore, JobInfo) {
+        let store = InstallStore::at(dir.join("data"));
+        let j = job(&dir.join("game"));
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        store.finish_install(&j, &sample()).unwrap();
+        (store, j)
+    }
+
+    #[test]
+    fn options_default_in_old_records() {
+        let g: InstalledGame = serde_json::from_value(serde_json::json!({
+            "app_name": "Tide", "title": "T", "version": "1", "install_path": "C:/Games/T",
+            "executable": "t.exe", "launch_parameters": "", "install_size": 1,
+            "installed_at": "2026-11-20T10:00:00Z"
+        }))
+        .unwrap();
+        assert_eq!(g.options, GameOptions::default());
+        assert_eq!(g.options.auto_update, None);
+    }
+
+    #[test]
+    fn finish_install_keeps_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, j) = installed_tide(dir.path());
+        store.set_options("Tide", Some(false), true, "-windowed", true).unwrap();
+        let link = dir.path().join("Tide.lnk");
+        store.set_shortcuts("Tide", vec![link.clone()]).unwrap();
+        let update = JobInfo { update_from: Some("1.0.0-CL1".into()), ..j };
+        store.save_job(&update, &build_binary(&sample(), true)).unwrap();
+        let after = store.finish_install(&update, &sample()).unwrap();
+        assert_eq!(
+            after.options,
+            GameOptions { auto_update: Some(false), priority: true, launch_args: "-windowed".into(), launch_args_on: true, shortcuts: vec![link] }
+        );
+    }
+
+    #[test]
+    fn set_options_keeps_shortcuts_and_ignores_missing_games() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = installed_tide(dir.path());
+        let link = dir.path().join("Tide.lnk");
+        store.set_shortcuts("Tide", vec![link.clone()]).unwrap();
+        let g = store.set_options("Tide", Some(true), false, "", false).unwrap().unwrap();
+        assert_eq!(g.options.shortcuts, vec![link]);
+        assert_eq!(store.installed()[0].options.auto_update, Some(true));
+        assert!(store.set_options("nope", None, false, "", false).unwrap().is_none());
+        store.set_shortcuts("nope", vec![]).unwrap();
+    }
+
+    #[test]
+    fn launch_args_limit() {
+        assert!(check_launch_args(&"a".repeat(1000)).is_ok());
+        assert_eq!(check_launch_args(&"a".repeat(1001)), Err(LAUNCH_ARGS_TOO_LONG));
+        assert!(check_launch_args(&"é".repeat(1000)).is_ok(), "characters, not bytes");
+        assert_eq!(LAUNCH_ARGS_TOO_LONG, "Keep it under 1000 characters.");
     }
 
     #[test]

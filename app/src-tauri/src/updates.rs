@@ -187,6 +187,7 @@ mod tests {
             installed_at: fishy_core::chrono::Utc::now(),
             last_played: None,
             playtime_secs: 0,
+            options: Default::default(),
             parts: None,
             parent: parent.map(str::to_string),
             namespace: "ns".into(),

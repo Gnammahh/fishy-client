@@ -54,7 +54,8 @@ pub fn merge(game: &Value, player: &Value) -> Achievements {
         .into_iter()
         .flatten()
         .map(|a| &a["achievement"])
-        .filter(|a| a.is_object())
+        // A row without a name can't be matched or listed (and would repeat the page's keys).
+        .filter(|a| a.is_object() && a["name"].as_str().is_some_and(|n| !n.is_empty()))
         .map(|a| {
             let name = text(a, "name");
             let hidden = a["hidden"].as_bool().unwrap_or(false);
@@ -156,6 +157,10 @@ impl AchievementsClient {
         // Epic's error text is never kept (spec §12).
         if json.get("errors").is_some_and(|e| !e.is_null()) {
             return Err(AuthError::Unexpected("achievements reply had errors".into()));
+        }
+        // A 200 without data (a broken or HTML reply) would look like "no achievements".
+        if !json["data"].is_object() {
+            return Err(AuthError::Unexpected("achievements reply had no data".into()));
         }
         Ok(json)
     }
@@ -299,6 +304,20 @@ mod tests {
             .mount(&server)
             .await;
         assert!(fast(&server).fetch(&Secret::new("eg1~A"), "acc1", "ns1").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_reply_without_data_is_an_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_string("<html>oops</html>")).mount(&server).await;
+        assert!(fast(&server).fetch(&Secret::new("eg1~A"), "acc1", "ns1").await.is_err());
+    }
+
+    #[test]
+    fn rows_without_a_name_are_dropped() {
+        let a = merge(&game(vec![ach("", false, None), ach("", false, None), ach("a", false, None)]), &player(vec![]));
+        assert_eq!(names(&a), vec!["a"]);
+        assert_eq!(a.total, 1);
     }
 
     #[tokio::test]

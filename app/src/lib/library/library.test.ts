@@ -817,6 +817,33 @@ describe("game page (spec §6q)", () => {
     expect(screen.queryByText("Tidepool Odyssey")).toBeNull();
   });
 
+  it("search_and_sort_hide_while_a_page_is_open", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      game_achievements: () => ({ total: 0, unlocked: 0, items: [] }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    await fireEvent.click(screen.getByRole("button", { name: "Open Kelp Runner" }));
+    await screen.findByRole("button", { name: "← Library" });
+    expect(screen.queryByPlaceholderText("Search your library")).toBeNull();
+    expect(screen.queryByLabelText("Sort")).toBeNull();
+  });
+
+  it("a_not_on_windows_page_explains_why_there_is_no_button", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner"), { ...game("Pocket Fish"), installable: false }] }),
+      game_achievements: () => ({ total: 0, unlocked: 0, items: [] }),
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    await fireEvent.click(screen.getByRole("tab", { name: "Not on Windows (1)" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Open Pocket Fish" }));
+    expect(await screen.findByText("Epic has no Windows download for this game.")).toBeTruthy();
+  });
+
   it("page_closes_when_the_game_leaves_the_library", async () => {
     let games = [game("Tidepool Odyssey"), game("Kelp Runner")];
     mockCommands({

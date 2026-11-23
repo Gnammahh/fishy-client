@@ -155,7 +155,12 @@
   }
   /** Size and playtime, the same lines as the "⋯" menu (spec §6p). */
   const pageLines = (g: Game) =>
-    [sizeOf(g) !== null ? `Size: ${formatBytes(sizeOf(g) ?? 0)}` : "", formatPlaytime(playtimeOf(g)) ?? ""].filter((l) => l);
+    [
+      // The card's explanation for these sits under the grid, which the page doesn't show.
+      !g.installable && otherStore(g) === null ? "Epic has no Windows download for this game." : "",
+      sizeOf(g) !== null ? `Size: ${formatBytes(sizeOf(g) ?? 0)}` : "",
+      formatPlaytime(playtimeOf(g)) ?? "",
+    ].filter((l) => l);
 
   // Load on open, and again whenever we come back online (offline → online).
   let loadedOffline: boolean | undefined;
@@ -174,7 +179,7 @@
       <p class="who">Signed in as <strong>{name}</strong>.</p>
     </div>
     <div class="tools">
-      {#if $library.status === "ready" && $library.games.length > 0}
+      {#if $library.status === "ready" && $library.games.length > 0 && !openGame}
         <label class="sr-only" for="library-search">Search your library</label>
         <input id="library-search" type="search" placeholder="Search your library" bind:value={query} autocomplete="off" />
         <label class="sr-only" for="library-sort">Sort</label>

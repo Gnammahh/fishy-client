@@ -1510,11 +1510,16 @@ Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "
 
 **Version 1.9.0, Manage box (§6t), built 2026-11-23 on `feat/import`:** **Manage…** in every installed game's ⋯ menu (card and game page) opens a box with Auto update (follows Settings until set for the game), Priority download, Shortcut (Desktop, then "Also add it to the Start menu?"; Remove; Uninstall removes them), Installation (size, folder, **Verify** by SHA-1 with Stop and **Download them**, Uninstall) and Launch options. Downloads gets **Start now** on waiting games (pause the other one, or download both; at most two at once, both shown as running). A shortcut runs `Fishy Client.exe --play <game>`; a second start hands it to the open window (single-instance plugin). Built from a plan (`docs/superpowers/plans/2026-11-23-manage-box.md`). A fresh whole-branch review found 3 Important problems (a shortcut could start its game again after a later sign-in, or during a download; priority was forgotten after a restart), and 3 Minor ones were graded up (Pause ignored after Start now; launch options lost on a quick close; a double-click on Create): all fixed test-first. Dialogs no longer slide under the title bar (they start below it, and padding and border now count inside their height limit; a test checks every dialog). **Tests now:** Rust 459 (core 375 + app 84), UI 278. Found on the way: the dev browser preview (`npm run dev`, `?mock=…`) shows the crash page at start-up because the minimize watcher (§6r) calls Tauri with no backend; not fixed here.
 
-### Still to check by hand (version 1.9.0)
-- [ ] Open Manage from a card and from a game page; flip each switch, close, reopen: the choices stayed
-- [ ] Create a shortcut (also in the Start menu); start the game from it with Fishy Client closed, then with it open; Remove deletes both icons
-- [ ] Verify a small game; delete one of its files; Verify again: "1 file is missing or damaged" → Download them repairs it
-- [ ] Launch options (for example `-windowed`) take effect when the switch is on
+**Version 1.9.1 (2026-11-23):** the title bar is solid black (the user's choice); a game started from its desktop shortcut no longer gives Fishy Client's taskbar button the game's icon (Fishy sets its Windows app ID, `com.fishyclient.app`, before any window opens); the notes say each game decides whether it understands launch options. **Tests now:** Rust 461, UI 279.
+
+### Still to check by hand (version 1.9.0 / 1.9.1)
+- [x] Open Manage from a card; the box sits below the title bar; choices (priority, launch options) stayed after closing and reopening (2026-11-23)
+- [x] A desktop shortcut started Rocket League with Fishy Client closed (2026-11-23); it showed the game's icon on Fishy's taskbar button, fixed in 1.9.1
+- [ ] 1.9.1: the taskbar keeps Fishy's icon when a shortcut starts it; the title bar is solid
+- [ ] Shortcut with Fishy Client already open; Remove deletes both icons
+- [x] Verify a small game: "All files are fine." (2026-11-23)
+- [ ] Delete one file of a small game, Verify: "1 file is missing or damaged" → Download them repairs it
+- [x] Launch options reach the game: Bendy and the Ink Machine got `-windowed` (2026-11-23) but, being a Unity game, ignored it (and `-screen-fullscreen 0`); the user chose to ship with a note instead
 - [ ] A priority game jumps the waiting list; Start now → Pause, and → Download both
 
 ### Still to check by hand (version 1.6.0)

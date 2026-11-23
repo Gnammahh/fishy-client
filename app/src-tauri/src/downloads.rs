@@ -54,11 +54,15 @@ pub struct Job {
     pub error: Option<String>,
     stop: Option<CancellationToken>,
     cancel_requested: bool,
+    /// The game's Priority download switch (spec §6t).
+    priority: bool,
+    /// Stopped by Start now → Pause: it waits again instead of pausing.
+    requeue: bool,
 }
 
 impl Job {
     pub fn new(info: JobInfo, manifest: Arc<Manifest>, state: JobState) -> Self {
-        Self { info, manifest, old: None, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false }
+        Self { info, manifest, old: None, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false, priority: false, requeue: false }
     }
 }
 
@@ -79,6 +83,16 @@ pub struct DownloadItem {
 pub struct DownloadsView {
     pub items: Vec<DownloadItem>,
 }
+
+/// Start now on a waiting game (spec §6t): pause the running one, or download both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartNow {
+    Pause,
+    Both,
+}
+
+const NOT_WAITING: &str = "That game isn't waiting.";
+const TWO_RUNNING: &str = "Two games are already downloading.";
 
 #[derive(Default)]
 pub struct Inner {
@@ -126,7 +140,64 @@ impl Inner {
                 JobState::Queued => job.state = JobState::Paused,
                 _ => {}
             }
+            job.requeue = false;
         }
+    }
+
+    /// A waiting priority job moves in front of the waiting non-priority jobs ahead of it.
+    pub fn prioritize(&mut self, app: &str) {
+        let Some(i) = self.find(app) else { return };
+        if !self.jobs[i].priority || self.jobs[i].state != JobState::Queued {
+            return;
+        }
+        if let Some(to) = self.jobs[..i].iter().position(|j| j.state == JobState::Queued && !j.priority) {
+            let job = self.jobs.remove(i);
+            self.jobs.insert(to, job);
+        }
+    }
+
+    /// The Priority download switch changed; on moves a waiting job forward, off doesn't move it.
+    pub fn set_priority(&mut self, app: &str, on: bool) {
+        let Some(i) = self.find(app) else { return };
+        self.jobs[i].priority = on;
+        self.prioritize(app);
+    }
+
+    /// Start now (spec §6t). Ok(None): it's first in the queue, which starts it when nothing is
+    /// downloading (with Pause, the running one was asked to stop and will wait behind it).
+    /// Ok(Some(i)): start job i now, next to the running one.
+    pub fn start_now(&mut self, app: &str, mode: StartNow) -> Result<Option<usize>, &'static str> {
+        let i = self.find(app).filter(|&i| self.jobs[i].state == JobState::Queued && !self.wiping).ok_or(NOT_WAITING)?;
+        let running: Vec<usize> = (0..self.jobs.len()).filter(|&k| self.jobs[k].state == JobState::Downloading).collect();
+        match (running.len(), mode) {
+            (0, _) => {}
+            (1, StartNow::Both) => return Ok(Some(i)),
+            (1, StartNow::Pause) => {
+                let r = &mut self.jobs[running[0]];
+                r.requeue = true;
+                r.stop.iter().for_each(CancellationToken::cancel);
+            }
+            _ => return Err(TWO_RUNNING),
+        }
+        let job = self.jobs.remove(i);
+        self.jobs.insert(0, job);
+        Ok(None)
+    }
+
+    /// A running job stopped writing without an error: Paused, or (after Start now → Pause)
+    /// waiting again right behind the first waiting job.
+    pub fn stopped(&mut self, app: &str) {
+        let Some(i) = self.find(app) else { return };
+        let job = &mut self.jobs[i];
+        job.stop = None;
+        if !std::mem::take(&mut job.requeue) {
+            job.state = JobState::Paused;
+            return;
+        }
+        let mut job = self.jobs.remove(i);
+        job.state = JobState::Queued;
+        let to = self.jobs.iter().position(|j| j.state == JobState::Queued).map_or(self.jobs.len(), |q| q + 1);
+        self.jobs.insert(to, job);
     }
 
     /// Empties the queue (Delete all my data).
@@ -304,9 +375,34 @@ impl Downloads {
             job.old = old;
             // An imported repair starts with most files already there (spec §6g).
             job.downloaded = already_downloaded(&self.store, &job.info, &job.manifest, job.old.as_deref());
+            job.priority = self.priority_of(&job.info.app_name);
+            let name = job.info.app_name.clone();
             inner.jobs.push(job);
+            inner.prioritize(&name);
         }
         self.pump(app);
+    }
+
+    /// The game's Priority download switch, from its installed record (spec §6t).
+    fn priority_of(&self, app_name: &str) -> bool {
+        self.store.installed().iter().any(|g| g.app_name == app_name && g.options.priority)
+    }
+
+    /// The Priority download switch changed in the Manage box.
+    pub fn set_priority(&self, app: &AppHandle, app_name: &str, on: bool) {
+        self.lock().set_priority(app_name, on);
+        self.emit(app);
+    }
+
+    /// Start now on a waiting game (spec §6t).
+    pub fn start_now(&self, app: &AppHandle, app_name: &str, mode: StartNow) -> Result<DownloadsView, String> {
+        let now = self.lock().start_now(app_name, mode).map_err(str::to_string)?;
+        tracing::info!("start now: {}", if mode == StartNow::Pause { "pause" } else { "both" });
+        match now {
+            Some(i) => self.start_at(app, Some(i)),
+            None => self.pump(app),
+        }
+        Ok(self.view())
     }
 
     pub fn pause(&self, app: &AppHandle, app_name: &str) {
@@ -336,6 +432,7 @@ impl Downloads {
                 job.state = JobState::Queued;
                 job.error = None;
             }
+            inner.prioritize(app_name);
         }
         self.pump(app);
     }
@@ -424,9 +521,15 @@ impl Downloads {
 
     /// Starts the next queued job if nothing is running.
     fn pump(&self, app: &AppHandle) {
+        let next = self.lock().next_to_start();
+        self.start_at(app, next);
+    }
+
+    /// Starts waiting job `i` (if any) and reports the change.
+    fn start_at(&self, app: &AppHandle, i: Option<usize>) {
         let started = {
             let mut inner = self.lock();
-            inner.next_to_start().map(|i| {
+            i.filter(|&i| i < inner.jobs.len() && inner.jobs[i].state == JobState::Queued).map(|i| {
                 let job = &mut inner.jobs[i];
                 let stop = CancellationToken::new();
                 job.state = JobState::Downloading;
@@ -517,8 +620,7 @@ impl Downloads {
             }
             Err(InstallError::Stopped) => {
                 tracing::info!("paused {}", info.app_name);
-                inner.jobs[i].state = JobState::Paused;
-                inner.jobs[i].stop = None;
+                inner.stopped(&info.app_name);
             }
             Err(e) => {
                 let m = e.user_message();
@@ -607,6 +709,106 @@ mod tests {
         assert!(!Inner { jobs: vec![job("p", JobState::Paused), job("q", JobState::Queued)], wiping: false }.busy());
         assert!(Inner { jobs: vec![job("d", JobState::Downloading)], wiping: false }.busy());
         assert!(Inner { jobs: vec![job("r", JobState::Removing)], wiping: false }.busy());
+    }
+
+    fn prio(app: &str, state: JobState) -> Job {
+        let mut j = job(app, state);
+        j.priority = true;
+        j
+    }
+
+    fn queued_order(inner: &Inner) -> Vec<String> {
+        inner.jobs.iter().filter(|j| j.state == JobState::Queued).map(|j| j.info.app_name.clone()).collect()
+    }
+
+    #[test]
+    fn priority_job_goes_before_waiting_non_priority_ones() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading)], wiping: false };
+        for j in [job("a", JobState::Queued), prio("b", JobState::Queued), prio("c", JobState::Queued)] {
+            let name = j.info.app_name.clone();
+            inner.jobs.push(j);
+            inner.prioritize(&name);
+        }
+        assert_eq!(queued_order(&inner), vec!["b", "c", "a"]);
+        assert_eq!(inner.jobs[0].info.app_name, "run");
+    }
+
+    #[test]
+    fn turning_priority_on_moves_a_waiting_job_forward() {
+        let mut inner = Inner { jobs: vec![job("a", JobState::Queued), job("b", JobState::Queued), job("c", JobState::Queued)], wiping: false };
+        inner.set_priority("c", true);
+        assert_eq!(queued_order(&inner), vec!["c", "a", "b"]);
+        inner.set_priority("c", false);
+        assert_eq!(queued_order(&inner), vec!["c", "a", "b"], "turning it off doesn't move it");
+        assert!(!inner.jobs[inner.find("c").unwrap()].priority);
+    }
+
+    #[test]
+    fn a_paused_priority_job_isnt_moved() {
+        let mut inner = Inner { jobs: vec![job("a", JobState::Queued), job("p", JobState::Paused)], wiping: false };
+        inner.set_priority("p", true);
+        assert_eq!(inner.jobs[1].info.app_name, "p");
+    }
+
+    #[test]
+    fn start_now_with_nothing_running_returns_none_and_puts_it_first() {
+        let mut inner = Inner { jobs: vec![job("a", JobState::Queued), job("b", JobState::Queued)], wiping: false };
+        assert_eq!(inner.start_now("b", StartNow::Pause), Ok(None));
+        assert_eq!(inner.next_to_start().map(|i| inner.jobs[i].info.app_name.clone()), Some("b".into()));
+    }
+
+    #[test]
+    fn both_needs_exactly_one_running() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("a", JobState::Queued)], wiping: false };
+        assert_eq!(inner.start_now("a", StartNow::Both), Ok(Some(1)));
+        let mut two = Inner { jobs: vec![job("r1", JobState::Downloading), job("r2", JobState::Downloading), job("a", JobState::Queued)], wiping: false };
+        for mode in [StartNow::Both, StartNow::Pause] {
+            assert_eq!(two.start_now("a", mode), Err("Two games are already downloading."));
+        }
+    }
+
+    #[test]
+    fn pause_mode_requeues_right_behind_the_chosen_job() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("a", JobState::Queued), job("b", JobState::Queued)], wiping: false };
+        assert_eq!(inner.start_now("b", StartNow::Pause), Ok(None));
+        assert!(inner.jobs[inner.find("run").unwrap()].requeue);
+        assert_eq!(inner.next_to_start(), None, "still writing until it stops");
+        inner.stopped("run");
+        assert_eq!(queued_order(&inner), vec!["b", "run", "a"]);
+        assert_eq!(inner.next_to_start().map(|i| inner.jobs[i].info.app_name.clone()), Some("b".into()));
+        assert!(!inner.jobs[inner.find("run").unwrap()].requeue);
+    }
+
+    #[test]
+    fn a_plain_stop_still_pauses() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading)], wiping: false };
+        inner.stopped("run");
+        assert_eq!(inner.jobs[0].state, JobState::Paused);
+    }
+
+    #[test]
+    fn start_now_refuses_a_job_being_cancelled() {
+        let mut inner = Inner { jobs: vec![job("r", JobState::Removing), job("p", JobState::Paused), job("q", JobState::Queued)], wiping: false };
+        assert_eq!(inner.start_now("r", StartNow::Pause), Err("That game isn't waiting."));
+        assert_eq!(inner.start_now("p", StartNow::Both), Err("That game isn't waiting."));
+        assert_eq!(inner.start_now("nope", StartNow::Both), Err("That game isn't waiting."));
+        inner.wiping = true;
+        assert_eq!(inner.start_now("q", StartNow::Pause), Err("That game isn't waiting."));
+    }
+
+    #[test]
+    fn stop_all_clears_requeue() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("a", JobState::Queued)], wiping: false };
+        inner.start_now("a", StartNow::Pause).unwrap();
+        inner.stop_all();
+        inner.stopped("run");
+        assert_eq!(inner.jobs[inner.find("run").unwrap()].state, JobState::Paused);
+    }
+
+    #[test]
+    fn queue_never_starts_a_third() {
+        let inner = Inner { jobs: vec![job("r1", JobState::Downloading), job("r2", JobState::Downloading), job("q", JobState::Queued)], wiping: false };
+        assert_eq!(inner.next_to_start(), None);
     }
 
     #[test]

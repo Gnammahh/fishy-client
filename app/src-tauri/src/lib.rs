@@ -493,6 +493,17 @@ fn download_resume(app: tauri::AppHandle, app_name: String, install: tauri::Stat
     install.downloads.resume(&app, &app_name);
 }
 
+/// Start now on a waiting game (spec §6t): mode "pause" or "both".
+#[tauri::command]
+fn download_start_now(app: tauri::AppHandle, app_name: String, mode: String, install: tauri::State<'_, AppInstall>) -> Result<DownloadsView, String> {
+    let mode = match mode.as_str() {
+        "pause" => downloads::StartNow::Pause,
+        "both" => downloads::StartNow::Both,
+        _ => return Err("That game isn't waiting.".into()),
+    };
+    install.downloads.start_now(&app, &app_name, mode)
+}
+
 #[tauri::command]
 async fn download_cancel(app: tauri::AppHandle, app_name: String, install: tauri::State<'_, AppInstall>) -> Result<(), String> {
     install.downloads.cancel(&app, &app_name).await
@@ -632,6 +643,7 @@ pub fn run() {
             downloads_state,
             download_pause,
             download_resume,
+            download_start_now,
             download_cancel,
             installed_list,
             uninstall_game,

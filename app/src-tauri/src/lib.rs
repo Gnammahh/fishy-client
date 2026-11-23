@@ -591,6 +591,8 @@ fn open_login_in_browser() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any window: the taskbar shows Fishy's icon even when a game's shortcut started it.
+    shortcuts::claim_app_id();
     tauri::Builder::default()
         // First: a second start (a game's shortcut) hands its arguments to this one (spec §6t).
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| play_request::second_start(app, args)))

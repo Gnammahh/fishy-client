@@ -6,6 +6,18 @@ use std::path::{Path, PathBuf};
 
 const SHORTCUT_ERROR: &str = "Couldn't make the shortcut. Please try again.";
 
+/// Fishy Client's Windows app ID: the bundle identifier, which the installer's Start menu
+/// shortcut also carries.
+pub const APP_ID: &str = "com.fishyclient.app";
+
+/// Tells Windows which app this is before any window opens. Without it, Fishy started from a
+/// game's shortcut shows that game's icon on the taskbar (spec §6t).
+pub fn claim_app_id() {
+    if !win::set_app_id(APP_ID) {
+        tracing::warn!("couldn't set the Windows app ID");
+    }
+}
+
 /// The shortcut's file name: the title without characters Windows forbids.
 pub fn shortcut_name(title: &str, app_name: &str) -> String {
     let clean: String = title.chars().filter(|c| !matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') && !c.is_control()).collect();
@@ -99,7 +111,24 @@ mod win {
     use std::path::{Path, PathBuf};
     use windows::core::{Interface, HSTRING};
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
-    use windows::Win32::UI::Shell::{FOLDERID_Desktop, FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath, ShellLink, KNOWN_FOLDER_FLAG};
+    use windows::Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath, SetCurrentProcessExplicitAppUserModelID, ShellLink,
+        KNOWN_FOLDER_FLAG,
+    };
+
+    pub fn set_app_id(id: &str) -> bool {
+        unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(id)).is_ok() }
+    }
+
+    #[cfg(test)]
+    pub fn app_id() -> Option<String> {
+        unsafe {
+            let p = windows::Win32::UI::Shell::GetCurrentProcessExplicitAppUserModelID().ok()?;
+            let id = p.to_string().ok();
+            CoTaskMemFree(Some(p.0 as *const _));
+            id
+        }
+    }
 
     pub enum Folder {
         Desktop,
@@ -154,6 +183,9 @@ mod win {
     pub fn known_folder(_: Folder) -> Option<PathBuf> {
         None
     }
+    pub fn set_app_id(_: &str) -> bool {
+        true
+    }
     pub fn write_lnk(_: &Path, _: &Path, _: &str, _: &Path, _: &Path) -> Result<(), String> {
         Err("Windows only".into())
     }
@@ -196,6 +228,20 @@ mod tests {
         let gone = dir.path().join("Gone.lnk");
         assert_eq!(remove_recorded(&[lnk.clone(), txt.clone(), folder.clone(), gone]), 1);
         assert!(!lnk.exists() && txt.exists() && folder.exists() && other.exists());
+    }
+
+    #[test]
+    fn the_app_id_is_the_installers() {
+        // The installer's Start menu shortcut carries the bundle identifier as its app ID.
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], APP_ID);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_keeps_the_app_id() {
+        assert!(win::set_app_id(APP_ID));
+        assert_eq!(win::app_id().as_deref(), Some(APP_ID));
     }
 
     /// Writes a real shortcut with Windows' API (run with `--ignored`).

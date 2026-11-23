@@ -40,15 +40,15 @@
 <style>
   .overlay {
     position: fixed;
-    inset: 0;
+    inset: var(--titlebar) 0 0 0; /* under Fishy's title bar (spec §6s) */
     background: rgba(0, 0, 0, 0.6);
     display: grid;
     place-items: center;
     z-index: 20;
+    padding: 16px;
   }
   .box {
     width: min(560px, calc(100vw - 32px));
-    max-height: calc(100vh - 64px);
     display: grid;
     grid-template-rows: auto 1fr auto;
     gap: 12px;
@@ -56,6 +56,8 @@
     background: var(--panel);
     border: 2px solid var(--aqua);
     color: var(--text);
+    max-height: calc(100vh - var(--titlebar) - 32px);
+    overflow-y: auto;
   }
   h3 {
     margin: 0;

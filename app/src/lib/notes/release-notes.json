@@ -9,7 +9,8 @@
       "Shortcut: put the game on your desktop (and, if you like, in the Start menu). Clicking it opens Fishy Client and starts the game.",
       "Verify checks every file of a game and downloads only the missing or damaged ones.",
       "Launch options: extra words added when the game starts, like -windowed.",
-      "Downloads has Start now for waiting games: pause the one that's downloading, or download both at once."
+      "Downloads has Start now for waiting games: pause the one that's downloading, or download both at once.",
+      "Boxes like What's new and Install no longer slide under the title bar."
     ]
   },
   {

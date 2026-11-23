@@ -196,6 +196,8 @@
     gap: 14px;
     max-width: min(480px, calc(100vw - 32px));
     outline: none;
+    max-height: calc(100vh - var(--titlebar) - 32px);
+    overflow-y: auto;
   }
   .ask p {
     margin: 0;

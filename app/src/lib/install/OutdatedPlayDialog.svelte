@@ -44,11 +44,12 @@
 <style>
   .overlay {
     position: fixed;
-    inset: 0;
+    inset: var(--titlebar) 0 0 0; /* under Fishy's title bar (spec §6s) */
     background: rgba(0, 0, 0, 0.6);
     display: grid;
     place-items: center;
     z-index: 20;
+    padding: 16px;
   }
   .box {
     background: var(--panel);
@@ -58,6 +59,8 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+    max-height: calc(100vh - var(--titlebar) - 32px);
+    overflow-y: auto;
   }
   p {
     margin: 0;

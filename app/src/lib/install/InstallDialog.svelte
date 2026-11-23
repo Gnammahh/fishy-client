@@ -125,11 +125,12 @@
 <style>
   .overlay {
     position: fixed;
-    inset: 0;
+    inset: var(--titlebar) 0 0 0; /* under Fishy's title bar (spec §6s) */
     background: rgba(0, 0, 0, 0.6);
     display: grid;
     place-items: center;
     z-index: 10;
+    padding: 16px;
   }
   .dialog {
     background: #0b0f14;
@@ -138,6 +139,8 @@
     display: grid;
     gap: 16px;
     width: min(520px, calc(100vw - 32px));
+    max-height: calc(100vh - var(--titlebar) - 32px);
+    overflow-y: auto;
   }
   .dialog:focus {
     outline: none;

@@ -476,15 +476,26 @@ fn game_folder(installed: &[InstalledGame], app_name: &str) -> Result<std::path:
     if game.install_path.is_dir() {
         Ok(game.install_path.clone())
     } else {
-        Err(format!("Couldn't find {}'s folder.", game.title))
+        Err(format!("Couldn't find {}'s folder. Uninstall it, then install it again.", game.title))
     }
+}
+
+/// Explorer's argument: the folder in quotes. Explorer splits an unquoted argument at commas, and
+/// Rust only adds quotes for spaces. A Windows path can't contain a quote.
+fn explorer_arg(folder: &std::path::Path) -> String {
+    format!("\"{}\"", folder.display())
 }
 
 /// "Open game folder" in the ⋯ menu: Windows Explorer in the game's folder (spec §6p).
 #[tauri::command]
 fn open_game_folder(app_name: String, install: tauri::State<'_, AppInstall>) -> Result<(), String> {
     let folder = game_folder(&install.downloads.store.installed(), &app_name)?;
-    std::process::Command::new("explorer.exe").arg(&folder).spawn().map_err(|_| "Couldn't open the folder.".to_string())?;
+    let mut explorer = std::process::Command::new("explorer.exe");
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::raw_arg(&mut explorer, explorer_arg(&folder));
+    #[cfg(not(windows))]
+    explorer.arg(&folder);
+    explorer.spawn().map_err(|_| "Couldn't open the folder.".to_string())?;
     info!("opened a game folder");
     Ok(())
 }
@@ -617,12 +628,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explorer_gets_the_folder_in_quotes() {
+        // Explorer splits an unquoted argument at commas, and Rust only quotes paths with spaces.
+        assert_eq!(explorer_arg(std::path::Path::new(r"C:\Games\Kelp,Runner")), r#""C:\Games\Kelp,Runner""#);
+    }
+
+    #[test]
     fn missing_folder_is_refused() {
         let dir = tempfile::tempdir().unwrap();
         let mut g = updates_test_record("Tide", dir.path());
         assert_eq!(game_folder(std::slice::from_ref(&g), "Tide"), Ok(dir.path().to_path_buf()));
         g.install_path = dir.path().join("gone");
-        assert_eq!(game_folder(&[g], "Tide"), Err("Couldn't find Tide's folder.".to_string()));
+        assert_eq!(game_folder(&[g], "Tide"), Err("Couldn't find Tide's folder. Uninstall it, then install it again.".to_string()));
         assert!(game_folder(&[], "Tide").is_err());
     }
 

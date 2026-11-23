@@ -1126,11 +1126,11 @@ Asked for by the user: open a game's files from the ⋯ menu, achievements and p
 
 ### Open game folder
 - The ⋯ menu of an installed game gains **Open game folder** (above Uninstall). It opens the game's install folder in Windows Explorer. Fortnite opens its one folder (its pieces share it).
-- If the folder isn't there any more: "Couldn't find *Title*'s folder."
-- Rust command `open_game_folder(app_name)`: the folder comes only from the installed record (never from the page), must be an existing folder, and is opened with `explorer.exe <folder>`. Log: "opened a game folder" (no path).
+- If the folder isn't there any more: "Couldn't find *Title*'s folder. Uninstall it, then install it again."
+- Rust command `open_game_folder(app_name)`: the folder comes only from the installed record (never from the page), must be an existing folder, and is opened with `explorer.exe "<folder>"` (always in quotes: Explorer splits an unquoted path at commas; review 2026-11-24). Log: "opened a game folder" (no path).
 
 ### Playtime
-- **Counted by Fishy Client:** from Play until the running-games watch (§6f.4) sees the game close, in whole seconds, added to the installed record's new `playtime_secs: u64` (default 0, old records read as 0). Games played through Epic's launcher, or while Fishy Client was closed, aren't counted. An update keeps it; Uninstall forgets it (the record goes).
+- **Counted by Fishy Client:** from Play until the running-games watch (§6f.4) sees the game close, check by check (at most 15 s per check, so a PC asleep with the game open adds nothing), in whole seconds, added to the installed record's new `playtime_secs: u64` (default 0, old records read as 0). Games played through Epic's launcher, or while Fishy Client was closed, aren't counted. An update keeps it; Uninstall forgets it (the record goes).
 - **Shown** in the ⋯ menu under the size: "Played: 12 h 5 min" ("Played: 25 min", "Played: under a minute"); nothing when 0.
 - A game Fishy Client was watching when it quits isn't counted for that session (known limit).
 

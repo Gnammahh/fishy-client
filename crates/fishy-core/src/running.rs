@@ -17,9 +17,22 @@ pub fn is_inside(program: &Path, folder: &Path) -> bool {
 }
 
 /// Games started by Play that still have a program open: (code name, install folder, when added).
+/// The most one check adds to a game's playtime: more means the PC slept in between (spec §6p).
+pub const MAX_STEP: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// A watched game: code name, folder, when Play added it, when it was last seen, time counted.
+#[derive(Debug)]
+struct Watched {
+    app: String,
+    folder: PathBuf,
+    added: Instant,
+    seen: Instant,
+    played: std::time::Duration,
+}
+
 #[derive(Debug, Default)]
 pub struct RunningList {
-    games: Vec<(String, PathBuf, Instant)>,
+    games: Vec<Watched>,
 }
 
 impl RunningList {
@@ -28,17 +41,18 @@ impl RunningList {
         if self.contains(app_name) {
             return false;
         }
-        self.games.push((app_name.to_string(), folder.to_path_buf(), Instant::now()));
+        let now = Instant::now();
+        self.games.push(Watched { app: app_name.to_string(), folder: folder.to_path_buf(), added: now, seen: now, played: std::time::Duration::ZERO });
         true
     }
 
     pub fn contains(&self, app_name: &str) -> bool {
-        self.games.iter().any(|(a, _, _)| a == app_name)
+        self.games.iter().any(|g| g.app == app_name)
     }
 
     /// The running code names, sorted.
     pub fn names(&self) -> Vec<String> {
-        let mut n: Vec<String> = self.games.iter().map(|(a, _, _)| a.clone()).collect();
+        let mut n: Vec<String> = self.games.iter().map(|g| g.app.clone()).collect();
         n.sort();
         n
     }
@@ -52,10 +66,16 @@ impl RunningList {
     /// added after that is kept for the next check, since the list couldn't include it.
     pub fn check(&mut self, programs: &[PathBuf], taken_at: Instant) -> Vec<(String, std::time::Duration)> {
         let mut closed = Vec::new();
-        self.games.retain(|(app, folder, added)| {
-            let open = *added > taken_at || programs.iter().any(|p| is_inside(p, folder));
+        self.games.retain_mut(|g| {
+            if g.added > taken_at {
+                return true;
+            }
+            // Counted check by check, at most MAX_STEP each, so a PC asleep in between adds nothing.
+            g.played += taken_at.saturating_duration_since(g.seen).min(MAX_STEP);
+            g.seen = taken_at;
+            let open = programs.iter().any(|p| is_inside(p, &g.folder));
             if !open {
-                closed.push((app.clone(), taken_at.saturating_duration_since(*added)));
+                closed.push((g.app.clone(), g.played));
             }
             open
         });
@@ -196,10 +216,28 @@ mod tests {
     fn closed_games_report_how_long_they_ran() {
         let mut list = RunningList::default();
         list.add("kelp", Path::new("C:/Games/Kelp"));
-        let later = Instant::now() + std::time::Duration::from_secs(90);
-        let closed = list.check(&[], later);
+        let open = vec![PathBuf::from("C:/Games/Kelp/kelp.exe")];
+        let start = Instant::now();
+        // A check every 5 seconds for 90 seconds, then the game is gone.
+        for n in 1..18 {
+            assert!(list.check(&open, start + std::time::Duration::from_secs(5 * n)).is_empty());
+        }
+        let closed = list.check(&[], start + std::time::Duration::from_secs(90));
         assert_eq!(closed.len(), 1);
-        assert!(closed[0].1 >= std::time::Duration::from_secs(90) && closed[0].1 < std::time::Duration::from_secs(95), "{:?}", closed[0].1);
+        assert!(closed[0].1 >= std::time::Duration::from_secs(89) && closed[0].1 <= std::time::Duration::from_secs(91), "{:?}", closed[0].1);
+    }
+
+    #[test]
+    fn a_long_gap_between_checks_counts_only_a_short_step() {
+        // The PC slept overnight with the game open: those hours aren't playtime.
+        let mut list = RunningList::default();
+        list.add("kelp", Path::new("C:/Games/Kelp"));
+        let open = vec![PathBuf::from("C:/Games/Kelp/kelp.exe")];
+        let t0 = Instant::now() + std::time::Duration::from_secs(5);
+        assert!(list.check(&open, t0).is_empty());
+        let after_sleep = t0 + std::time::Duration::from_secs(8 * 3600);
+        let closed = list.check(&[], after_sleep);
+        assert!(closed[0].1 <= std::time::Duration::from_secs(6) + MAX_STEP, "{:?}", closed[0].1);
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub mod engine;
 pub mod parts;
 pub mod plan;
 pub mod space;
+pub mod verify;
 pub mod speed;
 pub mod store;
 pub mod uninstall;

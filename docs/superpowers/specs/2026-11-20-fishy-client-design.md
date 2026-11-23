@@ -1033,6 +1033,50 @@ Asked for by the user's friend: install games into `C:\Program Files\Epic Games`
 - **Tests (Rust):** the order (fastest first, failed left out, all failed keeps the order, a stuck server counts as failed after the limit, one server unchanged); the download uses the faster server; Stop during the test; a failing piece is fetched from the next server; with a limit no test happens; `host_of` gives only the host; the speed line.
 - **By hand:** download a game and read the speed line in the log; compare with the 8 MB/s before.
 
+## 6n. Games with optional parts: Fortnite (version 1.4.0, designed 2026-11-23)
+
+Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnite isn't imported (§6g, `partial`) and shows **Install**, which would download every part.
+
+### What was found on the user's PC (2026-11-23)
+- **Only Fortnite has optional parts.** Rocket League, We Were Here Together and the other installed games have no part names (install tags) at all.
+- **Fortnite is 3 pieces in one folder,** each with its own manifest in `.egstore` and its own `.item`: **Fortnite** (the game, `FortniteGame/Binaries/Win64/FortniteBootstrapper.exe`), **Fortnite Save the World Content** and **LEGO® Fortnite Content**. The two content pieces are add-ons (`MainGameAppName: Fortnite`), always the same version as the game. Fishy's Library already knows all three's latest versions.
+- **Part names are internal codes** (about 70 in the game's manifest, such as `FortniteBREpicOptionalInstall`, `GFP_JunoRoot`, `LangitOptional`). Epic's `.item` only lists component IDs (`InstallComponents`), not names. Legendary's built-in Fortnite list (`chunk0`, `chunk10`…) is out of date. Epic's friendly names aren't published anywhere found. So Fishy never shows a "choose parts" list.
+- **Every part is either fully on disk or fully missing.** So the installed parts can be read from the files themselves.
+
+### What the user sees
+- **Fortnite installed by Epic** is imported like other games (§6g): it shows as installed, **Play** works, and the ⋯ menu has the same items. The import note says "Imported from Epic's launcher, with the parts Epic installed."
+- **Update** works in Fishy Client like for any game (§6e): it updates **all 3 pieces together** (one entry in Downloads, "Updating…"), downloading only the changes for the parts already on disk. Auto-update (§6e) applies too.
+- **Epic's launcher keeps working** for Fortnite. The known limit of shared folders applies (§6g): after updating in one launcher, the other may want to update too. For Fortnite that means downloading the patch a second time, not the whole game (Epic compares its own old file list with the files). The ⋯ menu of an imported game with parts shows a small line: "Also in Epic's launcher. Updating in one may make the other update again."
+- **Not installed:** a game whose manifest has optional parts can't be installed fresh in Fishy Client (we can't show which parts to pick). Its Install box says "This game has optional parts. Install it with Epic's launcher; Fishy Client adds it by itself afterwards." with no Install button. Fortnite gets this today; any future game with parts gets it the same way.
+- **Uninstall** removes all 3 pieces' files (each piece's own files, then empty folders), same confirmation as today.
+
+### Which files belong to an install ("the chosen parts")
+- A manifest file has zero or more part names. **A file with no part name always belongs.**
+- **On import**, for each piece: a part name is **chosen** if at least one file carrying it is on disk. A file belongs if it has no part name or **any** of its part names is chosen (Legendary's rule).
+- The import check (§6g step 2) checks only the files that belong. Missing or wrong-size ones use the existing **Download them** path.
+- The chosen part names are saved with the installed game (`installed.json` gains `parts: Option<Vec<String>>`; `None` = all files, the default for every game so far and for old records).
+- **On update** the chosen parts are the saved ones **plus every part name that the new version has and the old one didn't** (a new part might be required, and skipping it could break the game). The update plan (§6e) is built from the old and new manifests **filtered to the belonging files**: files that don't belong are neither downloaded nor deleted.
+- Repair ("Download them") and the space check use the filtered file list too.
+
+### How the 3 pieces are kept together
+- Each add-on piece is saved as its own installed record with `parent: Option<String>` (here `Some("Fortnite")`), and is **hidden** from the Library (it has no card; the Library already hides add-ons).
+- Importing Fortnite imports its add-on pieces from Epic's list in the same step (same folder, `MainGameAppName` = the game). An add-on whose files don't check out goes through **Download them** with the game.
+- **Update available** for the game means: the game or any of its pieces has a newer version. **Update** queues one download per piece that needs it, run one after another; Downloads shows them as one line under the game's title. A failed or paused piece shows on that line ("Paused"/"Retry").
+- **Play** is blocked while any piece is downloading ("Fortnite is updating."), and the outdated-play warning (§6e) counts all pieces.
+- **Uninstall** uninstalls the pieces first, then the game.
+
+### Privacy and logs
+- Logs: "epic import: Fortnite with optional parts (N of M part names)", "update: Fortnite piece 2 of 3"; never part names lists, paths or the account.
+
+### Errors
+- A piece's manifest missing from `.egstore` and not downloadable: the game isn't imported ("Couldn't import *Title*: a part of it is missing. Open it once in Epic's launcher, then try again.").
+- Everything else as in §6c, §6e, §6g.
+
+### Tests
+- **Rust:** manifest parsing keeps part names (binary and JSON manifests); chosen parts from files on disk (all, none, some); belonging files (no names, one chosen, one of several chosen); the update plan with parts (unchosen files untouched, new part names added, removed files only among belonging ones); `installed.json` with and without `parts`/`parent` (old files read as `None`); import finds add-on pieces by `MainGameAppName`; update-available counts pieces; uninstall removes pieces; the Install box refusal for manifests with parts.
+- **UI (vitest):** the "optional parts" Install box text without Install button; the ⋯ menu line; one Downloads line for a game with pieces.
+- **By hand:** Fortnite shows as installed after start-up, Play starts it, the next Fortnite update in Fishy downloads a normal-sized patch, Fortnite still starts, and Epic's launcher still opens it (and may want to update again).
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

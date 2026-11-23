@@ -459,14 +459,16 @@ async fn uninstall_game(
         let title = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name).map(|g| g.title).unwrap_or_else(|| app_name.clone());
         return Err(fishy_core::running::close_first(&title));
     }
+    // The game's add-on pieces go with it, first (spec §6n).
+    let mut names: Vec<String> = install.downloads.store.installed().into_iter().filter(|g| g.parent.as_deref() == Some(app_name.as_str())).map(|g| g.app_name).collect();
+    names.push(app_name.clone());
     // A paused update goes with the game (spec §6e); a running one must be paused first.
-    if !install.downloads.take_stopped_update(&app_name) {
+    if !names.iter().all(|n| install.downloads.take_stopped_update(n)) {
         return Err("Pause the update first, then uninstall.".to_string());
     }
     let _ = app.emit("downloads-changed", install.downloads.view());
     let store = install.downloads.store.clone();
-    let name = app_name.clone();
-    tauri::async_runtime::spawn_blocking(move || uninstall(&store, &name))
+    tauri::async_runtime::spawn_blocking(move || names.iter().try_for_each(|n| uninstall(&store, n)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| {

@@ -2,6 +2,7 @@
 //! It owns a stop token per running job and tells the UI about changes with `downloads-changed`.
 use fishy_core::install::engine::{run_job, Progress, RunOptions};
 use fishy_core::install::manifest::{parse_manifest, Manifest};
+use fishy_core::install::parts::only_parts;
 use fishy_core::install::speed::SpeedMeter;
 use fishy_core::install::store::{InstallStore, JobInfo};
 use fishy_core::install::uninstall::discard_download;
@@ -244,11 +245,17 @@ impl Downloads {
             .into_iter()
             .filter_map(|info| {
                 let bytes = store.job_manifest(&info.app_name).ok()?;
-                let manifest = parse_manifest(&bytes).ok()?;
+                // Only the files of the chosen parts (spec §6n); None keeps every file.
+                let manifest = only_parts(parse_manifest(&bytes).ok()?, info.parts.as_deref());
                 let mut job = Job::new(info, Arc::new(manifest), JobState::Paused);
                 if job.info.update_from.is_some() {
                     // Without the old manifest the update still works, it just downloads everything.
-                    job.old = store.installed_manifest(&job.info.app_name).ok().and_then(|b| parse_manifest(&b).ok()).map(Arc::new);
+                    let old_parts = store.installed().into_iter().find(|g| g.app_name == job.info.app_name).and_then(|g| g.parts);
+                    job.old = store
+                        .installed_manifest(&job.info.app_name)
+                        .ok()
+                        .and_then(|b| parse_manifest(&b).ok())
+                        .map(|m| Arc::new(only_parts(m, old_parts.as_deref())));
                 }
                 job.downloaded = already_downloaded(&store, &job.info, &job.manifest, job.old.as_deref());
                 Some(job)

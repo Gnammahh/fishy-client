@@ -4,12 +4,13 @@
   import { FISH_MOUTH_CLOSED } from "$lib/pixel/sprites";
   import { APP_VERSION } from "$lib/notes/releaseNotes";
 
-  export type Page = "library" | "downloads" | "settings";
+  export type Page = "library" | "store" | "downloads" | "settings";
 
   let { page, onselect, onnotes = () => {} }: { page: Page; onselect: (p: Page) => void; onnotes?: () => void } = $props();
 
   const ITEMS: { id: Page; label: string }[] = [
     { id: "library", label: "Library" },
+    { id: "store", label: "Store" },
     { id: "downloads", label: "Downloads" },
     { id: "settings", label: "Settings" },
   ];

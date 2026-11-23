@@ -173,6 +173,16 @@ export function installDevMock(start: string) {
           return null;
         case "library_cached":
           return null;
+        case "store_free_games":
+          return {
+            now: [{ title: "Mark of the Deep", url: "https://store.epicgames.com/p/mark-of-the-deep-f7dc08", image: null, date: "2026-11-26T16:00:00Z", owned: false }],
+            next: [
+              { title: "Bread and Fred", url: "https://store.epicgames.com/p/bread-and-fred-1db362", image: null, date: "2026-11-26T16:00:00Z", owned: false },
+              { title: "Firestone Idle RPG", url: "https://store.epicgames.com/p/firestone-online-idle-rpg-bfd04b", image: null, date: "2026-11-26T16:00:00Z", owned: true },
+            ],
+          };
+        case "store_open":
+          return null;
         case "library_refresh":
           // ?fail=library: the first refresh fails; ?fail=expired: the sign-in has expired.
           if (fail === "library" && !failedOnce) {

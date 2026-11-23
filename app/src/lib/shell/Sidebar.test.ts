@@ -21,4 +21,10 @@ describe("Sidebar", () => {
     expect(getByRole("button", { name: "Settings" })).toBeTruthy();
     expect(queryByRole("button", { name: "Account" })).toBeNull();
   });
+
+  it("store_is_between_library_and_downloads", () => {
+    const { getAllByRole } = render(Sidebar, { page: "library", onselect: () => {} });
+    const names = getAllByRole("button").map((b) => b.textContent?.trim());
+    expect(names.slice(0, 3)).toEqual(["Library", "Store", "Downloads"]);
+  });
 });

@@ -3,6 +3,9 @@
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import LibraryPage from "$lib/library/LibraryPage.svelte";
   import DownloadsPage from "$lib/install/DownloadsPage.svelte";
+  import StorePage from "$lib/store/StorePage.svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { refreshLibrary } from "$lib/library/library";
   import SettingsPage from "$lib/settings/SettingsPage.svelte";
   import { loadSettings, saveSettings } from "$lib/settings/settings";
   import WhatsNewBox from "$lib/notes/WhatsNewBox.svelte";
@@ -25,6 +28,11 @@
     let gone = false;
     initInstalls().then((s) => (gone ? s() : (stop = s)));
     checkForUpdate(); // once per start (spec §6j); the Rust side skips it when switched off
+    // A game bought or claimed in Epic's store shows up once the Store window closes (spec §6o).
+    let unlisten: (() => void) | undefined;
+    listen("store-closed", () => refreshLibrary())
+      .then((u) => (gone ? u() : (unlisten = u)))
+      .catch(() => {});
     // The notes open by themselves once per new version, then only from the sidebar.
     loadSettings().then((s) => {
       if (!gone && shouldAutoOpen(s.notes_seen)) {
@@ -35,6 +43,7 @@
     return () => {
       gone = true;
       stop?.();
+      unlisten?.();
     };
   });
   let checking = $state(false);
@@ -62,6 +71,8 @@
 
     {#if page === "library"}
       <LibraryPage name={auth.display_name} offline={auth.kind === "Offline"} />
+    {:else if page === "store"}
+      <StorePage />
     {:else if page === "downloads"}
       <DownloadsPage onsettings={() => (page = "settings")} />
     {:else}

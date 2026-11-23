@@ -6,17 +6,20 @@
     type = "button",
     disabled = false,
     onclick = undefined,
+    label = undefined,
     children,
   }: {
     variant?: "primary" | "ghost" | "play" | "danger";
     type?: "button" | "submit";
     disabled?: boolean;
     onclick?: (e: MouseEvent) => void;
+    /** A fuller name for screen readers ("Get Mark of the Deep on Epic"). */
+    label?: string;
     children: Snippet;
   } = $props();
 </script>
 
-<button class="pixel-btn {variant}" {type} {disabled} {onclick}>{@render children()}</button>
+<button class="pixel-btn {variant}" {type} {disabled} {onclick} aria-label={label}>{@render children()}</button>
 
 <style>
   .pixel-btn {

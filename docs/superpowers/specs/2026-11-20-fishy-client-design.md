@@ -1018,6 +1018,13 @@ Asked for by the user's friend: install games into `C:\Program Files\Epic Games`
 
 ---
 
+## 6m. Small things (version 1.3.0, approved 2026-11-23)
+
+### 6m.1 The speed limit shows on the Downloads page
+- A speed limit set long ago made downloads slow without the user noticing. When **Settings → Limit download speed** is on, the Downloads page shows, under its title, **"Limited to *N* MB/s · Change in Settings"**, even when nothing is downloading. **Change in Settings** opens the Settings page. With no limit there's no line.
+- Only the page changes; the limit itself works as before (§6e, §6f.1).
+- **Tests (vitest):** the line with a limit, no line without one, the link opens Settings.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

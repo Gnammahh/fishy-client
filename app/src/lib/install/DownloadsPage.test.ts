@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/sv
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import DownloadsPage from "./DownloadsPage.svelte";
 import { downloads, installed, resetInstalls, type DownloadItem } from "./installs";
+import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
 const MB = 1024 * 1024;
 const item = (app_name: string, state: DownloadItem["state"], over: Partial<DownloadItem> = {}): DownloadItem => ({
@@ -29,6 +30,7 @@ afterEach(() => {
   cleanup();
   clearMocks();
   resetInstalls();
+  resetSettings();
 });
 
 describe("DownloadsPage", () => {
@@ -122,5 +124,20 @@ describe("DownloadsPage", () => {
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Remove Title B from the queue" })).toBeNull();
     expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+  });
+
+  it("speed_limit_line_shows_when_a_limit_is_on", async () => {
+    settings.set({ ...DEFAULT_SETTINGS, speed_limit_mbps: 1 });
+    let opened = 0;
+    render(DownloadsPage, { onsettings: () => opened++ });
+    expect(screen.getByText(/Limited to 1 MB\/s/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Change in Settings" }));
+    expect(opened).toBe(1);
+  });
+
+  it("no_speed_limit_line_without_a_limit", () => {
+    render(DownloadsPage);
+    expect(screen.queryByText(/Limited to/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change in Settings" })).toBeNull();
   });
 });

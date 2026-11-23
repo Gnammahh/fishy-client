@@ -4,6 +4,10 @@
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import { downloads, installed, pause, resume, cancel, type DownloadItem } from "./installs";
+  import { settings } from "$lib/settings/settings";
+
+  /** Opens the Settings page (the speed limit lives there). */
+  let { onsettings }: { onsettings?: () => void } = $props();
 
   const GENERIC_ERROR = "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.";
 
@@ -43,6 +47,13 @@
 
 <section class="downloads">
   <h2>Downloads</h2>
+
+  {#if $settings.speed_limit_mbps !== null}
+    <p class="limit" role="status">
+      Limited to {$settings.speed_limit_mbps} MB/s ·
+      <button class="link" onclick={() => onsettings?.()}>Change in Settings</button>
+    </p>
+  {/if}
 
   {#each finished as title (title)}
     <p class="note" role="status">Finished: {title}. It's in your Library.</p>
@@ -177,6 +188,20 @@
   .error {
     margin: 0;
     color: var(--error);
+  }
+  .limit {
+    margin: 0;
+    font-size: 14px;
+    color: var(--orange);
+  }
+  .link {
+    font: inherit;
+    color: var(--aqua);
+    background: none;
+    border: none;
+    padding: 0;
+    text-decoration: underline;
+    cursor: pointer;
   }
   .list {
     list-style: none;

@@ -63,7 +63,7 @@
     {#if page === "library"}
       <LibraryPage name={auth.display_name} offline={auth.kind === "Offline"} />
     {:else if page === "downloads"}
-      <DownloadsPage />
+      <DownloadsPage onsettings={() => (page = "settings")} />
     {:else}
       <SettingsPage account={{ display_name: auth.display_name, account_id: auth.kind === "SignedIn" ? auth.account_id : undefined }} />
     {/if}

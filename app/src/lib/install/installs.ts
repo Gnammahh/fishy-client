@@ -28,6 +28,10 @@ export type InstalledGame = {
   installed_at: string;
   /** When Play last started it (spec §6f.4); missing for games not played since. */
   last_played?: string | null;
+  /** The optional parts installed (spec §6n); null or missing: every file. */
+  parts?: string[] | null;
+  /** For an add-on piece (Fortnite's Save the World Content): its game. Hidden from the Library. */
+  parent?: string | null;
 };
 export type InstallOptions = {
   install_path: string;
@@ -107,7 +111,8 @@ export async function initInstalls(): Promise<() => void> {
 }
 
 export function statusFor(appName: string, dl: DownloadItem[], ins: InstalledGame[]): GameStatus {
-  const job = dl.find((d) => d.app_name === appName);
+  // A download of one of the game's add-on pieces counts as the game's (spec §6n).
+  const job = dl.find((d) => d.app_name === appName || ins.some((i) => i.app_name === d.app_name && i.parent === appName));
   if (job) return job.state;
   return ins.some((g) => g.app_name === appName) ? "installed" : "none";
 }
@@ -184,11 +189,12 @@ export async function play(appName: string, offline = false): Promise<PlayError 
   }
 }
 
-/** True when Epic's newest version differs from the installed one (spec §6e). */
+/** True when Epic's newest version differs from the installed one (spec §6e), for the game or
+ * any of its add-on pieces (spec §6n). */
 export function hasUpdate(appName: string, ins: InstalledGame[], latest: Record<string, string>): boolean {
-  const game = ins.find((g) => g.app_name === appName);
-  const newest = latest[appName];
-  return !!game && !!newest && newest !== game.version;
+  const outdated = (g: InstalledGame) => !!latest[g.app_name] && latest[g.app_name] !== g.version;
+  if (!ins.some((g) => g.app_name === appName)) return false;
+  return ins.some((g) => (g.app_name === appName || g.parent === appName) && outdated(g));
 }
 
 /** Queues an update. Returns an error message, or null when it worked. */
@@ -213,6 +219,7 @@ export async function autoUpdate(latest: Record<string, string>) {
   }
   const busy = new Set([...get(downloads).map((d) => d.app_name), ...get(running)]);
   for (const g of list) {
-    if (!busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
+    // A piece is updated with its game.
+    if (!g.parent && !busy.has(g.app_name) && hasUpdate(g.app_name, list, latest)) await startUpdate(g.app_name);
   }
 }

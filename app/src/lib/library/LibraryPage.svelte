@@ -71,7 +71,11 @@
   /** The installed size for the "⋯" menu (spec §6g.2). */
   const sizeOf = (g: Game) => $installed.find((i) => i.app_name === g.app_name)?.install_size ?? null;
   const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
-  const jobOf = (g: Game) => $downloads.find((d) => d.app_name === g.app_name);
+  /** A download of the game or of one of its add-on pieces (spec §6n). */
+  const jobOf = (g: Game) =>
+    $downloads.find((d) => d.app_name === g.app_name || $installed.some((i) => i.app_name === d.app_name && i.parent === g.app_name));
+  /** Imported from Epic's launcher with optional parts: both launchers share it (spec §6n). */
+  const sharedWithEpic = (g: Game) => !!$installed.find((i) => i.app_name === g.app_name)?.parts;
   const UPDATE_LABELS: Partial<Record<GameStatus, string>> = {
     downloading: "Updating…",
     queued: "Updating…",
@@ -299,6 +303,7 @@
     {#if menuFor === game.app_name}
       <div class="menu" role="menu">
         {#if sizeOf(game) !== null}<p class="size" role="none">Size: {formatBytes(sizeOf(game) ?? 0)}</p>{/if}
+        {#if sharedWithEpic(game)}<p class="size" role="none">Also in Epic's launcher. Updating in one may make the other update again.</p>{/if}
         <button
           role="menuitem"
           disabled={isRunning(game)}

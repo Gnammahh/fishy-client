@@ -323,6 +323,16 @@ describe("LibraryPage", () => {
     expect(menu.textContent).toMatch(/^\s*Size: 12\.3 GB\s*Uninstall/);
   });
 
+  it("menu_says_also_in_epic_for_games_with_parts", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Fortnite"), game("Kelp Runner")] }) });
+    installed.set([{ ...installedGame("Fortnite"), parts: ["Langde"] }, installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Fortnite" }));
+    expect(screen.getByRole("menu").textContent).toContain("Also in Epic's launcher. Updating in one may make the other update again.");
+    await fireEvent.click(screen.getByRole("button", { name: "More options for Kelp Runner" }));
+    expect(screen.getByRole("menu").textContent).not.toContain("Also in Epic's launcher");
+  });
+
   it("uninstall_asks_first_then_calls_the_backend", async () => {
     const calls = mockCommands({
       library_cached: () => null,
@@ -463,6 +473,48 @@ describe("LibraryPage", () => {
     expect(screen.getByRole("button", { name: "Play Kelp Runner" })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Update Kelp Runner" }));
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
+  });
+
+  it("update_shown_when_only_a_piece_is_outdated", async () => {
+    const started: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Fortnite")], { Fortnite: "1", aa31: "2" }),
+      update_start: (args) => {
+        started.push(args);
+        return { items: [] };
+      },
+    });
+    installed.set([installedGame("Fortnite"), { ...installedGame("aa31"), parent: "Fortnite", parts: ["GFP_SaveTheWorldRoot"] }]);
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Update available")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Update Fortnite" }));
+    await waitFor(() => expect(started).toEqual([{ appName: "Fortnite" }]));
+  });
+
+  it("a_piece_download_shows_updating_on_the_game", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Fortnite")], { Fortnite: "1", aa31: "2" }) });
+    installed.set([installedGame("Fortnite"), { ...installedGame("aa31"), parent: "Fortnite" }]);
+    downloads.set([{ ...downloadItem("aa31", "downloading"), update: true }]);
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Updating…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play Fortnite" })).toBeNull();
+  });
+
+  it("auto_update_skips_pieces", async () => {
+    const started: unknown[] = [];
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => withUpdate([game("Fortnite")], { Fortnite: "1", aa31: "2" }),
+      settings_get: () => ({ auto_update: true, warn_outdated_play: true }),
+      installed_list: () => [installedGame("Fortnite"), { ...installedGame("aa31"), parent: "Fortnite" }],
+      update_start: (args) => {
+        started.push(args);
+        return { items: [] };
+      },
+    });
+    render(LibraryPage, { name: "FishFan" });
+    await waitFor(() => expect(started).toEqual([{ appName: "Fortnite" }]));
   });
 
   it("an_up_to_date_game_shows_no_update", async () => {

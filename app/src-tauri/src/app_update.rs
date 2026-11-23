@@ -24,6 +24,19 @@ pub(crate) fn newer_than(current: &str, offered: &str) -> bool {
     }
 }
 
+pub(crate) const NOTHING_NEWER: &str = "There's no newer version to install.";
+
+/// Update now asks GitHub again; whatever comes back is installed only if it's newer than this
+/// version, so an older (even properly signed) release is never installed. The updater plugin
+/// refuses those too by default; this keeps it true if that default ever changes.
+pub(crate) fn install_allowed(current: &str, offered: &str) -> Result<(), &'static str> {
+    if newer_than(current, offered) {
+        Ok(())
+    } else {
+        Err(NOTHING_NEWER)
+    }
+}
+
 pub(crate) fn should_check(s: &Settings) -> bool {
     s.check_app_updates
 }
@@ -108,6 +121,11 @@ pub async fn app_update_install(
             return Err(DOWNLOAD_ERROR.to_string());
         }
     };
+    let current = app.package_info().version.to_string();
+    if let Err(m) = install_allowed(&current, &update.version) {
+        warn!("app update: refused {} (not newer than {current})", update.version);
+        return Err(m.to_string());
+    }
     info!("app update: installing {}", update.version);
     // Game downloads pause just before the installer runs (it closes Fishy Client; they show as
     // Paused after the restart like after any close). If the update fails, they carry on.
@@ -154,6 +172,16 @@ mod tests {
         assert!(!newer_than("1.1.0", "1.1.0"));
         assert!(!newer_than("1.2.0", "1.1.0"));
         assert!(!newer_than("1.1.0", "not a version"));
+    }
+
+    #[test]
+    fn update_now_installs_only_a_newer_version() {
+        assert_eq!(install_allowed("1.9.1", "1.9.2"), Ok(()));
+        assert_eq!(install_allowed("1.9.1", "1.10.0"), Ok(()));
+        for offered in ["1.9.1", "1.9.0", "0.1.0", "not a version", ""] {
+            assert_eq!(install_allowed("1.9.1", offered), Err(NOTHING_NEWER), "{offered}");
+        }
+        assert_eq!(NOTHING_NEWER, "There's no newer version to install.");
     }
 
     #[test]

@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn start_reports_a_missing_program() {
-        let cmd = LaunchCommand { program: PathBuf::from(r"C:\definitely\not\here.exe"), working_dir: std::env::temp_dir(), args: vec![] };
+        let cmd = LaunchCommand { program: PathBuf::from(r"C:\definitely\not\here.exe"), working_dir: std::env::temp_dir(), args: vec![], user_args: 0 };
         assert_eq!(start(&cmd), Err(LaunchError::MissingProgram));
     }
 
@@ -230,6 +230,7 @@ mod tests {
             program: PathBuf::from(system).join("System32").join("cmd.exe"),
             working_dir: std::env::temp_dir(),
             args: vec!["/c".into(), "exit".into()],
+            user_args: 0,
         };
         assert_eq!(start(&cmd), Ok(()));
     }

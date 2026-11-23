@@ -12,17 +12,22 @@ pub struct LaunchCommand {
     pub program: PathBuf,
     pub working_dir: PathBuf,
     pub args: Vec<String>,
+    /// How many of the last args are the user's launch options (spec §6t); `Debug` hides them.
+    pub user_args: usize,
 }
 
 const AUTH_PASSWORD: &str = "-AUTH_PASSWORD=";
 
 impl fmt::Debug for LaunchCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let args: Vec<String> = self
-            .args
+        let shown = self.args.len().saturating_sub(self.user_args);
+        let mut args: Vec<String> = self.args[..shown]
             .iter()
             .map(|a| if a.starts_with(AUTH_PASSWORD) && a.len() > AUTH_PASSWORD.len() { format!("{AUTH_PASSWORD}[redacted]") } else { a.clone() })
             .collect();
+        if self.user_args > 0 {
+            args.push("[user options]".into());
+        }
         f.debug_struct("LaunchCommand").field("program", &self.program).field("working_dir", &self.working_dir).field("args", &args).finish()
     }
 }
@@ -110,7 +115,12 @@ pub fn build_command(i: &LaunchInputs) -> Result<LaunchCommand, LaunchError> {
         format!("-epiclocale={}", i.locale),
         format!("-epicsandboxid={}", i.game.namespace),
     ]);
-    Ok(LaunchCommand { program, working_dir, args })
+    // The user's launch options come last, like Legendary's extra arguments (spec §6t).
+    let options = &i.installed.options;
+    let user: Vec<String> = if options.launch_args_on { split_args(&options.launch_args) } else { Vec::new() };
+    let user_args = user.len();
+    args.extend(user);
+    Ok(LaunchCommand { program, working_dir, args, user_args })
 }
 
 /// Friendlier names for Epic's store ids.
@@ -207,6 +217,41 @@ mod tests {
                 "-epicsandboxid=ns1",
             ]
         );
+    }
+
+    fn with_options(dir: &Path, on: bool) -> InstalledGame {
+        let mut inst = installed(dir, "Reef.exe", "-fish");
+        inst.options.launch_args = r#"-windowed "-x y""#.into();
+        inst.options.launch_args_on = on;
+        inst
+    }
+
+    #[test]
+    fn launch_options_go_last_when_on() {
+        let dir = with_exe("Reef.exe");
+        let cmd = build_command(&inputs(&with_options(dir.path(), true), &game(LaunchInfo::default()), None, None)).unwrap();
+        let n = cmd.args.len();
+        assert_eq!(cmd.args[n - 2..], ["-windowed".to_string(), "-x y".to_string()]);
+        assert_eq!(cmd.args[n - 3], "-epicsandboxid=ns1");
+    }
+
+    #[test]
+    fn launch_options_ignored_when_off() {
+        let dir = with_exe("Reef.exe");
+        let cmd = build_command(&inputs(&with_options(dir.path(), false), &game(LaunchInfo::default()), None, None)).unwrap();
+        assert!(!cmd.args.iter().any(|a| a == "-windowed" || a == "-x y"));
+        assert_eq!(cmd.args.last().unwrap(), "-epicsandboxid=ns1");
+    }
+
+    #[test]
+    fn debug_hides_launch_options() {
+        let dir = with_exe("Reef.exe");
+        let code = Secret::new("CODE123");
+        let cmd = build_command(&inputs(&with_options(dir.path(), true), &game(LaunchInfo::default()), Some(&code), None)).unwrap();
+        let text = format!("{cmd:?}");
+        assert!(text.contains("[user options]"));
+        assert!(!text.contains("-windowed") && !text.contains("CODE123"));
+        assert!(text.contains("-epicsandboxid=ns1"));
     }
 
     #[test]

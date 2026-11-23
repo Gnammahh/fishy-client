@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.9.1",
+    "date": "2026-11-24",
+    "items": [
+      "The title bar is solid black: nothing shows through it any more.",
+      "A game started from its desktop shortcut no longer turns Fishy Client's taskbar icon into the game's icon."
+    ]
+  },
+  {
     "version": "1.9.0",
     "date": "2026-11-24",
     "items": [

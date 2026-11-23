@@ -50,8 +50,8 @@ function show(props: Partial<{ installed: InstalledGame; running: boolean; hasDo
   const onuninstall = vi.fn();
   const rec = props.installed ?? record();
   installed.set([rec]);
-  render(ManageDialog, { game, installed: rec, running: false, hasDownload: false, sharedWithEpic: false, onclose, onuninstall, ...props });
-  return { onclose, onuninstall };
+  const { unmount } = render(ManageDialog, { game, installed: rec, running: false, hasDownload: false, sharedWithEpic: false, onclose, onuninstall, ...props });
+  return { onclose, onuninstall, unmount };
 }
 
 afterEach(() => {
@@ -103,6 +103,36 @@ describe("ManageDialog", () => {
     await fireEvent.input(box, { target: { value: "-windowed" } });
     vi.advanceTimersByTime(600);
     await waitFor(() => expect(calls.at(-1)?.[1]).toMatchObject({ launchArgs: "-windowed", launchArgsOn: true }));
+  });
+
+  it("launch options typed just before closing are still saved", async () => {
+    const calls = mock();
+    const { unmount } = show();
+    await fireEvent.input(screen.getByRole("textbox", { name: "Launch options text" }), { target: { value: "-windowed" } });
+    unmount();
+    await waitFor(() => expect(calls.at(-1)).toEqual(["game_options_set", { appName: "SolCesto", autoUpdate: null, priority: false, launchArgs: "-windowed", launchArgsOn: false }]));
+  });
+
+  it("a switch still saves while the launch text is too long", async () => {
+    const calls = mock();
+    show();
+    await fireEvent.input(screen.getByRole("textbox", { name: "Launch options text" }), { target: { value: "a".repeat(1001) } });
+    await fireEvent.click(screen.getByRole("switch", { name: "Priority download" }));
+    await waitFor(() => expect(calls.at(-1)?.[1]).toMatchObject({ priority: true, launchArgs: "" }));
+    expect(screen.getByText("Keep it under 1000 characters.")).toBeTruthy();
+  });
+
+  it("a double click on Create makes one shortcut", async () => {
+    let release: (v: unknown) => void = () => {};
+    const calls = mock({ shortcut_create: () => new Promise((r) => (release = () => r(record({ shortcuts: ["C:\D\Sol Cesto.lnk"] })))) });
+    show();
+    const create = screen.getByRole("button", { name: "Create" });
+    await fireEvent.click(create);
+    await fireEvent.click(create);
+    release(null);
+    expect(await screen.findByText("Also add it to the Start menu?")).toBeTruthy();
+    expect(calls.filter(([c]) => c === "shortcut_create")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("refuses launch options over 1000 characters", async () => {

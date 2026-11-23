@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { waitFor } from "@testing-library/svelte";
 import { get } from "svelte/store";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
@@ -153,8 +154,33 @@ describe("Manage box helpers", () => {
     expect(get(verifying)).toEqual({ app: "A", done: 3, total: 10 });
     await emit("verify-done", { app_name: "A", result: { kind: "bad", files: 2, bytes: 340 } });
     expect(get(verifying)).toEqual({ app: "A", result: { kind: "bad", files: 2, bytes: 340 } });
-    await emit("play-request", "Reef");
-    expect(get(playRequest)).toBe("Reef");
+    stop();
+  });
+
+  it("a play-request event takes the request from Rust, so it's used once", async () => {
+    let waiting: string | null = "Reef";
+    const taken: string[] = [];
+    mockIPC(
+      (cmd) => {
+        if (cmd === "play_request_take") {
+          const w = waiting;
+          waiting = null;
+          if (w) taken.push(w);
+          return w;
+        }
+        if (cmd === "installed_list") return [];
+      },
+      { shouldMockEvents: true },
+    );
+    const stop = await initInstalls(); // takes "Reef" at start
+    playRequest.set(null);
+    await emit("play-request", "Reef"); // the same request's event: nothing left to take
+    await new Promise((r) => setTimeout(r, 0));
+    expect(get(playRequest)).toBeNull();
+    waiting = "Tide";
+    await emit("play-request", "Tide");
+    await waitFor(() => expect(get(playRequest)).toBe("Tide"));
+    expect(taken).toEqual(["Reef", "Tide"]);
     stop();
   });
 });

@@ -144,7 +144,10 @@
     if (!want || ($library.status !== "ready" && $library.status !== "offline") || $library.games.length === 0) return;
     playRequest.set(null);
     const g = $library.games.find((x) => x.app_name === want);
-    if (g && $installed.some((i) => i.app_name === want)) untrack(() => askPlay(g));
+    if (!g || !$installed.some((i) => i.app_name === want)) return;
+    // Not while its files are being written (an update, a repair).
+    if (status(g) !== "installed") cardError = { app: g.app_name, message: "Wait for its download to finish." };
+    else untrack(() => askPlay(g));
   });
 
   /** The game whose page is open (spec §6q); its data always comes from the current library. */

@@ -659,6 +659,18 @@ describe("LibraryPage", () => {
     expect(calls).not.toContain("play_game");
   });
 
+  it("a_play_request_for_a_game_with_a_download_says_wait", async () => {
+    const calls = mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
+    settings.set({ ...DEFAULT_SETTINGS, warn_outdated_play: false });
+    installed.set([installedGame("KelpRunner")]);
+    downloads.set([{ ...downloadItem("KelpRunner", "downloading"), update: true }]);
+    playRequest.set("KelpRunner");
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Wait for its download to finish.")).toBeTruthy();
+    expect(get(playRequest)).toBeNull();
+    expect(calls).not.toContain("play_game");
+  });
+
   it("a_play_request_for_a_game_not_installed_is_dropped", async () => {
     const calls = mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
     render(LibraryPage, { name: "FishFan" });

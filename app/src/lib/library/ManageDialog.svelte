@@ -63,15 +63,13 @@
   const autoShown = $derived(autoUpdate ?? $settings.auto_update);
   const tooLong = (t: string) => [...t].length > LAUNCH_MAX;
 
+  /** Saves everything; launch text that's too long keeps its last saved value. */
   async function save() {
-    if (tooLong(launchArgs)) {
-      launchError = TOO_LONG;
-      return;
-    }
-    launchError = null;
     clearTimeout(typing);
-    savedArgs = launchArgs;
-    saveError = await setGameOptions(game.app_name, { auto_update: autoUpdate, priority, launch_args: launchArgs, launch_args_on: launchArgsOn });
+    const ok = !tooLong(launchArgs);
+    launchError = ok ? null : TOO_LONG;
+    if (ok) savedArgs = launchArgs;
+    saveError = await setGameOptions(game.app_name, { auto_update: autoUpdate, priority, launch_args: savedArgs, launch_args_on: launchArgsOn });
   }
 
   function typed(e: Event) {
@@ -90,18 +88,32 @@
     else if (launchArgs !== savedArgs) void save();
   }
 
-  async function create() {
-    shortcutError = await createShortcut(game.app_name);
-    askStartMenu = !shortcutError;
+  // One shortcut action at a time (a double click must not make it twice).
+  let shortcutBusy = $state(false);
+  async function once(run: () => Promise<void>) {
+    if (shortcutBusy) return;
+    shortcutBusy = true;
+    try {
+      await run();
+    } finally {
+      shortcutBusy = false;
+    }
   }
-  async function answerStartMenu(yes: boolean) {
-    askStartMenu = false;
-    if (yes) shortcutError = await addStartMenu(game.app_name);
-  }
-  async function remove() {
-    askStartMenu = false;
-    shortcutError = await removeShortcut(game.app_name);
-  }
+  const create = () =>
+    once(async () => {
+      shortcutError = await createShortcut(game.app_name);
+      askStartMenu = !shortcutError;
+    });
+  const answerStartMenu = (yes: boolean) =>
+    once(async () => {
+      askStartMenu = false;
+      if (yes) shortcutError = await addStartMenu(game.app_name);
+    });
+  const remove = () =>
+    once(async () => {
+      askStartMenu = false;
+      shortcutError = await removeShortcut(game.app_name);
+    });
 
   // Verify (spec §6t): this game's progress or result, or another game's check.
   const v = $derived($verifying);
@@ -125,7 +137,11 @@
   $effect(() => {
     box?.focus();
   });
-  $effect(() => () => clearTimeout(typing));
+  // Closing the box saves launch text typed in the last half second.
+  $effect(() => () => {
+    clearTimeout(typing);
+    if (launchArgs !== savedArgs && !tooLong(launchArgs)) void save();
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -191,16 +207,16 @@
           </span>
         </span>
         {#if shortcuts.length > 0}
-          <PixelButton variant="ghost" onclick={remove}>Remove</PixelButton>
+          <PixelButton variant="ghost" disabled={shortcutBusy} onclick={remove}>Remove</PixelButton>
         {:else}
-          <PixelButton variant="ghost" onclick={create}>Create</PixelButton>
+          <PixelButton variant="ghost" disabled={shortcutBusy} onclick={create}>Create</PixelButton>
         {/if}
       </div>
       {#if askStartMenu}
         <div class="ask">
           <span>Also add it to the Start menu?</span>
-          <PixelButton variant="ghost" onclick={() => answerStartMenu(false)}>No</PixelButton>
-          <PixelButton onclick={() => answerStartMenu(true)}>Yes</PixelButton>
+          <PixelButton variant="ghost" disabled={shortcutBusy} onclick={() => answerStartMenu(false)}>No</PixelButton>
+          <PixelButton disabled={shortcutBusy} onclick={() => answerStartMenu(true)}>Yes</PixelButton>
         </div>
       {/if}
       {#if shortcutError}<p class="error" role="alert">{shortcutError}</p>{/if}

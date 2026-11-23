@@ -101,6 +101,16 @@ export async function refreshInstalled() {
   }
 }
 
+/** Takes the game a desktop shortcut asked to play, if any (spec §6t). */
+async function takePlayRequest() {
+  try {
+    const waiting = await invoke<string | null>("play_request_take");
+    if (typeof waiting === "string" && waiting) playRequest.set(waiting);
+  } catch {
+    /* none */
+  }
+}
+
 /** Loads the current state and follows the backend's change events. Returns a stop function. */
 export async function initInstalls(): Promise<() => void> {
   const safeListen = async (event: string, handler: (payload: unknown) => void) => {
@@ -123,7 +133,8 @@ export async function initInstalls(): Promise<() => void> {
     const v = p as { app_name: string; result: VerifyResult };
     verifying.set({ app: v.app_name, result: v.result });
   });
-  const stopPlay = await safeListen("play-request", (p) => typeof p === "string" && playRequest.set(p));
+  // The event only says "a shortcut asked": the request is taken from Rust, so it's used once.
+  const stopPlay = await safeListen("play-request", () => void takePlayRequest());
   try {
     running.set(asNames(await invoke<string[]>("running_list")));
   } catch {
@@ -136,12 +147,7 @@ export async function initInstalls(): Promise<() => void> {
   }
   await refreshInstalled();
   // A shortcut that started Fishy Client (spec §6t); after the installed list, so it can be played.
-  try {
-    const waiting = await invoke<string | null>("play_request_take");
-    if (typeof waiting === "string" && waiting) playRequest.set(waiting);
-  } catch {
-    /* none */
-  }
+  await takePlayRequest();
   return () => {
     stopDownloads();
     stopInstalled();

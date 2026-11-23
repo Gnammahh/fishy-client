@@ -130,6 +130,8 @@ mod tests {
             base_urls: vec![],
             update_from: None,
             imported: false,
+            parts: None,
+            parent: None,
         }
     }
 

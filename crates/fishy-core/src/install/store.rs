@@ -27,6 +27,12 @@ pub struct JobInfo {
     /// Added from Epic's launcher (spec §6g): Cancel must not delete the game's files.
     #[serde(default)]
     pub imported: bool,
+    /// The optional parts to install (spec §6n). None: every file.
+    #[serde(default)]
+    pub parts: Option<Vec<String>>,
+    /// For an add-on piece (Fortnite's Save the World Content), its game (spec §6n).
+    #[serde(default)]
+    pub parent: Option<String>,
 }
 
 /// One entry of `installed.json`.
@@ -43,6 +49,17 @@ pub struct InstalledGame {
     /// When Play last started it (spec §6f.4). Records from before then have none.
     #[serde(default)]
     pub last_played: Option<DateTime<Utc>>,
+    /// The installed optional parts (spec §6n). None: every file.
+    #[serde(default)]
+    pub parts: Option<Vec<String>>,
+    /// An add-on piece's game; such records are hidden from the Library (spec §6n).
+    #[serde(default)]
+    pub parent: Option<String>,
+    /// Epic's catalog details, needed to update a piece (add-ons aren't in the Library list).
+    #[serde(default)]
+    pub namespace: String,
+    #[serde(default)]
+    pub catalog_item_id: String,
 }
 
 /// Where a manifest file goes inside the install folder. Refuses names that would escape it
@@ -203,6 +220,10 @@ impl InstallStore {
             install_size: m.install_size(),
             installed_at,
             last_played,
+            parts: job.parts.clone(),
+            parent: job.parent.clone(),
+            namespace: job.namespace.clone(),
+            catalog_item_id: job.catalog_item_id.clone(),
         };
         let mut games: Vec<InstalledGame> = self.installed().into_iter().filter(|g| g.app_name != job.app_name).collect();
         games.push(game.clone());
@@ -252,6 +273,8 @@ mod tests {
             base_urls: vec!["https://cdn/x".into()],
             update_from: None,
             imported: false,
+            parts: None,
+            parent: None,
         }
     }
 
@@ -401,6 +424,37 @@ mod tests {
         let before = store.installed();
         store.mark_played("Nope", t).unwrap();
         assert_eq!(store.installed(), before);
+    }
+
+    #[test]
+    fn records_from_1_3_0_read_without_parts() {
+        let j: JobInfo = serde_json::from_value(serde_json::json!({
+            "app_name": "Tide", "title": "T", "namespace": "ns", "catalog_item_id": "c",
+            "install_path": "C:/Games/T", "download_size": 1, "install_size": 1, "base_urls": []
+        }))
+        .unwrap();
+        assert_eq!((j.parts, j.parent), (None, None));
+        let g: InstalledGame = serde_json::from_value(serde_json::json!({
+            "app_name": "Tide", "title": "T", "version": "1", "install_path": "C:/G/T", "executable": "t.exe",
+            "launch_parameters": "", "install_size": 1, "installed_at": "2026-11-01T00:00:00Z"
+        }))
+        .unwrap();
+        assert_eq!((g.parts, g.parent, g.namespace.as_str(), g.catalog_item_id.as_str()), (None, None, "", ""));
+    }
+
+    #[test]
+    fn finish_install_keeps_parts_and_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let mut j = job(&dir.path().join("Games").join("Tide"));
+        j.parts = Some(vec!["A".into()]);
+        j.parent = Some("Fortnite".into());
+        store.save_job(&j, &build_binary(&sample(), true)).unwrap();
+        let g = store.finish_install(&j, &sample()).unwrap();
+        assert_eq!(g.parts, Some(vec!["A".to_string()]));
+        assert_eq!(g.parent.as_deref(), Some("Fortnite"));
+        assert_eq!((g.namespace.as_str(), g.catalog_item_id.as_str()), ("ns", "cat"));
+        assert_eq!(store.installed()[0], g);
     }
 
     #[test]

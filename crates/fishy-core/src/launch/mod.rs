@@ -122,6 +122,10 @@ mod tests {
             install_size: 1,
             installed_at: Utc::now(),
             last_played: None,
+            parts: None,
+            parent: None,
+            namespace: String::new(),
+            catalog_item_id: String::new(),
         };
         let game = Game {
             app_name: "Reef".into(),

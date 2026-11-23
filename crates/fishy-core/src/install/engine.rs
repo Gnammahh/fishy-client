@@ -443,6 +443,8 @@ mod tests {
             base_urls: vec![format!("{}/base", server.uri())],
             update_from: None,
             imported: false,
+            parts: None,
+            parent: None,
         };
         store.save_job(&job, &build_binary(&f.manifest, true)).unwrap();
         Env { _dir: dir, store, job, client: InstallClient::with_base_url(&server.uri()).with_retry_base(Duration::from_millis(1)) }

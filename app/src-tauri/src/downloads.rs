@@ -551,6 +551,8 @@ mod tests {
             base_urls: vec![],
             update_from: None,
             imported: false,
+            parts: None,
+            parent: None,
         };
         Job::new(info, Arc::new(Manifest::new(ManifestMeta::default(), vec![], vec![])), state)
     }

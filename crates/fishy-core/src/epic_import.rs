@@ -153,6 +153,8 @@ pub fn import_job(item: &EpicItem, title: &str, m: &Manifest, base_urls: Vec<Str
         base_urls,
         update_from: None,
         imported: true,
+        parts: None,
+        parent: None,
     }
 }
 

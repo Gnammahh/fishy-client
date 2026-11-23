@@ -99,6 +99,8 @@ mod tests {
             base_urls: vec![],
             update_from: None,
             imported: false,
+            parts: None,
+            parent: None,
         };
         write_files(&root);
         store.save_job(&job, &build_binary(&sample(), true)).unwrap();

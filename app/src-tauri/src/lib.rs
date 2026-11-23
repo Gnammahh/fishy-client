@@ -383,6 +383,8 @@ async fn install_start(
         base_urls: p.info.base_urls.clone(),
         update_from: None,
         imported: false,
+        parts: None,
+        parent: None,
     };
     // An import may have started while the manifest was fetched.
     if install.checking.is_busy(&game.app_name) || downloads.has_job(&game.app_name) {

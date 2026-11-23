@@ -91,6 +91,8 @@ async fn queue_update(
         base_urls: info.base_urls.clone(),
         update_from: Some(installed.version.clone()),
         imported: false,
+        parts: None,
+        parent: None,
     };
     downloads
         .store

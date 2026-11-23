@@ -8,7 +8,7 @@
   import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
   import EpicImportNote from "$lib/import/EpicImportNote.svelte";
   import { formatBytes } from "$lib/progress/progress";
-  import {
+  import { formatPlaytime, openGameFolder,
     downloads,
     hasUpdate,
     installed,
@@ -70,6 +70,8 @@
   const isRunning = (g: Game) => $running.includes(g.app_name);
   /** The installed size for the "⋯" menu (spec §6g.2). */
   const sizeOf = (g: Game) => $installed.find((i) => i.app_name === g.app_name)?.install_size ?? null;
+  /** Seconds played through Fishy Client (spec §6p). */
+  const playtimeOf = (g: Game) => $installed.find((i) => i.app_name === g.app_name)?.playtime_secs;
   const outdated = (g: Game) => hasUpdate(g.app_name, $installed, $library.latestVersions);
   /** A download of the game or of one of its add-on pieces (spec §6n). */
   const jobOf = (g: Game) =>
@@ -303,7 +305,16 @@
     {#if menuFor === game.app_name}
       <div class="menu" role="menu">
         {#if sizeOf(game) !== null}<p class="size" role="none">Size: {formatBytes(sizeOf(game) ?? 0)}</p>{/if}
+        {#if formatPlaytime(playtimeOf(game))}<p class="size" role="none">{formatPlaytime(playtimeOf(game))}</p>{/if}
         {#if sharedWithEpic(game)}<p class="size" role="none">Also in Epic's launcher. Updating in one may make the other update again.</p>{/if}
+        <button
+          role="menuitem"
+          onclick={async () => {
+            menuFor = null;
+            const err = await openGameFolder(game.app_name);
+            if (err) cardError = { app: game.app_name, message: err };
+          }}>Open game folder</button
+        >
         <button
           role="menuitem"
           disabled={isRunning(game)}

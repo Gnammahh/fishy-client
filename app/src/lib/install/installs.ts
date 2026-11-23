@@ -28,6 +28,8 @@ export type InstalledGame = {
   installed_at: string;
   /** When Play last started it (spec §6f.4); missing for games not played since. */
   last_played?: string | null;
+  /** Seconds played through Fishy Client (spec §6p). */
+  playtime_secs?: number;
   /** The optional parts installed (spec §6n); null or missing: every file. */
   parts?: string[] | null;
   /** For an add-on piece (Fortnite's Save the World Content): its game. Hidden from the Library. */
@@ -158,6 +160,26 @@ export const resume = (appName: string) => invoke("download_resume", { appName }
 export async function cancel(appName: string): Promise<string | null> {
   try {
     await invoke("download_cancel", { appName });
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
+/** "Played: 12 h 5 min" for the ⋯ menu (spec §6p); null when never played through Fishy Client. */
+export function formatPlaytime(secs: number | undefined): string | null {
+  if (!secs || secs <= 0) return null;
+  if (secs < 60) return "Played: under a minute";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h === 0) return `Played: ${m} min`;
+  return m === 0 ? `Played: ${h} h` : `Played: ${h} h ${m} min`;
+}
+
+/** Opens the game's folder in Windows Explorer. Returns an error message, or null. */
+export async function openGameFolder(appName: string): Promise<string | null> {
+  try {
+    await invoke("open_game_folder", { appName });
     return null;
   } catch (e) {
     return message(e);

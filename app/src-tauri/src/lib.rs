@@ -470,6 +470,25 @@ fn installed_list(install: tauri::State<'_, AppInstall>) -> Vec<InstalledGame> {
     install.downloads.store.installed()
 }
 
+/// The installed game's folder, only from its record, and only if it's still there (spec §6p).
+fn game_folder(installed: &[InstalledGame], app_name: &str) -> Result<std::path::PathBuf, String> {
+    let game = installed.iter().find(|g| g.app_name == app_name).ok_or_else(|| "Refresh your Library, then try again.".to_string())?;
+    if game.install_path.is_dir() {
+        Ok(game.install_path.clone())
+    } else {
+        Err(format!("Couldn't find {}'s folder.", game.title))
+    }
+}
+
+/// "Open game folder" in the ⋯ menu: Windows Explorer in the game's folder (spec §6p).
+#[tauri::command]
+fn open_game_folder(app_name: String, install: tauri::State<'_, AppInstall>) -> Result<(), String> {
+    let folder = game_folder(&install.downloads.store.installed(), &app_name)?;
+    std::process::Command::new("explorer.exe").arg(&folder).spawn().map_err(|_| "Couldn't open the folder.".to_string())?;
+    info!("opened a game folder");
+    Ok(())
+}
+
 #[tauri::command]
 async fn uninstall_game(
     app: tauri::AppHandle,
@@ -551,6 +570,7 @@ pub fn run() {
             start_login,
             submit_code,
             logout,
+            open_game_folder,
             store_window::store_free_games,
             store_window::store_open,
             open_login_in_browser,
@@ -595,6 +615,35 @@ fn chrono_now() -> fishy_core::chrono::DateTime<fishy_core::chrono::Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_folder_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut g = updates_test_record("Tide", dir.path());
+        assert_eq!(game_folder(std::slice::from_ref(&g), "Tide"), Ok(dir.path().to_path_buf()));
+        g.install_path = dir.path().join("gone");
+        assert_eq!(game_folder(&[g], "Tide"), Err("Couldn't find Tide's folder.".to_string()));
+        assert!(game_folder(&[], "Tide").is_err());
+    }
+
+    fn updates_test_record(app: &str, path: &std::path::Path) -> InstalledGame {
+        InstalledGame {
+            app_name: app.into(),
+            title: app.into(),
+            version: "1".into(),
+            install_path: path.to_path_buf(),
+            executable: String::new(),
+            launch_parameters: String::new(),
+            install_size: 1,
+            installed_at: fishy_core::chrono::Utc::now(),
+            last_played: None,
+            playtime_secs: 0,
+            parts: None,
+            parent: None,
+            namespace: String::new(),
+            catalog_item_id: String::new(),
+        }
+    }
 
     #[test]
     fn a_refresh_is_saved_only_for_the_account_still_signed_in() {

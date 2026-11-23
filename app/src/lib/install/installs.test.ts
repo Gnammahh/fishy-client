@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { get } from "svelte/store";
 import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { downloads, installed, running, initInstalls, statusFor, uninstall, resetInstalls, type DownloadItem, type InstalledGame } from "./installs";
+import { downloads, installed, running, initInstalls, statusFor, uninstall, formatPlaytime, resetInstalls, type DownloadItem, type InstalledGame } from "./installs";
 
 const item = (app_name: string, state: DownloadItem["state"]): DownloadItem => ({
   app_name,
@@ -85,5 +85,15 @@ describe("uninstall", () => {
     installed.set([inst("A")]);
     expect(await uninstall("A")).toBeNull();
     expect(get(installed)).toEqual([]);
+  });
+});
+
+describe("formatPlaytime", () => {
+  it("formats_the_time_played", () => {
+    expect(formatPlaytime(0)).toBeNull();
+    expect(formatPlaytime(30)).toBe("Played: under a minute");
+    expect(formatPlaytime(25 * 60 + 40)).toBe("Played: 25 min");
+    expect(formatPlaytime(12 * 3600 + 5 * 60)).toBe("Played: 12 h 5 min");
+    expect(formatPlaytime(2 * 3600)).toBe("Played: 2 h");
   });
 });

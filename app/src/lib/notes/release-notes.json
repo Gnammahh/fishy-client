@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.6.0",
+    "date": "2026-11-24",
+    "items": [
+      "Open game folder in a game's ⋯ menu opens its files in Windows Explorer.",
+      "Fishy Client now counts how long you play games you start with it; the ⋯ menu shows it (\"Played: 12 h 5 min\")."
+    ]
+  },
+  {
     "version": "1.5.1",
     "date": "2026-11-24",
     "items": [

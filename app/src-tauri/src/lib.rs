@@ -8,6 +8,7 @@ mod running;
 mod session;
 mod store_window;
 mod updates;
+mod verify;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
 use downloads::{Downloads, DownloadsView};
@@ -550,7 +551,9 @@ async fn uninstall_game(
     app_name: String,
     install: tauri::State<'_, AppInstall>,
     running: tauri::State<'_, running::AppRunning>,
+    verify: tauri::State<'_, Arc<verify::AppVerify>>,
 ) -> Result<Vec<InstalledGame>, String> {
+    verify.stop(&app_name);
     if running.contains(&app_name) {
         let title = install.downloads.store.installed().into_iter().find(|g| g.app_name == app_name).map(|g| g.title).unwrap_or_else(|| app_name.clone());
         return Err(fishy_core::running::close_first(&title));
@@ -606,6 +609,7 @@ pub fn run() {
             });
             app.manage(play::AppLaunch::new());
             app.manage(running::AppRunning::default());
+            app.manage(Arc::new(verify::AppVerify::default()));
             app.manage(store_window::AppStore::new());
             let settings = updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() };
             // The saved speed limit applies from the first download, not only after a change.
@@ -644,6 +648,10 @@ pub fn run() {
             download_pause,
             download_resume,
             download_start_now,
+            verify::game_options_set,
+            verify::verify_start,
+            verify::verify_stop,
+            verify::verify_repair,
             download_cancel,
             installed_list,
             uninstall_game,

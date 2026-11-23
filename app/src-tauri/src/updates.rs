@@ -19,7 +19,7 @@ pub struct AppSettings {
 
 /// Sign-in, format and space problems keep their own message; anything else while getting the
 /// update is "Couldn't get the update".
-fn update_error(e: InstallError) -> String {
+pub(crate) fn update_error(e: InstallError) -> String {
     match e {
         InstallError::Rejected(_) | InstallError::Unsupported | InstallError::NoSpace { .. } | InstallError::Expired => e.user_message(),
         _ => UPDATE_FETCH_ERROR.to_string(),

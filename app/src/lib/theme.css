@@ -32,3 +32,28 @@ body {
   /* Pixelify Sans draws "fi" as one glyph that reads like "A" ("Loading Ash") */
   font-variant-ligatures: none;
 }
+
+/* Fish-style scrollbars everywhere: thin, square (pixel style), aqua handle on a dark track.
+   Only the ::-webkit-scrollbar rules: setting scrollbar-color would make WebView2 ignore them. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(79, 227, 209, 0.55);
+  border: 2px solid var(--panel);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: var(--aqua);
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-corner {
+  background: var(--panel);
+}

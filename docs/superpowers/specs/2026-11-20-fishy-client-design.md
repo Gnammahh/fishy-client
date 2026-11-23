@@ -1383,6 +1383,10 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
+### Still to check by hand (version 1.6.0)
+- [x] The installed 1.5.1 updates itself to 1.6.0; Open game folder opens the game's folder in Explorer (2026-11-24)
+- [ ] Play a game from Fishy Client for a few minutes: the ⋯ menu shows "Played: …"
+
 ### Still to check by hand (version 1.5.1)
 - [x] The Store page shows this week's free games (2026-11-24)
 - [x] Get on Epic opens the Store window on the game's page, without freezing; pressing it again keeps one window; the sign-in is remembered after closing (2026-11-24)

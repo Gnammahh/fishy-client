@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.4.1",
+    "date": "2026-11-23",
+    "items": [
+      "Scrollbars now match the app: thin, square and aqua instead of Windows' grey ones."
+    ]
+  },
+  {
     "version": "1.4.0",
     "date": "2026-11-23",
     "items": [

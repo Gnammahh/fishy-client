@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.8.0",
+    "date": "2026-11-24",
+    "items": [
+      "Fishy Client has its own fish-style title bar instead of Windows' white one: drag it to move the window, double-click to maximize."
+    ]
+  },
+  {
     "version": "1.7.1",
     "date": "2026-11-24",
     "items": [

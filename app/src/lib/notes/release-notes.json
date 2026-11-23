@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.9.2",
+    "date": "2026-11-24",
+    "items": [
+      "Safer self-update: Update now double-checks that it's installing a newer version, so an older one can never be installed."
+    ]
+  },
+  {
     "version": "1.9.1",
     "date": "2026-11-24",
     "items": [

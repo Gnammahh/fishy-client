@@ -8,6 +8,7 @@ pub mod client;
 pub mod compare;
 pub mod elevate;
 pub mod engine;
+pub mod parts;
 pub mod plan;
 pub mod space;
 pub mod speed;

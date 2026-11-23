@@ -1045,7 +1045,7 @@ Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnit
 
 ### What the user sees
 - **Fortnite installed by Epic** is imported like other games (§6g): it shows as installed, **Play** works, and the ⋯ menu has the same items. The import note says "Imported from Epic's launcher, with the parts Epic installed."
-- **Update** works in Fishy Client like for any game (§6e): it updates **all 3 pieces together** (one entry in Downloads, "Updating…"), downloading only the changes for the parts already on disk. Auto-update (§6e) applies too.
+- **Update** works in Fishy Client like for any game (§6e): it updates **all 3 pieces together** (one Downloads line per piece that changed, with Epic's name for it, run one after another), downloading only the changes for the parts already on disk. Auto-update (§6e) applies too.
 - **Epic's launcher keeps working** for Fortnite. The known limit of shared folders applies (§6g): after updating in one launcher, the other may want to update too. For Fortnite that most likely means Epic downloads the patch a second time (it works from its own old file list); this is checked by hand, not known for sure. The ⋯ menu of an imported game with parts shows a small line: "Also in Epic's launcher. Updating in one may make the other update again."
 - **Not installed:** a game whose manifest has optional parts can't be installed fresh in Fishy Client (we can't show which parts to pick). Its Install box says "This game has optional parts. Install it with Epic's launcher; Fishy Client adds it by itself afterwards." with no Install button. Fortnite gets this today; any future game with parts gets it the same way.
 - **Uninstall** removes all 3 pieces' files (each piece's own files, then empty folders), same confirmation as today.
@@ -1061,7 +1061,7 @@ Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnit
 ### How the 3 pieces are kept together
 - Each add-on piece is saved as its own installed record with `parent: Option<String>` (here `Some("Fortnite")`), and is **hidden** from the Library (it has no card; the Library already hides add-ons).
 - Importing Fortnite imports its add-on pieces from Epic's list in the same step (same folder, `MainGameAppName` = the game). An add-on whose files don't check out goes through **Download them** with the game.
-- **Update available** for the game means: the game or any of its pieces has a newer version. **Update** queues one download per piece that needs it, run one after another; Downloads shows them as one line under the game's title. A failed or paused piece shows on that line ("Paused"/"Retry").
+- **Update available** for the game means: the game or any of its pieces has a newer version. **Update** queues one download per piece that needs it, run one after another; each shows as its own Downloads line titled with Epic's name for it ("Fortnite Save the World Content"). A piece's record keeps its own namespace and catalog item ID, since add-ons aren't in the Library list.
 - **Play** is blocked while any piece is downloading ("Fortnite is updating."), and the outdated-play warning (§6e) counts all pieces.
 - **Uninstall** uninstalls the pieces first, then the game.
 
@@ -1074,7 +1074,7 @@ Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnit
 
 ### Tests
 - **Rust:** manifest parsing keeps part names (binary and JSON manifests); chosen parts from files on disk (all, none, some); belonging files (no names, one chosen, one of several chosen); the update plan with parts (unchosen files untouched, new part names added, removed files only among belonging ones); `installed.json` with and without `parts`/`parent` (old files read as `None`); import finds add-on pieces by `MainGameAppName`; update-available counts pieces; uninstall removes pieces; the Install box refusal for manifests with parts.
-- **UI (vitest):** the "optional parts" Install box text without Install button; the ⋯ menu line; one Downloads line for a game with pieces.
+- **UI (vitest):** the "optional parts" Install box text without Install button; the ⋯ menu line; Update shown when only a piece is outdated; auto-update skips pieces.
 - **By hand:** Fortnite shows as installed after start-up, Play starts it, the next Fortnite update in Fishy downloads a normal-sized patch, Fortnite still starts, and Epic's launcher still opens it (and may want to update again).
 
 ## 7. Error handling

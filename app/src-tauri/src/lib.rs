@@ -4,6 +4,7 @@ mod downloads;
 mod epic_import;
 mod login_window;
 mod play;
+mod play_request;
 mod running;
 mod session;
 mod shortcuts;
@@ -591,6 +592,8 @@ fn open_login_in_browser() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First: a second start (a game's shortcut) hands its arguments to this one (spec §6t).
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| play_request::second_start(app, args)))
         .plugin(tauri_plugin_dialog::init())
         // Fishy Client's own signed updates (spec §6j); used from Rust only, so the page gets no permission.
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -618,6 +621,8 @@ pub fn run() {
             // The saved speed limit applies from the first download, not only after a change.
             app.state::<AppInstall>().downloads.limiter.set(fishy_core::install::limit::limit_bytes(&settings.store.load()));
             app.manage(settings);
+            app.manage(play_request::AppPlayRequest::default());
+            play_request::accept(app.handle(), &std::env::args().collect::<Vec<_>>());
             Ok(())
         })
         // Closing the main window quits the app, even if the sign-in window is still open.
@@ -658,6 +663,7 @@ pub fn run() {
             shortcuts::shortcut_create,
             shortcuts::shortcut_add_start_menu,
             shortcuts::shortcut_remove,
+            play_request::play_request_take,
             download_cancel,
             installed_list,
             uninstall_game,

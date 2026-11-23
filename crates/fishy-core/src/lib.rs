@@ -10,6 +10,7 @@ pub mod running;
 pub mod settings;
 pub mod store;
 pub mod wipe;
+pub mod achievements;
 
 /// Re-exported so the app uses the same chrono version.
 pub use chrono;

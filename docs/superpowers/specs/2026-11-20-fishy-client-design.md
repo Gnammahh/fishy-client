@@ -1324,6 +1324,12 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
+### Still to check by hand (version 1.4.0)
+- [x] The installed 1.3.0 updates itself to 1.4.0 (2026-11-23)
+- [x] Add them adds Fortnite with its 2 pieces (Save the World, LEGO Fortnite); 37 of 69 part names, matching the files on disk (2026-11-23)
+- [ ] Play starts Fortnite from Fishy Client (optional: account risk, see README)
+- [ ] The next Fortnite update in Fishy Client downloads a normal-sized patch, Fortnite still starts, and Epic's launcher still opens it
+
 ### Checked by hand (version 1.3.0): all checked 2026-11-23
 - [x] The installed 1.2.0 updates itself to 1.3.0
 - [x] With a limit on, Downloads shows "Limited to N MB/s · Change in Settings" and the link opens Settings

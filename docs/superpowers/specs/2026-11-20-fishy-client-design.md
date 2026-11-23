@@ -1080,6 +1080,42 @@ Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnit
 - **UI (vitest):** the "optional parts" Install box text without Install button; the ⋯ menu line; Update shown when only a piece is outdated; auto-update skips pieces.
 - **By hand:** Fortnite shows as installed after start-up, Play starts it, the next Fortnite update in Fishy downloads a normal-sized patch, Fortnite still starts, and Epic's launcher still opens it (and may want to update again).
 
+## 6o. Store (version 1.5.0, designed 2026-11-24)
+
+Chosen by the user: **Epic's real store in a Fishy Client window, plus our own "Free games" panel** (not an own store browser: Epic has no documented store list, and its website data changes without warning). The Store window **remembers** the sign-in on Epic's website (user's choice). Fishy Client **never** buys, claims or clicks anything on Epic's pages: the user does that themselves.
+
+### What the user sees
+- A new sidebar item **Store**, between Library and Downloads.
+- **Store page:** title "Store", a button **Open Epic's store**, and two sections in the fish style:
+  - **Free now:** a card per game that's free right now: wide cover, title, "Free until *Nov 26*", and a button **Get on Epic**, or the line "In your Library" when the user already owns it.
+  - **Free next:** a card per game that will be free soon: cover, title, "Free from *Nov 26*", and a button **View on Epic**.
+  - Under them, small: "Fishy Client opens Epic's page; you get the game there yourself."
+  - Loading shows the small fish loader; an empty section says "Nothing right now." A failure says "Couldn't load the free games. Check your internet, then press Try again." with **Try again**.
+- **Get on Epic / View on Epic / Open Epic's store** open the **Store window** (or bring it to the front and go to that page): Epic's real website, sized 1200×800, title "Epic Games Store". Signing in, buying and getting free games happen there as on Epic's website.
+- **When the Store window closes,** the Library refreshes by itself, so a game just bought or claimed shows up.
+
+### Where the free games come from (checked 2026-11-24)
+- `GET https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US`: public, no sign-in, no country sent (it works without one). Fetched by Rust (the page's CSP allows no outside requests), at most every 10 minutes (kept in memory), and on **Try again**.
+- From `data.Catalog.searchStore.elements[]`: an offer is **free now** when one of `promotions.promotionalOffers[].promotionalOffers[]` has `discountSetting.discountPercentage == 0` and now is between its `startDate` and `endDate`; **free next** when one of `upcomingPromotionalOffers[].promotionalOffers[]` has percentage 0 (its `startDate` is shown). Other discounts are ignored. Each list is sorted by date, then title.
+- The page address: `productSlug` (without a trailing `/home`), else the first `catalogNs.mappings[]` with `pageType == "productHome"`; the link is `https://store.epicgames.com/p/<slug>`. An offer without either links to Epic's free games page `https://store.epicgames.com/free-games`.
+- The cover: the `keyImages[]` of type `OfferImageWide`, else `Thumbnail`, else none (a fish placeholder). Only `https://` image addresses are used.
+- **Owned:** "In your Library" when one of the offer's `items[].id` equals a Library game's `catalog_item_id`.
+
+### The Store window
+- A Tauri window, label `epic-store`, opening Epic's website. It gets **no IPC access** (the capabilities stay "main" only), like the login window.
+- **Not private:** it shares the main window's WebView2 profile, so Epic's sign-in is remembered between uses.
+- Only `https://` pages on `epicgames.com` and its subdomains open inside it; anything else (a payment provider pop-up included) opens as a pop-up window that shares its session, like the login window allows.
+- **Log out** in Fishy Client closes the Store window and clears the shared browser data (Epic's website cookies and cached cover images), the same call **Delete all my data** already makes. After Log out, the Store window is signed out.
+
+### Privacy and logs
+- README "What is sent, and to whom" gains: the free games list (`store-site-backend-static-ipv4.ak.epicgames.com`, nothing about you), cover images from Epic's image servers, and Epic's own website in the Store window (Epic sees what you do there, as on their website; sign-in remembered until Log out).
+- Logs: "store: free games loaded (N now, M next)", "store: couldn't load the free games", "store: window opened", "store: window closed"; never addresses with game names, cookies or account details.
+
+### Tests
+- **Rust:** parsing a saved copy of the real response (fixture): free now / free next split, a discount that isn't free is left out, dates outside the window, slug rules (`productSlug` with `/home`, mapping fallback, none → free-games page), cover choice, owned matching; the 10-minute memory; the window's navigation rule (epicgames.com and subdomains inside, other hosts not).
+- **UI (vitest):** Store in the sidebar; the two sections with dates and buttons; "In your Library" instead of Get; empty and error states with Try again; Get calls the open-window command with the page address.
+- **By hand:** the Store page shows this week's free games; Get opens Epic's page in the Store window; sign in there, close, reopen: still signed in; Log out in Fishy, open the Store: signed out; get a free game, close the window: it appears in the Library.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

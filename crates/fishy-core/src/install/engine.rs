@@ -225,7 +225,10 @@ pub async fn run_job(
     let bases: Arc<Vec<String>> = Arc::new(if limited || plan.chunk_order.is_empty() {
         job.base_urls.clone()
     } else {
-        let sample: Vec<_> = plan.chunk_order.iter().take(2).filter_map(|g| manifest.chunk(g).cloned()).collect();
+        // The first chunk opens the connections; the biggest of the first few is timed.
+        let first: Vec<_> = plan.chunk_order.iter().take(8).filter_map(|g| manifest.chunk(g)).collect();
+        let biggest = first.iter().skip(1).max_by_key(|c| c.file_size);
+        let sample: Vec<_> = first.first().into_iter().chain(biggest).map(|c| (*c).clone()).collect();
         tokio::select! {
             biased;
             _ = stop.cancelled() => return Err(InstallError::Stopped),
@@ -513,6 +516,42 @@ mod tests {
         for (name, content) in &f.expected {
             assert_eq!(&read(&e.job.install_path, name), content, "{name}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_download_uses_the_faster_server() {
+        let f = basic();
+        let slow = MockServer::start().await;
+        let fast = MockServer::start().await;
+        serve(&slow, &f, Some(Duration::from_millis(300)), None).await;
+        serve(&fast, &f, None, None).await;
+        let mut e = env(&slow, &f);
+        e.job.base_urls.push(format!("{}/base", fast.uri()));
+        run_job(&e.client, &e.store, &e.job, &f.manifest, None, CancellationToken::new(), |_| {}, RunOptions::default()).await.unwrap();
+        // The slow server only saw the quick test (2 chunks); everything else came from the fast one.
+        assert_eq!(slow.received_requests().await.unwrap().len(), 2);
+        assert!(fast.received_requests().await.unwrap().len() > 2);
+    }
+
+    #[tokio::test]
+    async fn stop_during_the_quick_test_returns_stopped() {
+        let f = basic();
+        let a = MockServer::start().await;
+        let b = MockServer::start().await;
+        serve(&a, &f, Some(Duration::from_secs(30)), None).await;
+        serve(&b, &f, Some(Duration::from_secs(30)), None).await;
+        let mut e = env(&a, &f);
+        e.job.base_urls.push(format!("{}/base", b.uri()));
+        let stop = CancellationToken::new();
+        let s2 = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            s2.cancel();
+        });
+        let started = std::time::Instant::now();
+        let r = run_job(&e.client, &e.store, &e.job, &f.manifest, None, stop, |_| {}, RunOptions::default()).await;
+        assert_eq!(r, Err(InstallError::Stopped));
+        assert!(started.elapsed() < Duration::from_secs(3));
     }
 
     #[tokio::test]

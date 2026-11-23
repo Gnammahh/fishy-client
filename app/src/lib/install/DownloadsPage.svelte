@@ -49,7 +49,7 @@
   <h2>Downloads</h2>
 
   {#if $settings.speed_limit_mbps !== null}
-    <p class="limit" role="status">
+    <p class="limit">
       Limited to {$settings.speed_limit_mbps} MB/s ·
       <button class="link" onclick={() => onsettings?.()}>Change in Settings</button>
     </p>

@@ -13,6 +13,8 @@ pub const LAUNCHER_HOST: &str = "https://launcher-public-service-prod06.ol.epicg
 const CDN_USER_AGENT: &str = "EpicGamesLauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
 /// Like Legendary's 10 s: how long the CDN may stay silent, not how long a whole download may take.
 const CDN_TIMEOUT: Duration = Duration::from_secs(10);
+/// The most the quick server test may take, for all servers together (spec §6m.2).
+const QUICK_TEST_LIMIT: Duration = Duration::from_secs(5);
 const CHUNK_TRIES: u32 = 7;
 
 /// Where a build's manifest is and which CDNs serve its chunks.
@@ -38,6 +40,8 @@ pub struct InstallClient {
     retry_base: Duration,
     /// Wait before retrying an Epic API call or the file list (spec §6f.2).
     api_retry_base: Duration,
+    /// The most the quick server test may take (spec §6m.2).
+    quick_test_limit: Duration,
 }
 
 impl Default for InstallClient {
@@ -53,13 +57,19 @@ impl InstallClient {
 
     /// For tests: a fake launcher service.
     pub fn with_base_url(launcher: &str) -> Self {
-        Self { api: http_client(), cdn: cdn_client(CDN_TIMEOUT), launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1), api_retry_base: crate::retry::RETRY_BASE }
+        Self { api: http_client(), cdn: cdn_client(CDN_TIMEOUT), launcher_base: launcher.trim_end_matches('/').to_string(), retry_base: Duration::from_secs(1), api_retry_base: crate::retry::RETRY_BASE, quick_test_limit: QUICK_TEST_LIMIT }
     }
 
     /// For tests: shorter waits between retries (chunks and API calls).
     pub fn with_retry_base(mut self, d: Duration) -> Self {
         self.retry_base = d;
         self.api_retry_base = d;
+        self
+    }
+
+    /// For tests: a shorter limit for the quick server test.
+    pub fn with_quick_test_limit(mut self, d: Duration) -> Self {
+        self.quick_test_limit = d;
         self
     }
 
@@ -181,24 +191,35 @@ impl InstallClient {
         }
     }
 
-    /// The servers, fastest first (spec §6m.2): each fetches `sample` once, all at the same time.
-    /// Servers that fail go last, in their old order. One server (or none) is returned as is.
+    /// The servers, fastest first (spec §6m.2), all tested at the same time. With more than one
+    /// sample chunk the first only opens the connection and isn't timed, so the test measures speed
+    /// rather than the time to connect. Servers that fail or take longer than the limit (5 s) are
+    /// left out; if every server fails, the old order comes back. One server (or none): as is.
     pub async fn fastest_first(&self, bases: &[String], dir: &str, sample: &[ChunkInfo]) -> Vec<String> {
         if bases.len() < 2 || sample.is_empty() {
             return bases.to_vec();
         }
-        let timed = futures::future::join_all(bases.iter().map(|base| async move {
-            let start = std::time::Instant::now();
-            for chunk in sample {
-                self.fetch_chunk_once(base, dir, chunk).await.ok()?;
-            }
-            Some(start.elapsed())
+        let (warm, timed) = if sample.len() > 1 { sample.split_at(1) } else { (&[][..], sample) };
+        let results = futures::future::join_all(bases.iter().map(|base| async move {
+            let test = async {
+                for chunk in warm {
+                    self.fetch_chunk_once(base, dir, chunk).await.ok()?;
+                }
+                let start = std::time::Instant::now();
+                for chunk in timed {
+                    self.fetch_chunk_once(base, dir, chunk).await.ok()?;
+                }
+                Some(start.elapsed())
+            };
+            tokio::time::timeout(self.quick_test_limit, test).await.ok().flatten()
         }))
         .await;
-        let mut order: Vec<(usize, Option<std::time::Duration>)> = timed.into_iter().enumerate().collect();
-        // None sorts after every time; a stable sort keeps failed servers in their old order.
-        order.sort_by_key(|&(_, t)| (t.is_none(), t));
-        order.into_iter().map(|(i, _)| bases[i].clone()).collect()
+        let mut working: Vec<(std::time::Duration, &String)> = results.into_iter().zip(bases).filter_map(|(t, b)| Some((t?, b))).collect();
+        if working.is_empty() {
+            return bases.to_vec();
+        }
+        working.sort_by_key(|&(t, _)| t);
+        working.into_iter().map(|(_, b)| b.clone()).collect()
     }
 }
 
@@ -488,8 +509,32 @@ mod tests {
         let c = InstallClient::with_base_url(&fast.uri()).with_retry_base(Duration::from_millis(1));
         let b = |s: &MockServer| format!("{}/base", s.uri());
         let order = c.fastest_first(&[b(&broken), b(&slow), b(&fast)], "ChunksV4", std::slice::from_ref(&info)).await;
-        assert_eq!(order, vec![b(&fast), b(&slow), b(&broken)]);
+        assert_eq!(order, vec![b(&fast), b(&slow)], "the broken server is left out");
         assert_eq!(broken.received_requests().await.unwrap().len(), 1, "the quick test doesn't retry");
+    }
+
+    #[tokio::test]
+    async fn if_every_server_fails_the_quick_test_the_order_stays() {
+        let info = info_for([1, 2, 3, 4], b"x", 1);
+        let a = chunk_server(&info, ResponseTemplate::new(404)).await;
+        let z = chunk_server(&info, ResponseTemplate::new(500)).await;
+        let c = InstallClient::with_base_url(&a.uri());
+        let bases = vec![format!("{}/base", a.uri()), format!("{}/base", z.uri())];
+        assert_eq!(c.fastest_first(&bases, "ChunksV4", std::slice::from_ref(&info)).await, bases);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_never_answers_counts_as_failed_after_the_limit() {
+        let data = b"fishy data".repeat(10);
+        let info = info_for([1, 2, 3, 4], &data, 10);
+        let stuck = chunk_server(&info, good(&info, &data).set_delay(Duration::from_secs(30))).await;
+        let fast = chunk_server(&info, good(&info, &data)).await;
+        let c = InstallClient::with_base_url(&fast.uri()).with_quick_test_limit(Duration::from_millis(300));
+        let started = std::time::Instant::now();
+        let b = |s: &MockServer| format!("{}/base", s.uri());
+        let order = c.fastest_first(&[b(&stuck), b(&fast)], "ChunksV4", std::slice::from_ref(&info)).await;
+        assert_eq!(order, vec![b(&fast)]);
+        assert!(started.elapsed() < Duration::from_secs(5), "the test didn't wait for the stuck server");
     }
 
     #[tokio::test]

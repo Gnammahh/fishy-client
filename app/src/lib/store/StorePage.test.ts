@@ -22,7 +22,8 @@ function mock(handlers: Record<string, (args: Record<string, unknown>) => unknow
   return calls;
 }
 
-const lists = { now: [game("Mark of the Deep", "2026-11-26T16:00:00Z")], next: [game("Bread and Fred", "2026-11-26T16:00:00Z")] };
+// Midday UTC, so the shown day is Nov 26 in every time zone from UTC-11 to UTC+11.
+const lists = { now: [game("Mark of the Deep", "2026-11-26T12:00:00Z")], next: [game("Bread and Fred", "2026-11-26T12:00:00Z")] };
 
 afterEach(() => {
   cleanup();

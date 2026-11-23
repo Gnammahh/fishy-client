@@ -103,6 +103,8 @@ pub async fn delete_all_data(
             tracing::warn!("{AUTOSTART_ERROR}");
         }
     }
+    // The Store window closes first (spec §6o); the browser data below is its sign-in too.
+    crate::store_window::close_quietly(&app);
     // The window's own browser data goes too (cover images it cached, for one).
     let browser_failed = {
         use tauri::Manager;

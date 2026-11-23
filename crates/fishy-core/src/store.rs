@@ -44,7 +44,7 @@ fn free_offers(e: &Value, kind: &str) -> Vec<(DateTime<Utc>, DateTime<Utc>)> {
         .iter()
         .filter_map(|g| g.get("promotionalOffers").and_then(Value::as_array))
         .flatten()
-        .filter(|o| o.get("discountSetting").and_then(|d| d.get("discountPercentage")).and_then(Value::as_i64) == Some(0))
+        .filter(|o| o.get("discountSetting").and_then(|d| d.get("discountPercentage")).and_then(Value::as_f64) == Some(0.0))
         .filter_map(|o| Some((date(o, "startDate")?, date(o, "endDate")?)))
         .collect()
 }
@@ -84,7 +84,10 @@ pub fn parse_free_games(json: &[u8], now: DateTime<Utc>, owned_catalog_ids: &Has
     for e in elements {
         let Some(title) = e.get("title").and_then(Value::as_str) else { continue };
         let game = |date| FreeGame { title: title.to_string(), url: page_url(e), image: cover(e), date, owned: owned(e, owned_catalog_ids) };
-        if let Some((_, end)) = free_offers(e, "promotionalOffers").into_iter().find(|(start, end)| *start <= now && now < *end) {
+        // An "upcoming" offer that has already begun counts as free now: Epic's copy lags at the switch-over.
+        let running = |(start, end): &(DateTime<Utc>, DateTime<Utc>)| *start <= now && now < *end;
+        let current = free_offers(e, "promotionalOffers").into_iter().find(running).or_else(|| free_offers(e, "upcomingPromotionalOffers").into_iter().find(running));
+        if let Some((_, end)) = current {
             out.now.push(game(end));
         } else if let Some(start) = free_offers(e, "upcomingPromotionalOffers").into_iter().filter(|(_, end)| now < *end).map(|(s, _)| s).min() {
             out.next.push(game(start));
@@ -184,7 +187,7 @@ mod tests {
     #[test]
     fn ended_offer_is_left_out() {
         let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 27, 0), &HashSet::new()).unwrap();
-        assert!(g.now.is_empty());
+        assert!(!titles(&g.now).contains(&"Mark of the Deep"), "its offer ended on Nov 26");
     }
 
     #[test]
@@ -195,6 +198,25 @@ mod tests {
         ]}]}}));
         let g = parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap();
         assert_eq!(g.next[0].date, at(2026, 11, 26, 16));
+    }
+
+    #[test]
+    fn an_upcoming_offer_that_already_started_is_free_now() {
+        // Epic's copy often lags at the switch-over: the "upcoming" offer has begun.
+        let json = offer(serde_json::json!({ "promotions": { "promotionalOffers": [], "upcomingPromotionalOffers": [{ "promotionalOffers": [
+            { "startDate": "2026-11-24T10:00:00.000Z", "endDate": "2026-12-01T16:00:00.000Z", "discountSetting": { "discountPercentage": 0 } }
+        ]}]}}));
+        let g = parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap();
+        assert_eq!(g.now[0].date, at(2026, 12, 1, 16));
+        assert!(g.next.is_empty());
+    }
+
+    #[test]
+    fn a_zero_written_as_0_0_is_free() {
+        let json = offer(serde_json::json!({ "promotions": { "promotionalOffers": [{ "promotionalOffers": [
+            { "startDate": "2026-11-20T16:00:00.000Z", "endDate": "2026-11-30T16:00:00.000Z", "discountSetting": { "discountPercentage": 0.0 } }
+        ]}], "upcomingPromotionalOffers": [] }}));
+        assert_eq!(parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap().now.len(), 1);
     }
 
     #[test]

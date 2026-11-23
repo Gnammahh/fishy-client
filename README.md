@@ -6,6 +6,8 @@ It signs you in, shows your games, installs them, updates them (downloading only
 
 ## How light is it?
 
+**These numbers are from version 1.0.0** and haven't been measured again since. Later versions added the Store, achievements, the Manage box and more, so today's numbers may differ.
+
 Measured on one Windows 11 PC (16 cores) on 2026-11-22, each launcher started from fully closed and left idle:
 
 | | Fishy Client 1.0.0 | Epic Games Launcher |
@@ -73,7 +75,7 @@ Fishy Client has **no telemetry, analytics or tracking**, and no server of its o
 - The sign-in (Epic's access and refresh tokens, your display name and account ID) is stored in **Windows Credential Manager**, in entries named `FishyClient`. Never in a file. **Log out** removes it and ends the session at Epic.
 
 ### What is sent, and to whom
-Only to Epic, always over HTTPS with normal certificate checks:
+Fishy Client itself only talks to Epic (and to GitHub for its own updates), always over HTTPS with normal certificate checks:
 
 | Address | Why |
 |---|---|
@@ -88,6 +90,8 @@ Only to Epic, always over HTTPS with normal certificate checks:
 | `store.epicgames.com` and Epic's image servers | the Store window is Epic's own website, so Epic sees what you do there, as in any browser. Your sign-in there is remembered until you **Log out** in Fishy Client |
 | `github.com` | checking at start-up whether a newer Fishy Client exists, and downloading it after you press **Update now**. Only a normal download request is sent: no account details, no game list. Turn it off in **Settings → Check for Fishy Client updates** |
 
+**Pop-ups from the Store window:** when you buy something or sign in on Epic's store page, Epic's page can open pop-up windows, for example a payment provider's checkout (such as PayPal). Fishy Client lets them open so buying works, but it doesn't choose or check where they go: they come from Epic's website, and whatever you type there goes to that provider, as in any browser. Pop-ups have no address bar, and no access to Fishy Client itself or to the sign-in it keeps in Windows Credential Manager.
+
 Each downloaded piece is checked against Epic's file list, so a changed file is never installed. Fishy Client updates itself only after you press **Update now**, and only installs updates signed with the maintainer's private key, so a changed or fake update is refused.
 
 When a game starts, Fishy Client passes it your Epic display name, account ID, language and a one-time code, the same as Epic's launcher does. While the game is starting, other programs on your PC could read these from its command line (the same limit Epic's launcher and Legendary have).
@@ -98,7 +102,8 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 | Windows Credential Manager, `FishyClient` | your sign-in (see above) |
 | `%APPDATA%\FishyClient\settings.json` | your settings |
 | `%APPDATA%\FishyClient\library.json` | your list of games, so the Library shows at once |
-| `%APPDATA%\FishyClient\installed.json` | your installed games: folder, version, size, install date and when you last pressed Play (for the "Recently played" sort) |
+| `%APPDATA%\FishyClient\installed.json` | your installed games: folder, version, size, install date, when you last pressed Play (for the "Recently played" sort), time played through Fishy Client, and each game's Manage box choices (auto update, priority download, launch options, which shortcuts Fishy Client made) |
+| your Desktop, and Start menu → `Fishy Client` | game shortcuts, only the ones you make with **Create** in a game's Manage box. **Remove** or uninstalling the game deletes them; **Delete all my data** doesn't yet, so delete them by hand if you like |
 | `%APPDATA%\FishyClient\manifests\`, `downloads\` | file lists for installed games, and downloads in progress |
 | `%APPDATA%\FishyClient\logs\` | logs, kept for 7 days |
 | `%TEMP%\FishyClient\` | an ownership token file for the few games that need one; deleted when Fishy Client starts |

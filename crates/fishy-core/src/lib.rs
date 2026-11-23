@@ -8,6 +8,7 @@ pub mod logs;
 pub mod retry;
 pub mod running;
 pub mod settings;
+pub mod store;
 pub mod wipe;
 
 /// Re-exported so the app uses the same chrono version.

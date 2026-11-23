@@ -34,6 +34,52 @@ afterEach(() => {
 });
 
 describe("DownloadsPage", () => {
+  it("start_now_with_nothing_downloading_starts_it_without_asking", async () => {
+    const calls = mock();
+    downloads.set([item("A", "paused"), item("B", "queued")]);
+    render(DownloadsPage);
+    await fireEvent.click(screen.getByRole("button", { name: "Start Title B now" }));
+    expect(calls).toContainEqual(["download_start_now", { appName: "B", mode: "pause" }]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("start_now_with_one_downloading_asks_pause_or_both", async () => {
+    const calls = mock();
+    downloads.set([item("A", "downloading"), item("B", "queued")]);
+    render(DownloadsPage);
+    await fireEvent.click(screen.getByRole("button", { name: "Start Title B now" }));
+    expect(screen.getByRole("dialog", { name: "Start Title B now" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Pause Title A" }));
+    await waitFor(() => expect(calls).toContainEqual(["download_start_now", { appName: "B", mode: "pause" }]));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    downloads.set([item("A", "downloading"), item("B", "queued")]); // the mock answered with an empty list
+    await fireEvent.click(await screen.findByRole("button", { name: "Start Title B now" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Download both" }));
+    await waitFor(() => expect(calls).toContainEqual(["download_start_now", { appName: "B", mode: "both" }]));
+  });
+
+  it("start_now_is_greyed_with_two_downloading_and_both_show_as_downloading", async () => {
+    mock();
+    downloads.set([item("A", "downloading"), item("B", "downloading"), item("C", "queued")]);
+    render(DownloadsPage);
+    const btn = screen.getByRole("button", { name: "Start Title C now" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe("Two games are already downloading.");
+    expect(screen.getAllByRole("progressbar")).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Pause" })).toHaveLength(2);
+    expect(screen.queryByText("Paused")).toBeNull();
+  });
+
+  it("a_failed_start_now_shows_the_reason", async () => {
+    mockIPC(() => {
+      throw "That game isn't waiting.";
+    });
+    downloads.set([item("B", "queued")]);
+    render(DownloadsPage);
+    await fireEvent.click(screen.getByRole("button", { name: "Start Title B now" }));
+    expect(await screen.findByText("That game isn't waiting.")).toBeTruthy();
+  });
+
   it("empty_state", () => {
     render(DownloadsPage);
     expect(screen.getByText("Nothing downloading. Pick a game in your Library and press Install.")).toBeTruthy();

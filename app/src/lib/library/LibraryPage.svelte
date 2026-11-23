@@ -9,13 +9,14 @@
   import EpicImportNote from "$lib/import/EpicImportNote.svelte";
   import GamePage from "./GamePage.svelte";
   import ManageDialog from "./ManageDialog.svelte";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { formatBytes } from "$lib/progress/progress";
   import { formatPlaytime, openGameFolder,
     downloads,
     hasUpdate,
     installed,
     play,
+    playRequest,
     refreshInstalled,
     running,
     startUpdate,
@@ -135,6 +136,16 @@
     }
     setTimeout(() => (starting = starting.filter((a) => a !== game.app_name)), STARTING_MS);
   }
+
+  // A desktop shortcut asked to play a game (spec §6t): once the games are known, it's the same as
+  // pressing its Play (with the "update waiting?" question). A game that isn't installed is dropped.
+  $effect(() => {
+    const want = $playRequest;
+    if (!want || ($library.status !== "ready" && $library.status !== "offline") || $library.games.length === 0) return;
+    playRequest.set(null);
+    const g = $library.games.find((x) => x.app_name === want);
+    if (g && $installed.some((i) => i.app_name === want)) untrack(() => askPlay(g));
+  });
 
   /** The game whose page is open (spec §6q); its data always comes from the current library. */
   let openApp = $state<string | null>(null);

@@ -12,7 +12,7 @@
   import UpdateBar from "$lib/appupdate/UpdateBar.svelte";
   import { checkForUpdate } from "$lib/appupdate/appUpdate";
   import { APP_VERSION, shouldAutoOpen } from "$lib/notes/releaseNotes";
-  import { initInstalls } from "$lib/install/installs";
+  import { initInstalls, playRequest } from "$lib/install/installs";
   import { onMount } from "svelte";
   import { retry, type AuthState } from "$lib/auth/auth";
 
@@ -21,6 +21,10 @@
 
   let page = $state<Page>("library");
   let notesOpen = $state(false);
+  // A desktop shortcut's game is played from the Library (spec §6t).
+  $effect(() => {
+    if ($playRequest) page = "library";
+  });
 
   // Downloads and the installed list, kept up to date by the backend's events.
   onMount(() => {

@@ -3,7 +3,7 @@
   import { formatBytes, percent } from "$lib/progress/progress";
   import PixelButton from "$lib/ui/PixelButton.svelte";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
-  import { downloads, installed, pause, resume, cancel, type DownloadItem } from "./installs";
+  import { downloads, installed, pause, resume, cancel, startNow, type DownloadItem } from "./installs";
   import { settings } from "$lib/settings/settings";
 
   /** Opens the Settings page (the speed limit lives there). */
@@ -11,9 +11,26 @@
 
   const GENERIC_ERROR = "Download stopped: the connection to the download server dropped. Check your internet, then press Retry.";
 
-  const current = $derived($downloads.find((d) => d.state === "downloading") ?? $downloads.find((d) => d.state !== "queued"));
+  // Up to two download at once (Start now → Download both, spec §6t); else the first stopped one.
+  const running = $derived($downloads.filter((d) => d.state === "downloading"));
+  const currents = $derived(running.length > 0 ? running : $downloads.filter((d) => d.state !== "queued").slice(0, 1));
   const queued = $derived($downloads.filter((d) => d.state === "queued"));
-  const others = $derived($downloads.filter((d) => d !== current && d.state !== "queued"));
+  const others = $derived($downloads.filter((d) => !currents.includes(d) && d.state !== "queued"));
+
+  /** The waiting game whose Start now asks "pause the other one, or both?" */
+  let startFor = $state<DownloadItem | null>(null);
+  let startError = $state("");
+  const TWO_RUNNING = "Two games are already downloading.";
+
+  async function start(d: DownloadItem, mode: "pause" | "both") {
+    startFor = null;
+    startError = (await startNow(d.app_name, mode)) ?? "";
+  }
+  function askStart(d: DownloadItem) {
+    // Nothing downloading: it just starts; the mode doesn't matter then.
+    if (running.length === 0) void start(d, "pause");
+    else startFor = d;
+  }
 
   /** app_name of the download waiting for "Delete files?" */
   let confirmCancel = $state<string | null>(null);
@@ -62,12 +79,15 @@
   {#if cancelError}
     <p class="error" role="alert">{cancelError}</p>
   {/if}
+  {#if startError}
+    <p class="error" role="alert">{startError}</p>
+  {/if}
 
-  {#if !current && queued.length === 0}
+  {#if currents.length === 0 && queued.length === 0}
     <p class="empty">Nothing downloading. Pick a game in your Library and press Install.</p>
   {/if}
 
-  {#if current}
+  {#each currents as current (current.app_name)}
     <article class="current">
       <h3>{current.title}{#if current.update}<span class="tag">Updating…</span>{/if}</h3>
       <FishProgressBar
@@ -92,7 +112,7 @@
       </div>
       {#if current.update}<p class="note small">Updates can be paused but not cancelled.</p>{/if}
     </article>
-  {/if}
+  {/each}
 
   {#if queued.length > 0}
     <h3 class="sub">Up next</h3>
@@ -101,6 +121,13 @@
         <li>
           <span class="name">{d.title}</span>
           <span class="state">Queued</span>
+          <PixelButton
+            variant="ghost"
+            label="Start {d.title} now"
+            disabled={running.length >= 2}
+            title={running.length >= 2 ? TWO_RUNNING : undefined}
+            onclick={() => askStart(d)}>Start now</PixelButton
+          >
           {#if !d.update}
             <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
           {/if}
@@ -123,6 +150,24 @@
   {/if}
 </section>
 
+{#if startFor}
+  {@const d = startFor}
+  {@const other = running[0]}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div class="overlay" onclick={(e) => e.target === e.currentTarget && (startFor = null)}>
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div class="ask" role="dialog" aria-modal="true" aria-label="Start {d.title} now" tabindex="-1" onkeydown={(e) => e.key === "Escape" && (startFor = null)}>
+      <p>{other ? `${other.title} is downloading.` : ""} Start {d.title} now?</p>
+      <div class="ask-actions">
+        <PixelButton variant="ghost" onclick={() => (startFor = null)}>Not now</PixelButton>
+        {#if other}<PixelButton variant="ghost" onclick={() => start(d, "both")}>Download both</PixelButton>{/if}
+        <PixelButton onclick={() => start(d, "pause")}>{other ? `Pause ${other.title}` : "Start"}</PixelButton>
+      </div>
+      <p class="note small">Downloading both shares your internet speed, so each one takes longer.</p>
+    </div>
+  </div>
+{/if}
+
 {#if confirmCancel}
   <ConfirmDialog
     message="Stop and delete the downloaded files?"
@@ -133,6 +178,38 @@
 {/if}
 
 <style>
+  /* Start now's question; starts under Fishy's title bar (spec §6s). */
+  .overlay {
+    position: fixed;
+    inset: var(--titlebar) 0 0 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: grid;
+    place-items: center;
+    z-index: 20;
+    padding: 16px;
+  }
+  .ask {
+    background: #05080c;
+    border: 2px solid var(--aqua);
+    padding: 18px 20px;
+    display: grid;
+    gap: 14px;
+    max-width: min(480px, calc(100vw - 32px));
+    outline: none;
+  }
+  .ask p {
+    margin: 0;
+    color: var(--text);
+  }
+  .ask .note {
+    color: var(--text-2);
+  }
+  .ask-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
   .downloads {
     display: flex;
     flex-direction: column;

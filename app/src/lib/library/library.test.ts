@@ -4,7 +4,7 @@ import { mockIPC, clearMocks } from "@tauri-apps/api/mocks";
 import LibraryPage from "./LibraryPage.svelte";
 import { filterGames, sortGames, resetLibrary, refreshLibrary, loadLibrary, library, type Game } from "./library";
 import { get } from "svelte/store";
-import { downloads, installed, running, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
+import { downloads, installed, running, playRequest, resetInstalls, type DownloadItem, type InstalledGame } from "$lib/install/installs";
 import { settings, resetSettings, DEFAULT_SETTINGS } from "$lib/settings/settings";
 
 const installedGame = (app_name: string): InstalledGame => ({
@@ -639,6 +639,35 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan" });
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
   });
+  it("a_shortcut_play_request_plays_the_game_once_the_library_is_ready", async () => {
+    const calls = mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
+    settings.set({ ...DEFAULT_SETTINGS, warn_outdated_play: false });
+    installed.set([installedGame("KelpRunner")]);
+    playRequest.set("KelpRunner");
+    render(LibraryPage, { name: "FishFan" });
+    await waitFor(() => expect(calls.filter((c) => c === "play_game")).toHaveLength(1));
+    expect(get(playRequest)).toBeNull();
+  });
+
+  it("a_shortcut_play_request_asks_first_when_an_update_waits", async () => {
+    const calls = mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "2" }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Update available");
+    playRequest.set("KelpRunner");
+    expect(await screen.findByRole("button", { name: "Play anyway" })).toBeTruthy();
+    expect(calls).not.toContain("play_game");
+  });
+
+  it("a_play_request_for_a_game_not_installed_is_dropped", async () => {
+    const calls = mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
+    render(LibraryPage, { name: "FishFan" });
+    await screen.findByText("Kelp Runner");
+    playRequest.set("KelpRunner");
+    await waitFor(() => expect(get(playRequest)).toBeNull());
+    expect(calls).not.toContain("play_game");
+  });
+
   it("a_games_own_auto_update_switch_wins_over_settings", async () => {
     const started: unknown[] = [];
     const own = (app: string, auto_update: boolean | null) => ({

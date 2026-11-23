@@ -125,12 +125,6 @@ export async function initInstalls(): Promise<() => void> {
   });
   const stopPlay = await safeListen("play-request", (p) => typeof p === "string" && playRequest.set(p));
   try {
-    const waiting = await invoke<string | null>("play_request_take");
-    if (typeof waiting === "string" && waiting) playRequest.set(waiting);
-  } catch {
-    /* none */
-  }
-  try {
     running.set(asNames(await invoke<string[]>("running_list")));
   } catch {
     /* nothing running */
@@ -141,6 +135,13 @@ export async function initInstalls(): Promise<() => void> {
     /* nothing yet */
   }
   await refreshInstalled();
+  // A shortcut that started Fishy Client (spec §6t); after the installed list, so it can be played.
+  try {
+    const waiting = await invoke<string | null>("play_request_take");
+    if (typeof waiting === "string" && waiting) playRequest.set(waiting);
+  } catch {
+    /* none */
+  }
   return () => {
     stopDownloads();
     stopInstalled();

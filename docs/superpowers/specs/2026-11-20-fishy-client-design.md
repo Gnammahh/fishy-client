@@ -1206,6 +1206,63 @@ Asked for by the user: Windows' white title bar didn't match the launcher. Chose
 - Permissions: `core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`, `allow-start-dragging` (main window only).
 - Tests (vitest): the bar is a drag region; the three buttons call minimize / toggle maximize / close; a maximized window shows Restore. By hand: seen and liked by the user in the test app.
 
+## 6t. Manage box for each game (version 1.9.0, decided 2026-11-23)
+
+Asked for by the user, with Epic's launcher's **Manage** box as the model: every row Epic has (Auto Update, Priority Downloads, Create Desktop Shortcut, Installation, Launch Options), in Fishy's own look, plus anything else useful. Added at the user's yes: **Verify files**. The user's choices: a game's Auto update follows Settings until changed for that game; a priority game jumps the waiting list but waits; Downloads gets **Start now** (pause the other one, or download both); the ⋯ menu keeps quick items; a shortcut is made on the Desktop and Fishy asks about the Start menu.
+
+### What the user sees
+- **⋯ menu** (installed games, on the Library card and the game page, §6q): **Manage…** first, then **Open game folder** and **Uninstall** as before. The Size / Played / "Also in Epic's launcher" lines move into the box.
+- **The Manage box:** centred, dark, the game's title in the pixel font, ✕ (and Esc, and a click outside) to close. Rows are separate dark panels with a line of grey help text; switches and buttons in aqua. Every change is saved at once (no Save button).
+  1. **Auto update**, a switch. "Updates this game by itself when a new version is out." Until changed here it shows the Settings switch's value; once changed, the game keeps its own choice. The Settings switch's help text becomes "For every game you haven't set in its Manage box."
+  2. **Priority download**, a switch. "When downloads wait in line, this game goes first."
+  3. **Shortcut.** "Start this game from your desktop." Button **Create**. After the desktop icon is made, the row asks "Also add it to the Start menu?" with **Yes** / **No**. Once made, the row says "On your desktop" (and "and in the Start menu") and the button is **Remove**, which deletes the icons Fishy made.
+  4. **Installation.** "Size: 242.96 MB" and the install folder path; a folder button (Open game folder), **Verify** and **Uninstall** (the usual confirm box; the Manage box closes first). Below, when known: "Played: 12 h 5 min" and the "Also in Epic's launcher…" note.
+     - **Verify** checks every file of the game against Epic's fingerprint (SHA-1). While checking: "Checking files… 1,234 / 21,000" with a thin fish bar and **Stop**. Then "All files are fine." or "12 files are missing or damaged (340 MB)." with **Download them**, which queues just those files on the Downloads page (like §6g's repair; Cancel leaves the game's files alone). Closing the box doesn't stop a check; reopening it shows the progress.
+  5. **Launch options**, a switch and a text box below it: "Extra words added when the game starts, like -windowed." Off keeps the text but doesn't use it. Up to 1000 characters; more is refused with "Keep it under 1000 characters."
+- Greyed out, with the reason as a tooltip:
+  - Verify and Uninstall while the game is running ("Close the game first.").
+  - Verify while the game has a download (downloading, waiting, paused or failed: "Finish or cancel its download first.").
+  - Verify during another game's check ("Another game is being checked.").
+- **Downloads page:** each waiting game has **Start now**. If nothing is downloading it just starts. If one game is downloading, a small box asks: **Pause *Other game*** (that one goes back to the front of the waiting list and carries on afterwards by itself) or **Download both** (both run, sharing the speed limit). With two already downloading, Start now is greyed ("Two games are already downloading.").
+- **Shortcut click:** Fishy opens (or comes to the front if already open) and does exactly what **Play** does: sign-in, the "update waiting?" question (§6e), the running check, "When a game starts" (§6f.4). Not signed in yet: the game starts right after signing in. A game that isn't installed any more: Fishy just opens.
+
+### How it's built
+- **Per-game options** (`crates/fishy-core/src/install/store.rs`): `InstalledGame` gets `#[serde(default)] options: GameOptions { auto_update: Option<bool>, priority: bool, launch_args: String, launch_args_on: bool, shortcuts: Vec<PathBuf> }`. When an update or repair rewrites the record, the options are carried over like `playtime_secs`. Old records read as the defaults. `InstallStore::set_options(app, …)` changes everything but `shortcuts` (only the shortcut code writes those). Tauri command `game_options_set(app_name, auto_update, priority, launch_args, launch_args_on)`; the 1000-character limit is checked in Rust too.
+- **Auto update:** the Library refresh's auto-update step (`autoUpdate` in `installs.ts`) runs whatever the Settings switch says and updates a game when `options.auto_update ?? settings.auto_update` is true.
+- **Priority:** when a job joins the waiting list (new install, update, repair, resume, Try again), a priority game goes in front of the waiting non-priority ones, behind other priority ones. Turning the switch on for a game already waiting moves it forward the same way; turning it off doesn't move it.
+- **Start now** (`app/src-tauri/src/downloads.rs`): command `download_start_now(app_name, mode)` with mode `"pause"` or `"both"`.
+  - `pause`: the running job is stopped like Pause, then put back as Queued right behind the chosen job, which goes to the front and starts.
+  - `both`: allowed only when exactly one job is downloading; the chosen job starts at once.
+  - The normal queue still starts a new job only when nothing is downloading, so at most two ever run. The speed limit is already shared (`SpeedLimiter`); the free-space check already counts every other job.
+- **Launch options** (`crates/fishy-core/src/launch/command.rs`): when on, `split_args(launch_args)` is added at the very end of the command line, after Epic's own arguments (Legendary's order). `LaunchCommand`'s `Debug` prints them as `[user options]`, and they never reach a log.
+- **Verify** (new `crates/fishy-core/src/install/verify.rs`): `verify(root, files, stop, on_progress) -> FileCheck`. For each manifest file (only the installed parts, §6n): missing or wrong size is bad without reading; otherwise its SHA-1 is computed, reading in 1 MiB blocks, and compared. One file at a time on one background thread (`spawn_blocking`), so it stays light. `stop` ends it between blocks. It returns the same `FileCheck` the import uses, so **Download them** reuses `save_repair` and the repair download (§6g); the saved manifest under `manifests\` is the file list. Tauri commands `verify_start(app_name)` / `verify_stop(app_name)`, event `verify-progress` `{ app_name, done, total }` (at most 4 a second) and a final result. One check at a time; refused while the game has a download job, is running, or Delete all my data is running.
+- **Shortcuts** (new `app/src-tauri/src/shortcuts.rs`, Windows only): a `.lnk` made with Windows' own shortcut API (`IShellLinkW` + `IPersistFile` through the `windows` crate). Target: Fishy Client's own exe (`current_exe`). Arguments: `--play <app_name>`. Icon: the game's exe. Working folder: Fishy's folder.
+  - Desktop folder from Windows (`SHGetKnownFolderPath(FOLDERID_Desktop)`, so a Desktop moved to OneDrive works). Start menu: `FOLDERID_Programs\Fishy Client\`.
+  - File name: the title without `\ / : * ? " < > |`, trimmed (empty → the app name) + `.lnk`. If a file with that name exists and isn't one Fishy recorded: "There's already a shortcut called *Title* on your desktop."
+  - The made paths go into `options.shortcuts`. **Remove** and **Uninstall** delete only those recorded paths, and only if each is still a `.lnk` file.
+  - Commands `shortcut_create(app_name)`, `shortcut_add_start_menu(app_name)`, `shortcut_remove(app_name)`.
+- **`--play`** (`app/src-tauri/src/lib.rs`): `tauri-plugin-single-instance` is added first. Fishy's start-up arguments, and the arguments a second start hands to the open Fishy, are read for `--play <name>`. The name must be in `installed.json`; otherwise it's ignored. A second start also restores and focuses the main window. The request is kept in Rust until the page takes it (`play_request_take`) and is also sent as the event `play-request`. The page (`+layout.svelte` → a `playRequest` store) shows the Library and runs the same Play click handler as the card, once signed in.
+- **UI:** new `app/src/lib/library/ManageDialog.svelte`, opened from the `moreMenu` snippet in `LibraryPage.svelte`, so the card and the game page share it. It uses the same dialog frame and z-index rules as the other dialogs (below the title bar, §6s). Helpers in `installs.ts`: `setGameOptions`, `verifyStart/Stop` + a `verifying` store, `createShortcut`, `addStartMenu`, `removeShortcut`, `startNow`. The Start now box lives in `DownloadsPage.svelte`.
+- **Privacy and logs** (§12): logs say only "options saved", "shortcut created" / "removed", "verify: 12 of 21000 files bad", "start now: pause/both", "play request from shortcut". No paths (they hold the Windows user name), no launch options, no titles.
+
+### Tests
+- **Rust:**
+  - options default for old records and are carried over by update/repair; `set_options` keeps `shortcuts`; over 1000 characters refused;
+  - priority placement (in front of non-priority waiting jobs, behind priority ones; switching on moves forward);
+  - `start_now` pause (running → waiting, right behind) and both (only with exactly one running), and the queue never starting a third;
+  - launch options added last, only when on, hidden in `Debug`;
+  - verify: all good; a missing file; a wrong size; same size with different bytes; only chosen parts; stop;
+  - shortcut file name cleaning; refusing a name already taken; remove deletes only recorded `.lnk` files;
+  - `--play` parsing (missing name, unknown game).
+- **UI (vitest):**
+  - ⋯ menu has Manage…; the box's five rows; the auto update switch shows the Settings value until set; saving each switch; the launch options limit;
+  - verify progress, result and Download them; disabled states with reasons;
+  - shortcut Create → Start menu question → Remove;
+  - Start now with nothing running, with one (both choices), greyed with two;
+  - a play request opens the Library and plays.
+- **By hand:** open Manage from a card and from a game page; flip each switch and reopen; make a shortcut, also in the Start menu, start the game from it with Fishy closed and with it open, then Remove; Verify a small game, delete one of its files, Verify again and Download them; launch options (for example `-windowed`) work; a priority game jumps the waiting list; Start now → Pause and → Download both.
+- **Known limits:** Verify doesn't check a game's add-on pieces (§6n). Uninstalling Fishy Client itself leaves the game shortcuts behind (they then do nothing).
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

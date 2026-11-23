@@ -8,6 +8,7 @@
   import OutdatedPlayDialog from "$lib/install/OutdatedPlayDialog.svelte";
   import EpicImportNote from "$lib/import/EpicImportNote.svelte";
   import GamePage from "./GamePage.svelte";
+  import ManageDialog from "./ManageDialog.svelte";
   import { tick } from "svelte";
   import { formatBytes } from "$lib/progress/progress";
   import { formatPlaytime, openGameFolder,
@@ -33,6 +34,8 @@
   let installing = $state<Game | null>(null);
   let menuFor = $state<string | null>(null);
   let confirmUninstall = $state<Game | null>(null);
+  /** The game whose Manage box is open (spec §6t). */
+  let manageFor = $state<Game | null>(null);
   let cardError = $state<{ app: string; message: string } | null>(null);
   let starting = $state<string[]>([]);
   /** The Refresh button: Epic's library (with the update check) and the installed list again. */
@@ -342,9 +345,13 @@
     >
     {#if menuFor === game.app_name}
       <div class="menu" role="menu">
-        {#if sizeOf(game) !== null}<p class="size" role="none">Size: {formatBytes(sizeOf(game) ?? 0)}</p>{/if}
-        {#if formatPlaytime(playtimeOf(game))}<p class="size" role="none">{formatPlaytime(playtimeOf(game))}</p>{/if}
-        {#if sharedWithEpic(game)}<p class="size" role="none">Also in Epic's launcher. Updating in one may make the other update again.</p>{/if}
+        <button
+          role="menuitem"
+          onclick={() => {
+            menuFor = null;
+            manageFor = game;
+          }}>Manage…</button
+        >
         <button
           role="menuitem"
           onclick={async () => {
@@ -378,6 +385,24 @@
 
 {#if installing}
   <InstallDialog game={installing} onclose={() => (installing = null)} />
+{/if}
+{#if manageFor}
+  {@const g = manageFor}
+  {@const rec = $installed.find((i) => i.app_name === g.app_name)}
+  {#if rec}
+    <ManageDialog
+      game={g}
+      installed={rec}
+      running={isRunning(g)}
+      hasDownload={!!jobOf(g)}
+      sharedWithEpic={sharedWithEpic(g)}
+      onclose={() => (manageFor = null)}
+      onuninstall={() => {
+        confirmUninstall = g; // before closing: g follows manageFor
+        manageFor = null;
+      }}
+    />
+  {/if}
 {/if}
 {#if confirmUninstall}
   <ConfirmDialog
@@ -673,13 +698,6 @@
     border: 2px solid rgba(79, 227, 209, 0.5);
     display: grid;
     min-width: 130px;
-  }
-  .menu .size {
-    margin: 0;
-    padding: 8px 12px 4px;
-    font-size: 13px;
-    color: var(--text-2);
-    font-variant-numeric: tabular-nums;
   }
   .menu button {
     font: inherit;

@@ -311,7 +311,7 @@ describe("LibraryPage", () => {
     expect(screen.getByRole("tab", { name: "Not on Windows (1)" })).toBeTruthy();
   });
 
-  it("menu_shows_installed_size", async () => {
+  it("menu_starts_with_manage_and_the_box_shows_the_size", async () => {
     mockCommands({
       library_cached: () => null,
       library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
@@ -320,7 +320,10 @@ describe("LibraryPage", () => {
     render(LibraryPage, { name: "FishFan" });
     await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
     const menu = screen.getByRole("menu");
-    expect(menu.textContent).toMatch(/^\s*Size: 12\.3 GB\s*Open game folder\s*Uninstall/);
+    expect(menu.textContent).toMatch(/^\s*Manage…\s*Open game folder\s*Uninstall\s*$/);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    expect(screen.getByRole("dialog", { name: "Kelp Runner" }).textContent).toContain("Size: 12.3 GB");
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("menu_says_also_in_epic_for_games_with_parts", async () => {
@@ -328,9 +331,12 @@ describe("LibraryPage", () => {
     installed.set([{ ...installedGame("Fortnite"), parts: ["Langde"] }, installedGame("KelpRunner")]);
     render(LibraryPage, { name: "FishFan" });
     await fireEvent.click(await screen.findByRole("button", { name: "More options for Fortnite" }));
-    expect(screen.getByRole("menu").textContent).toContain("Also in Epic's launcher. Updating in one may make the other update again.");
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    expect(screen.getByRole("dialog").textContent).toContain("Also in Epic's launcher. Updating in one may make the other update again.");
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await fireEvent.click(screen.getByRole("button", { name: "More options for Kelp Runner" }));
-    expect(screen.getByRole("menu").textContent).not.toContain("Also in Epic's launcher");
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    expect(screen.getByRole("dialog").textContent).not.toContain("Also in Epic's launcher");
   });
 
   it("menu_opens_the_game_folder_and_shows_playtime", async () => {
@@ -343,7 +349,10 @@ describe("LibraryPage", () => {
     installed.set([{ ...installedGame("KelpRunner"), playtime_secs: 12 * 3600 + 5 * 60 + 7 }]);
     render(LibraryPage, { name: "FishFan" });
     await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
-    expect(screen.getByRole("menu").textContent).toContain("Played: 12 h 5 min");
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    expect(screen.getByRole("dialog").textContent).toContain("Played: 12 h 5 min");
+    await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await fireEvent.click(screen.getByRole("button", { name: "More options for Kelp Runner" }));
     await fireEvent.click(screen.getByRole("menuitem", { name: "Open game folder" }));
     await waitFor(() => expect(calls).toEqual([{ appName: "KelpRunner" }]));
   });
@@ -363,6 +372,17 @@ describe("LibraryPage", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
     await waitFor(() => expect(calls).toContain("uninstall_game"));
     expect(await screen.findByRole("button", { name: "Install Kelp Runner" })).toBeTruthy();
+  });
+
+  it("uninstall_in_the_manage_box_closes_it_and_asks_first", async () => {
+    mockCommands({ library_cached: () => null, library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    expect(screen.queryByRole("dialog", { name: "Kelp Runner" })).toBeNull();
+    expect(screen.getByText("Uninstall Kelp Runner? Its game files will be deleted.")).toBeTruthy();
   });
 
   it("a_failed_uninstall_shows_the_reason", async () => {
@@ -848,6 +868,21 @@ describe("game page (spec §6q)", () => {
     await screen.findByRole("button", { name: "← Library" });
     expect(screen.queryByPlaceholderText("Search your library")).toBeNull();
     expect(screen.queryByLabelText("Sort")).toBeNull();
+  });
+
+  it("manage_opens_from_the_game_page", async () => {
+    mockCommands({
+      library_cached: () => null,
+      library_refresh: () => ({ updated_at: "x", games: [game("Kelp Runner")] }),
+      game_achievements: () => ({ total: 0, unlocked: 0, items: [] }),
+    });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    await fireEvent.click(await screen.findByRole("button", { name: "Open Kelp Runner" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "More options for Kelp Runner" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Manage…" }));
+    expect(screen.getByRole("dialog", { name: "Kelp Runner" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "← Library" })).toBeTruthy();
   });
 
   it("a_not_on_windows_page_explains_why_there_is_no_button", async () => {

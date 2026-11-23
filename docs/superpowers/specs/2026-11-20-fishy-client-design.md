@@ -1360,6 +1360,13 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
+### Still to check by hand (version 1.5.1)
+- [x] The Store page shows this week's free games (2026-11-24)
+- [x] Get on Epic opens the Store window on the game's page, without freezing; pressing it again keeps one window; the sign-in is remembered after closing (2026-11-24)
+- [x] A free game already in the Library says "In your Library" (fixed in 1.5.1, 2026-11-24)
+- [ ] Log out in Fishy Client, sign in again: the Store window is signed out
+- [ ] A game claimed in the Store window shows in the Library after closing the window
+
 ### Still to check by hand (version 1.4.0)
 - [x] The installed 1.3.0 updates itself to 1.4.0 (2026-11-23)
 - [x] Add them adds Fortnite with its 2 pieces (Save the World, LEGO Fortnite); 37 of 69 part names, matching the files on disk (2026-11-23)

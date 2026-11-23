@@ -767,7 +767,7 @@ mod tests {
         let bundle = &conf["bundle"];
         assert_eq!(conf["productName"], "Fishy Client");
         // Version 1 (spec §1, decided 2026-11-22); the program and the installer must agree.
-        assert_eq!(conf["version"], "1.8.0");
+        assert_eq!(conf["version"], "1.9.0");
         assert_eq!(conf["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
         assert_eq!(bundle["publisher"], "Fishy Client");

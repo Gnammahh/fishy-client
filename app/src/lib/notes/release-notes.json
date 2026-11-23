@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.9.0",
+    "date": "2026-11-24",
+    "items": [
+      "Every installed game has a Manage box: open a game's ⋯ menu and pick Manage….",
+      "Auto update for each game: it follows the switch in Settings until you change it for that game.",
+      "Priority download: that game's downloads go to the front of the waiting list.",
+      "Shortcut: put the game on your desktop (and, if you like, in the Start menu). Clicking it opens Fishy Client and starts the game.",
+      "Verify checks every file of a game and downloads only the missing or damaged ones.",
+      "Launch options: extra words added when the game starts, like -windowed.",
+      "Downloads has Start now for waiting games: pause the one that's downloading, or download both at once."
+    ]
+  },
+  {
     "version": "1.8.0",
     "date": "2026-11-24",
     "items": [

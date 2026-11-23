@@ -59,6 +59,12 @@ fn still_free(app: &str, installed: &[InstalledGame], has_job: impl Fn(&str) -> 
     !installed.iter().any(|g| g.app_name == app) && !has_job(app)
 }
 
+/// An add-on piece already recorded by an earlier Add or Download them: left as it is, so it
+/// never blocks its game from being added (spec §6n).
+fn recorded_piece(app: &str, parent: Option<&str>, installed: &[InstalledGame]) -> bool {
+    parent.is_some() && installed.iter().any(|g| g.app_name == app)
+}
+
 /// A game the Library note offers to add.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Candidate {
@@ -191,10 +197,12 @@ pub async fn epic_import_add(
     let error = |message: String, signed_out: bool| Ok(AddOutcome::Error { message, signed_out });
     let Some((item, game)) = find(&app_name, &library, &install) else { return error(REFRESH.into(), false) };
     let Some(_checking) = install.checking.take(&app_name) else { return error(being_checked(&game.title), false) };
-    let list = match pieces(&app, &item, &game, &auth, &install, false).await {
+    let mut list = match pieces(&app, &item, &game, &auth, &install, false).await {
         Ok(l) => l,
         Err((message, signed_out)) => return error(message, signed_out),
     };
+    let before = install.downloads.store.installed();
+    list.retain(|p| !recorded_piece(&p.item.app_name, p.item.parent.as_deref(), &before));
     let (mut files, mut bytes) = (0, 0);
     for p in &list {
         let result = check(&p.item, &p.m).await;
@@ -236,7 +244,9 @@ pub async fn epic_import_repair(
     let downloads = &install.downloads;
     let Some((item, game)) = find(&app_name, &library, &install) else { return Err(REFRESH.into()) };
     let Some(_checking) = install.checking.take(&app_name) else { return Err(being_checked(&game.title)) };
-    let list = pieces(&app, &item, &game, &auth, &install, true).await.map_err(|(m, _)| m)?;
+    let mut list = pieces(&app, &item, &game, &auth, &install, true).await.map_err(|(m, _)| m)?;
+    let before = downloads.store.installed();
+    list.retain(|p| !recorded_piece(&p.item.app_name, p.item.parent.as_deref(), &before));
     let mut checked = Vec::new();
     for p in list {
         let result = check(&p.item, &p.m).await;
@@ -349,6 +359,15 @@ mod tests {
         let got = candidates(vec![item("Fortnite"), piece], &[game("Fortnite"), game("aa31")], &[], |_| false);
         let names: Vec<&str> = got.iter().map(|(i, _)| i.app_name.as_str()).collect();
         assert_eq!(names, vec!["Fortnite"], "a piece is imported with its game, never on its own");
+    }
+
+    #[test]
+    fn a_recorded_piece_is_left_alone_on_the_next_add() {
+        let mut piece = record("aa31");
+        piece.parent = Some("Fortnite".into());
+        assert!(recorded_piece("aa31", Some("Fortnite"), &[piece.clone()]), "kept, so it doesn't block the game");
+        assert!(!recorded_piece("Fortnite", None, &[record("Fortnite")]), "the game itself is never skipped");
+        assert!(!recorded_piece("bb", Some("Fortnite"), &[piece]));
     }
 
     #[test]

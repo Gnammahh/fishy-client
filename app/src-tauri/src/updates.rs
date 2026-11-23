@@ -4,7 +4,7 @@ use crate::{AppAuth, AppInstall, AppLibrary};
 use fishy_core::install::manifest::parse_manifest;
 use fishy_core::install::plan::build_update_plan;
 use fishy_core::install::space::{check_space, free_space};
-use fishy_core::install::parts::{only_parts, parts_for_update};
+use fishy_core::install::parts::{chosen_on_disk, keep_siblings_files, only_parts, parts_for_update, sibling_files};
 use fishy_core::install::store::{InstalledGame, JobInfo};
 use fishy_core::install::InstallError;
 use fishy_core::settings::{Settings, SettingsStore};
@@ -107,9 +107,16 @@ async fn queue_one(
         return Ok(()); // Epic's list ran ahead of its manifests; nothing to do yet
     }
     let old_full = downloads.store.installed_manifest(app_name).ok().and_then(|b| parse_manifest(&b).ok());
-    let parts = installed.parts.as_ref().map(|p| parts_for_update(p, old_full.as_ref(), &full));
+    // The parts on disk now, so parts added or removed in Epic's launcher are followed (spec §6n).
+    let on_disk = match (&installed.parts, &old_full) {
+        (Some(_), Some(o)) => chosen_on_disk(&installed.install_path, o),
+        _ => None,
+    };
+    let parts = installed.parts.as_ref().map(|p| parts_for_update(p, on_disk.as_deref(), old_full.as_ref(), &full));
     let manifest = only_parts(full, parts.as_deref());
-    let old = old_full.map(|o| only_parts(o, installed.parts.as_deref()));
+    // Files another piece of the game still lists are never deleted by this one.
+    let siblings = sibling_files(&downloads.store, app_name);
+    let old = old_full.map(|o| keep_siblings_files(only_parts(o, on_disk.as_deref().or(installed.parts.as_deref())), &manifest, &siblings));
     let plan = build_update_plan(&manifest, old.as_ref(), &HashSet::new()).map_err(update_error)?;
     let path = installed.install_path.clone();
     let reserved = fishy_core::install::space::reserved_on_drive(&path, &downloads.left_to_write(app_name));

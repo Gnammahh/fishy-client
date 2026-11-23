@@ -1052,11 +1052,14 @@ Asked for: optional parts, then Fortnite as Epic installed it. Until now Fortnit
 
 ### Which files belong to an install ("the chosen parts")
 - A manifest file has zero or more part names. **A file with no part name always belongs.**
-- **On import**, for each piece: a part name is **chosen** if at least one file carrying it is on disk. A file belongs if it has no part name or **any** of its part names is chosen (Legendary's rule).
+- **On import**, for each piece: a part name is **chosen** if at least half of the files carrying it are on disk (a file shared with another part doesn't choose that part by itself; review 2026-11-23). A file belongs if it has no part name or **any** of its part names is chosen (Legendary's rule).
 - The import check (§6g step 2) checks only the files that belong. Missing or wrong-size ones use the existing **Download them** path.
 - The chosen part names are saved with the installed game (`installed.json` gains `parts: Option<Vec<String>>`; `None` = all files, the default for every game so far and for old records).
-- **On update** the chosen parts are the saved ones **plus every part name that the new version has and the old one didn't** (a new part might be required, and skipping it could break the game). The update plan (§6e) is built from the old and new manifests **filtered to the belonging files**: files that don't belong are neither downloaded nor deleted.
+- **On update** the chosen parts are the ones **on disk now** (read again from the old version's file list, so parts added or removed in Epic's launcher are followed; the saved ones if that list is missing) **plus every part name that the new version has and the old one didn't** (a new part might be required, and skipping it could break the game). The update plan (§6e) is built from the old and new manifests **filtered to the belonging files**: files that don't belong are neither downloaded nor deleted.
 - Repair ("Download them") and the space check use the filtered file list too.
+- **Shared files:** Fortnite's pieces list some of the same files (Save the World's and LEGO's files are also in the game's list). An update of one piece never deletes a file that another installed piece of the same game still lists.
+- A piece already recorded by an earlier Add or Download them is left as it is, so it never blocks adding its game.
+- The import note sentence above isn't shown: the Library note counts games and names none (ruling 2026-11-23); the ⋯ menu line says the game is shared with Epic.
 
 ### How the 3 pieces are kept together
 - Each add-on piece is saved as its own installed record with `parent: Option<String>` (here `Some("Fortnite")`), and is **hidden** from the Library (it has no card; the Library already hides add-ons).

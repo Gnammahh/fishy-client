@@ -1,7 +1,6 @@
 //! The Store (spec §6o): this week's free games, and Epic's real store in its own window.
 use crate::AppLibrary;
 use fishy_core::store::{parse_free_games, store_nav_allowed, FreeGames, StoreClient, STORE_HOME};
-use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -54,7 +53,7 @@ pub async fn store_free_games(force: bool, store: tauri::State<'_, AppStore>, li
             b
         }
     };
-    let owned: HashSet<String> = library.catalog_item_ids();
+    let owned = library.owned();
     let games = parse_free_games(&bytes, fishy_core::chrono::Utc::now(), &owned).map_err(|_| {
         tracing::warn!("store: couldn't load the free games");
         LOAD_ERROR.to_string()

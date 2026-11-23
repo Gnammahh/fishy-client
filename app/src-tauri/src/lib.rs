@@ -115,9 +115,13 @@ pub struct AppLibrary {
 }
 
 impl AppLibrary {
-    /// The catalog item IDs of the saved Library, for "In your Library" in the Store (spec §6o).
-    pub fn catalog_item_ids(&self) -> std::collections::HashSet<String> {
-        self.cache.load().map(|c| c.games.into_iter().map(|g| g.catalog_item_id).collect()).unwrap_or_default()
+    /// The saved Library's games, for "In your Library" in the Store (spec §6o).
+    pub fn owned(&self) -> fishy_core::store::Owned {
+        let games = self.cache.load().map(|c| c.games).unwrap_or_default();
+        fishy_core::store::Owned {
+            catalog_item_ids: games.iter().map(|g| g.catalog_item_id.clone()).collect(),
+            namespaces: games.into_iter().map(|g| g.namespace).collect(),
+        }
     }
 }
 

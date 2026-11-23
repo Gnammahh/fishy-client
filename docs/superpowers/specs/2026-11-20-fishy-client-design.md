@@ -1099,7 +1099,7 @@ Chosen by the user: **Epic's real store in a Fishy Client window, plus our own "
 - From `data.Catalog.searchStore.elements[]`: an offer is **free now** when one of `promotions.promotionalOffers[].promotionalOffers[]` has `discountSetting.discountPercentage == 0` and now is between its `startDate` and `endDate`; **free next** when one of `upcomingPromotionalOffers[].promotionalOffers[]` has percentage 0 (its `startDate` is shown). An upcoming 0% offer that has already started counts as free now (Epic's copy lags at the weekly switch-over; review 2026-11-24). Other discounts are ignored. Each list is sorted by date, then title.
 - The page address: `productSlug` (without a trailing `/home`), else the first `catalogNs.mappings[]` with `pageType == "productHome"`; the link is `https://store.epicgames.com/p/<slug>`. An offer without either links to Epic's free games page `https://store.epicgames.com/free-games`.
 - The cover: the `keyImages[]` of type `OfferImageWide`, else `Thumbnail`, else none (a fish placeholder). Only `https://` image addresses are used.
-- **Owned:** "In your Library" when one of the offer's `items[].id` equals a Library game's `catalog_item_id`.
+- **Owned:** "In your Library" when one of the offer's `items[].id` equals a Library game's `catalog_item_id`, or when the offer is a base game (`offerType == "BASE_GAME"`) whose `namespace` is a Library game's (hand check 2026-11-24: Mark of the Deep's offer item differs from the Library's item; add-ons share their game's namespace, so they never match this way).
 
 ### The Store window
 - A Tauri window, label `epic-store`, opening Epic's website. It gets **no IPC access** (the capabilities stay "main" only), like the login window.

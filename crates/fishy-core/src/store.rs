@@ -71,19 +71,31 @@ fn cover(e: &Value) -> Option<String> {
     of("OfferImageWide").or_else(|| of("Thumbnail"))
 }
 
-fn owned(e: &Value, ids: &HashSet<String>) -> bool {
-    e.get("items").and_then(Value::as_array).is_some_and(|items| items.iter().any(|i| i.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(id))))
+/// What the Library holds, to show "In your Library" (spec §6o).
+#[derive(Debug, Clone, Default)]
+pub struct Owned {
+    pub catalog_item_ids: HashSet<String>,
+    /// A game's namespace: Epic's offer can use another item ID than the Library's game.
+    pub namespaces: HashSet<String>,
+}
+
+/// Owned when one of the offer's items is a Library game, or a base game's namespace is a
+/// Library game's (never for add-ons: an add-on shares its game's namespace).
+fn owned(e: &Value, owned: &Owned) -> bool {
+    let by_item = e.get("items").and_then(Value::as_array).is_some_and(|items| items.iter().any(|i| i.get("id").and_then(Value::as_str).is_some_and(|id| owned.catalog_item_ids.contains(id))));
+    let base_game = e.get("offerType").and_then(Value::as_str) == Some("BASE_GAME");
+    by_item || (base_game && e.get("namespace").and_then(Value::as_str).is_some_and(|ns| owned.namespaces.contains(ns)))
 }
 
 /// Free now (a 0% offer running at `now`) and free next (an upcoming 0% offer), each sorted by
 /// date, then title. Other discounts are left out.
-pub fn parse_free_games(json: &[u8], now: DateTime<Utc>, owned_catalog_ids: &HashSet<String>) -> Result<FreeGames, StoreError> {
+pub fn parse_free_games(json: &[u8], now: DateTime<Utc>, library: &Owned) -> Result<FreeGames, StoreError> {
     let v: Value = serde_json::from_slice(json).map_err(|_| StoreError::Format)?;
     let elements = v.pointer("/data/Catalog/searchStore/elements").and_then(Value::as_array).ok_or(StoreError::Format)?;
     let mut out = FreeGames::default();
     for e in elements {
         let Some(title) = e.get("title").and_then(Value::as_str) else { continue };
-        let game = |date| FreeGame { title: title.to_string(), url: page_url(e), image: cover(e), date, owned: owned(e, owned_catalog_ids) };
+        let game = |date| FreeGame { title: title.to_string(), url: page_url(e), image: cover(e), date, owned: owned(e, library) };
         // An "upcoming" offer that has already begun counts as free now: Epic's copy lags at the switch-over.
         let running = |(start, end): &(DateTime<Utc>, DateTime<Utc>)| *start <= now && now < *end;
         let current = free_offers(e, "promotionalOffers").into_iter().find(running).or_else(|| free_offers(e, "upcomingPromotionalOffers").into_iter().find(running));
@@ -168,12 +180,12 @@ mod tests {
     }
 
     fn one(extra: serde_json::Value) -> FreeGame {
-        parse_free_games(&offer(extra), at(2026, 11, 24, 12), &HashSet::new()).unwrap().now.remove(0)
+        parse_free_games(&offer(extra), at(2026, 11, 24, 12), &Owned::default()).unwrap().now.remove(0)
     }
 
     #[test]
     fn real_response_splits_now_and_next() {
-        let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 24, 12), &HashSet::new()).unwrap();
+        let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 24, 12), &Owned::default()).unwrap();
         assert_eq!(titles(&g.now), vec!["Mark of the Deep"]);
         assert_eq!(g.now[0].date, at(2026, 11, 26, 16));
         assert_eq!(g.now[0].url, "https://store.epicgames.com/p/mark-of-the-deep-f7dc08");
@@ -186,7 +198,7 @@ mod tests {
 
     #[test]
     fn ended_offer_is_left_out() {
-        let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 27, 0), &HashSet::new()).unwrap();
+        let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 27, 0), &Owned::default()).unwrap();
         assert!(!titles(&g.now).contains(&"Mark of the Deep"), "its offer ended on Nov 26");
     }
 
@@ -196,7 +208,7 @@ mod tests {
             { "startDate": "2026-12-10T16:00:00.000Z", "endDate": "2027-01-07T16:00:00.000Z", "discountSetting": { "discountPercentage": 40 } },
             { "startDate": "2026-11-26T16:00:00.000Z", "endDate": "2026-12-03T16:00:00.000Z", "discountSetting": { "discountPercentage": 0 } }
         ]}]}}));
-        let g = parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap();
+        let g = parse_free_games(&json, at(2026, 11, 24, 12), &Owned::default()).unwrap();
         assert_eq!(g.next[0].date, at(2026, 11, 26, 16));
     }
 
@@ -206,7 +218,7 @@ mod tests {
         let json = offer(serde_json::json!({ "promotions": { "promotionalOffers": [], "upcomingPromotionalOffers": [{ "promotionalOffers": [
             { "startDate": "2026-11-24T10:00:00.000Z", "endDate": "2026-12-01T16:00:00.000Z", "discountSetting": { "discountPercentage": 0 } }
         ]}]}}));
-        let g = parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap();
+        let g = parse_free_games(&json, at(2026, 11, 24, 12), &Owned::default()).unwrap();
         assert_eq!(g.now[0].date, at(2026, 12, 1, 16));
         assert!(g.next.is_empty());
     }
@@ -216,7 +228,7 @@ mod tests {
         let json = offer(serde_json::json!({ "promotions": { "promotionalOffers": [{ "promotionalOffers": [
             { "startDate": "2026-11-20T16:00:00.000Z", "endDate": "2026-11-30T16:00:00.000Z", "discountSetting": { "discountPercentage": 0.0 } }
         ]}], "upcomingPromotionalOffers": [] }}));
-        assert_eq!(parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap().now.len(), 1);
+        assert_eq!(parse_free_games(&json, at(2026, 11, 24, 12), &Owned::default()).unwrap().now.len(), 1);
     }
 
     #[test]
@@ -236,23 +248,34 @@ mod tests {
     }
 
     #[test]
+    fn owned_base_game_by_namespace() {
+        // Real case: the Library has Mark of the Deep under a different item ID than the offer.
+        let owned = Owned { catalog_item_ids: HashSet::new(), namespaces: ["3d6441ab9d4246208bc97d7babf664b5".to_string()].into() };
+        let g = parse_free_games(REAL.as_bytes(), at(2026, 11, 24, 12), &owned).unwrap();
+        assert!(g.now[0].owned, "Mark of the Deep is in the Library");
+        let dlc = offer(serde_json::json!({ "namespace": "ns", "offerType": "DLC" }));
+        let mine = Owned { catalog_item_ids: HashSet::new(), namespaces: ["ns".to_string()].into() };
+        assert!(!parse_free_games(&dlc, at(2026, 11, 24, 12), &mine).unwrap().now[0].owned, "an add-on of an owned game isn't owned");
+    }
+
+    #[test]
     fn owned_by_catalog_item_id() {
         let json = offer(serde_json::json!({ "items": [{ "id": "cat1", "namespace": "ns" }] }));
-        let owned: HashSet<String> = ["cat1".to_string()].into();
+        let owned = Owned { catalog_item_ids: ["cat1".to_string()].into(), namespaces: HashSet::new() };
         assert!(parse_free_games(&json, at(2026, 11, 24, 12), &owned).unwrap().now[0].owned);
-        assert!(!parse_free_games(&json, at(2026, 11, 24, 12), &HashSet::new()).unwrap().now[0].owned);
+        assert!(!parse_free_games(&json, at(2026, 11, 24, 12), &Owned::default()).unwrap().now[0].owned);
     }
 
     #[test]
     fn null_fields_dont_crash() {
         let json = br#"{"data":{"Catalog":{"searchStore":{"elements":[{"title":"A","promotions":null,"productSlug":null,"keyImages":[]},{"title":"B"}]}}}}"#;
-        assert_eq!(parse_free_games(json, at(2026, 11, 24, 12), &HashSet::new()).unwrap(), FreeGames::default());
+        assert_eq!(parse_free_games(json, at(2026, 11, 24, 12), &Owned::default()).unwrap(), FreeGames::default());
     }
 
     #[test]
     fn bad_json_is_a_format_error() {
-        assert_eq!(parse_free_games(b"<html>", at(2026, 11, 24, 12), &HashSet::new()), Err(StoreError::Format));
-        assert_eq!(parse_free_games(b"{}", at(2026, 11, 24, 12), &HashSet::new()), Err(StoreError::Format));
+        assert_eq!(parse_free_games(b"<html>", at(2026, 11, 24, 12), &Owned::default()), Err(StoreError::Format));
+        assert_eq!(parse_free_games(b"{}", at(2026, 11, 24, 12), &Owned::default()), Err(StoreError::Format));
     }
 
     #[test]

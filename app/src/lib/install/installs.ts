@@ -42,6 +42,8 @@ export type InstallOptions = {
   error: string | null;
   /** Set when the saved default folder couldn't be used (spec §6f.1). */
   note?: string | null;
+  /** Optional parts: installed with Epic's launcher, then imported (spec §6n). */
+  has_parts?: boolean;
 };
 /** Mirrors `PlayError` (app/src-tauri play.rs). */
 export type PlayError = { message: string; can_offline: boolean; signed_out: boolean };

@@ -45,6 +45,17 @@ describe("InstallDialog", () => {
     expect((screen.getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("optional_parts_are_installed_with_epic", async () => {
+    mock({ install_options: () => options({ has_parts: true }) });
+    render(InstallDialog, { game, onclose: () => {} });
+    expect(
+      await screen.findByText("This game has optional parts. Install it with Epic's launcher; Fishy Client adds it by itself afterwards."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change folder" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+  });
+
   it("says_only_fishy_client_will_know_the_game", async () => {
     mock({ install_options: () => options() });
     render(InstallDialog, { game, onclose: () => {} });

@@ -189,7 +189,12 @@ struct InstallOptions {
     needs_permission: bool,
     error: Option<String>,
     note: Option<String>,
+    /// The game has optional parts: it's installed with Epic's launcher, then imported (spec §6n).
+    has_parts: bool,
 }
+
+/// Why Install is refused for a game with optional parts (spec §6n).
+const HAS_PARTS: &str = "This game has optional parts. Install it with Epic's launcher; Fishy Client adds it by itself afterwards.";
 
 async fn prepare(game: &Game, auth: &AppAuth, library: &AppLibrary, install: &AppInstall) -> Result<Prepared, InstallError> {
     if let Some(p) = install.prepared.lock().unwrap_or_else(|e| e.into_inner()).get(&game.app_name).cloned() {
@@ -334,6 +339,7 @@ async fn install_options(
         needs_permission,
         error: folder_error.or(space.err().map(|e| e.user_message())),
         note,
+        has_parts: fishy_core::install::parts::has_parts(&p.manifest),
     })
 }
 
@@ -368,6 +374,9 @@ async fn install_start(
             return Err(refused(e));
         }
     };
+    if fishy_core::install::parts::has_parts(&p.manifest) {
+        return Err(HAS_PARTS.to_string());
+    }
     let (path, _) = install_path(&game, parent, &p, &settings, downloads);
     let install_size = p.manifest.install_size();
     let reserved = reserved_on_drive(&path, &downloads.left_to_write(&game.app_name));

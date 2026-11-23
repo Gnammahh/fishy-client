@@ -88,6 +88,11 @@
       <div class="actions">
         <PixelButton variant="ghost" onclick={cancel}>Cancel</PixelButton>
       </div>
+    {:else if options.has_parts}
+      <p class="parts">This game has optional parts. Install it with Epic's launcher; Fishy Client adds it by itself afterwards.</p>
+      <div class="actions">
+        <PixelButton variant="ghost" onclick={cancel}>Close</PixelButton>
+      </div>
     {:else}
       <dl>
         <dt>Folder</dt>
@@ -168,7 +173,8 @@
     color: var(--text-2);
   }
   /* Epic's launcher can't be told about games installed here (spec §6h). */
-  .permission {
+  .permission,
+  .parts {
     color: var(--aqua);
     font-size: 14px;
     margin: 0;

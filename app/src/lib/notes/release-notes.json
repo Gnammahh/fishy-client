@@ -4,7 +4,8 @@
     "date": "2026-11-24",
     "items": [
       "The title bar is solid black: nothing shows through it any more.",
-      "A game started from its desktop shortcut no longer turns Fishy Client's taskbar icon into the game's icon."
+      "A game started from its desktop shortcut no longer turns Fishy Client's taskbar icon into the game's icon.",
+      "Note on Launch options: Fishy Client passes your words to the game, but each game decides whether it understands them. Many games ignore them, and each engine uses different words (for example -windowed works for Unreal games, while Unity games use -screen-fullscreen 0 and may still keep their own setting)."
     ]
   },
   {

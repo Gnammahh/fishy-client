@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.5.0",
+    "date": "2026-11-24",
+    "items": [
+      "New Store page: this week's free games and the ones coming next, with Get on Epic to claim them on Epic's own page.",
+      "Open Epic's store shows Epic's real store in a Fishy Client window. Your sign-in there is remembered until you log out of Fishy Client.",
+      "A game you get or buy in the Store window shows up in your Library when you close the window."
+    ]
+  },
+  {
     "version": "1.4.1",
     "date": "2026-11-23",
     "items": [

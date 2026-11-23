@@ -86,7 +86,7 @@
   .shell {
     display: grid;
     grid-template-columns: 200px minmax(0, 1fr);
-    min-height: 100vh;
+    min-height: calc(100vh - var(--titlebar));
   }
   main {
     padding: 32px;

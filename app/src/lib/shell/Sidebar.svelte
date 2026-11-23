@@ -50,9 +50,9 @@
   .side {
     /* stays in view while the page scrolls */
     position: sticky;
-    top: 0;
+    top: var(--titlebar);
     align-self: start;
-    height: 100vh;
+    height: calc(100vh - var(--titlebar));
     box-sizing: border-box;
     overflow: hidden;
     display: flex;

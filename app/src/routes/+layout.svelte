@@ -1,6 +1,7 @@
 <script lang="ts">
   import "$lib/theme.css";
   import OceanBackground from "$lib/ocean/OceanBackground.svelte";
+  import TitleBar from "$lib/shell/TitleBar.svelte";
   import { onMount, type Snippet } from "svelte";
   import { syncMotionAttribute, syncPausedAttribute, watchMinimized } from "$lib/motion";
   import CrashBoundary from "$lib/crash/CrashBoundary.svelte";
@@ -19,6 +20,7 @@
 
 <CrashBoundary>
   <OceanBackground />
+  <TitleBar />
   <div class="app-content">
     {@render children()}
   </div>
@@ -28,5 +30,7 @@
   .app-content {
     position: relative;
     z-index: 1;
+    /* below Fishy Client's own title bar (spec §6s) */
+    padding-top: var(--titlebar);
   }
 </style>

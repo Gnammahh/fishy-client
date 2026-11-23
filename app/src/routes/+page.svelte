@@ -37,7 +37,7 @@
 
 <style>
   .boot {
-    min-height: 100vh;
+    min-height: calc(100vh - var(--titlebar));
     display: grid;
     place-items: center;
   }

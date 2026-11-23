@@ -28,7 +28,7 @@
   .crash {
     position: relative;
     z-index: 1;
-    min-height: 100vh;
+    min-height: calc(100vh - var(--titlebar));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;

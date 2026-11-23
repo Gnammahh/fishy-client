@@ -1197,6 +1197,15 @@ Asked for by the user: Fishy Client should stay light (memory, CPU), measured ag
 - **UI (vitest):** `data-paused` is set when minimized, when a game is in the running list, and removed when neither.
 - **By hand:** CPU measured with a game running (or Fishy minimized) is about 0 %; restoring the window, the fish swim on from where they stopped.
 
+## 6s. Fishy Client's own title bar (version 1.8.0, decided 2026-11-23)
+
+Asked for by the user: Windows' white title bar didn't match the launcher. Chosen: a **fully custom fish bar** (over a dark Windows bar), accepting that Windows' Snap layouts menu on the maximize button goes away.
+- The main window has no Windows frame (`decorations: false`); Fishy Client draws a 34 px bar fixed at the top (`app/src/lib/shell/TitleBar.svelte`, height in `--titlebar` in `theme.css`): fish icon and "Fishy Client" in the pixel font on the left, **Minimize**, **Maximize/Restore** and **Close** in aqua on the right (Close turns red on hover).
+- Dragging the bar moves the window and double-clicking it maximizes (`data-tauri-drag-region`); the edges still resize. Close works as before (closing the main window quits).
+- Full-height screens use `calc(100vh - var(--titlebar))`; the sidebar sticks below the bar.
+- Permissions: `core:window:allow-minimize`, `allow-toggle-maximize`, `allow-close`, `allow-start-dragging` (main window only).
+- Tests (vitest): the bar is a drag region; the three buttons call minimize / toggle maximize / close; a maximized window shows Restore. By hand: seen and liked by the user in the test app.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

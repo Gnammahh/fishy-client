@@ -17,6 +17,7 @@ use fishy_core::install::space::{check_space, folder_for, free_space, install_ro
 use fishy_core::install::store::{InstallStore, InstalledGame, JobInfo};
 use fishy_core::install::uninstall::uninstall;
 use fishy_core::install::InstallError;
+use fishy_core::achievements::{Achievements, AchievementsClient};
 use fishy_core::library::{CachedLibrary, Game, LibraryCache, LibraryClient};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -112,6 +113,7 @@ async fn logout(
 pub struct AppLibrary {
     client: LibraryClient,
     cache: LibraryCache,
+    achievements: AchievementsClient,
 }
 
 impl AppLibrary {
@@ -170,6 +172,37 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
     Ok(fresh)
+}
+
+/// What the game page shows when achievements can't be loaded (spec §6q).
+const ACHIEVEMENTS_ERROR: &str = "Couldn't load achievements from Epic.";
+
+/// The game's namespace, from the saved library only (never from the page).
+fn namespace_of(games: &[Game], app_name: &str) -> Option<String> {
+    games.iter().find(|g| g.app_name == app_name).map(|g| g.namespace.clone())
+}
+
+/// A game's achievements and which ones the player unlocked (spec §6q).
+#[tauri::command]
+async fn game_achievements(app: tauri::AppHandle, app_name: String, auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<Achievements, String> {
+    let failed = || {
+        warn!("achievements failed");
+        ACHIEVEMENTS_ERROR.to_string()
+    };
+    let games = library.cache.load().map(|c| c.games).unwrap_or_default();
+    let namespace = namespace_of(&games, &app_name).ok_or_else(failed)?;
+    let token = match auth.manager.access_token().await {
+        Ok(t) => t,
+        Err(fishy_core::auth::AuthError::Expired) => {
+            session::expire(&app).await;
+            return Err(session::EXPIRED.to_string());
+        }
+        Err(_) => return Err(failed()),
+    };
+    let (_, account_id) = auth.manager.saved_identity().ok_or_else(failed)?;
+    let a = library.achievements.fetch(&token, &account_id, &namespace).await.map_err(|_| failed())?;
+    info!("achievements loaded: {} of {}", a.unlocked, a.total);
+    Ok(a)
 }
 
 /// Installs: the downloads manager plus manifests fetched for the Install box.
@@ -554,7 +587,7 @@ pub fn run() {
                 manager: AuthManager::new(EpicClient::new(), KeyringStore::windows(), chrono_now),
                 current: Mutex::new(None),
             });
-            app.manage(AppLibrary { client: LibraryClient::new(), cache: LibraryCache::default_location() });
+            app.manage(AppLibrary { client: LibraryClient::new(), cache: LibraryCache::default_location(), achievements: AchievementsClient::new() });
             app.manage(AppInstall {
                 downloads: Downloads::new(InstallStore::default_location(), InstallClient::new()),
                 prepared: std::sync::Mutex::new(HashMap::new()),
@@ -582,6 +615,7 @@ pub fn run() {
             submit_code,
             logout,
             open_game_folder,
+            game_achievements,
             store_window::store_free_games,
             store_window::store_open,
             open_login_in_browser,
@@ -631,6 +665,21 @@ mod tests {
     fn explorer_gets_the_folder_in_quotes() {
         // Explorer splits an unquoted argument at commas, and Rust only quotes paths with spaces.
         assert_eq!(explorer_arg(std::path::Path::new(r"C:\Games\Kelp,Runner")), r#""C:\Games\Kelp,Runner""#);
+    }
+
+    #[test]
+    fn namespace_comes_from_the_cached_library() {
+        let g = Game {
+            app_name: "Tide".into(),
+            namespace: "ns-tide".into(),
+            catalog_item_id: "c".into(),
+            title: "Tide".into(),
+            cover_url: None,
+            installable: true,
+            launch: Default::default(),
+        };
+        assert_eq!(namespace_of(std::slice::from_ref(&g), "Tide"), Some("ns-tide".to_string()));
+        assert_eq!(namespace_of(&[g], "Other"), None);
     }
 
     #[test]

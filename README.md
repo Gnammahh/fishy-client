@@ -84,6 +84,7 @@ Only to Epic, always over HTTPS with normal certificate checks:
 | `ecommerceintegration-public-service-ecomprod02.ol.epicgames.com` | an ownership token, only for the few games that need one to start |
 | Epic's download servers (addresses Epic gives for each game) | the game files themselves |
 | `store-site-backend-static-ipv4.ak.epicgames.com` | the list of this week's free games on the Store page (nothing about you is sent) |
+| `launcher.store.epicgames.com` | a game's achievements and which ones you unlocked, when you open its page (your sign-in and account ID are sent) |
 | `store.epicgames.com` and Epic's image servers | the Store window is Epic's own website, so Epic sees what you do there, as in any browser. Your sign-in there is remembered until you **Log out** in Fishy Client |
 | `github.com` | checking at start-up whether a newer Fishy Client exists, and downloading it after you press **Update now**. Only a normal download request is sent: no account details, no game list. Turn it off in **Settings → Check for Fishy Client updates** |
 

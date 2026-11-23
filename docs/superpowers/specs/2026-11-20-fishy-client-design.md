@@ -1277,6 +1277,11 @@ The fish components come first, in milestone 1, because they don't depend on Epi
 
 Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "First window" is when Windows shows a window, not when the Library has finished loading. The WebView2 cache is left as is (your choice, 2026-11-22): it is mostly cover images (271 MB), WebView2 caps it itself, and Delete all my data empties it. If it should ever shrink, ask Epic for smaller cover images rather than limiting the cache.
 
+### Checked by hand (version 1.3.0): all checked 2026-11-23
+- [x] The installed 1.2.0 updates itself to 1.3.0
+- [x] With a limit on, Downloads shows "Limited to N MB/s · Change in Settings" and the link opens Settings
+- [x] A real download picks a server by itself (log: "download: using egs-cloudfront-chunks.epicgamescdn.com") and runs at 20–30+ MB/s, up from about 8 MB/s in 1.2.0
+
 ### Still to check by hand (version 1.2.0): all checked by hand 2026-11-22
 - [x] The installed 1.1.1 updates itself to 1.2.0
 - [x] Use Epic's folder, then Install a small game: one Windows prompt, the game installs and plays; Uninstall needs no prompt

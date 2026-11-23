@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.7.0",
+    "date": "2026-11-24",
+    "items": [
+      "Click a game's cover to open its own page, with its buttons, size and playtime.",
+      "A game's page shows your Epic achievements: which ones you have, when you got them, and how rare the others are. Switch between All, Unlocked and Locked."
+    ]
+  },
+  {
     "version": "1.6.0",
     "date": "2026-11-24",
     "items": [

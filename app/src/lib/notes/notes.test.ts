@@ -22,7 +22,7 @@ describe("release notes", () => {
   });
 
   it("every_version_has_a_date_and_lines", () => {
-    expect(RELEASE_NOTES.map((n) => n.version)).toEqual(["1.6.0", "1.5.1", "1.5.0", "1.4.1", "1.4.0", "1.3.0", "1.2.0", "1.1.1", "1.1.0", "1.0.0"]);
+    expect(RELEASE_NOTES.map((n) => n.version)).toEqual(["1.7.0", "1.6.0", "1.5.1", "1.5.0", "1.4.1", "1.4.0", "1.3.0", "1.2.0", "1.1.1", "1.1.0", "1.0.0"]);
     for (const n of RELEASE_NOTES) {
       expect(n.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(n.items.length).toBeGreaterThan(0);
@@ -42,8 +42,8 @@ describe("WhatsNewBox", () => {
     render(WhatsNewBox, { onclose: () => closed++ });
     const dialog = screen.getByRole("dialog", { name: "What's new" });
     const headings = Array.from(dialog.querySelectorAll("h4")).map((h) => h.textContent);
-    expect(headings[0]).toContain("1.6.0");
-    expect(headings[1]).toContain("1.5.1");
+    expect(headings[0]).toContain("1.7.0");
+    expect(headings[1]).toContain("1.6.0");
     expect(dialog.textContent).toContain(RELEASE_NOTES[0].items[0]);
     await fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await fireEvent.keyDown(dialog, { key: "Escape" });

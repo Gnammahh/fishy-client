@@ -6,6 +6,7 @@ mod login_window;
 mod play;
 mod running;
 mod session;
+mod shortcuts;
 mod store_window;
 mod updates;
 mod verify;
@@ -566,6 +567,8 @@ async fn uninstall_game(
         return Err("Pause the update first, then uninstall.".to_string());
     }
     let _ = app.emit("downloads-changed", install.downloads.view());
+    // Its shortcuts go first, while the record still lists them (spec §6t).
+    shortcuts::remove_for(&install, &app_name);
     let store = install.downloads.store.clone();
     tauri::async_runtime::spawn_blocking(move || names.iter().try_for_each(|n| uninstall(&store, n)))
         .await
@@ -652,6 +655,9 @@ pub fn run() {
             verify::verify_start,
             verify::verify_stop,
             verify::verify_repair,
+            shortcuts::shortcut_create,
+            shortcuts::shortcut_add_start_menu,
+            shortcuts::shortcut_remove,
             download_cancel,
             installed_list,
             uninstall_game,

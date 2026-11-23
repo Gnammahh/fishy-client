@@ -46,6 +46,8 @@ pub struct FileEntry {
     pub sha1: [u8; 20],
     pub executable: bool,
     pub parts: Vec<ChunkPart>,
+    /// Epic's part names for optional parts (install tags, spec §6n). Empty: always installed.
+    pub install_tags: Vec<String>,
 }
 
 impl FileEntry {

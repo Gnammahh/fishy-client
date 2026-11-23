@@ -161,7 +161,7 @@ mod tests {
         e.store.finish_install(&e.job, &sample()).unwrap();
         // A paused update whose new version adds one more file, already written.
         let mut files = sample().files.clone();
-        files.push(FileEntry { filename: "Content/New.pak".into(), sha1: [0; 20], executable: false, parts: vec![] });
+        files.push(FileEntry { install_tags: vec![], filename: "Content/New.pak".into(), sha1: [0; 20], executable: false, parts: vec![] });
         let s = sample();
         let newer = Manifest::new(s.meta.clone(), s.chunks.clone(), files);
         let update = JobInfo { update_from: Some("1.0.0-CL1".into()), ..e.job.clone() };

@@ -63,7 +63,12 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
             parts.push(ChunkPart { guid, offset: num("Offset")? as u32, size: num("Size")? as u32 });
         }
         let executable = f.get("bIsExecutable").and_then(Value::as_bool).unwrap_or(false);
-        files.push(FileEntry { filename, sha1, executable, parts });
+        let install_tags = f
+            .get("InstallTags")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).filter(|t| !t.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default();
+        files.push(FileEntry { filename, sha1, executable, parts, install_tags });
     }
     Ok(Manifest::new(meta, chunks, files))
 }
@@ -161,6 +166,28 @@ mod tests {
         assert_eq!(f.sha1[19], 20);
         assert_eq!(f.size(), 128);
         assert_eq!(f.parts[1].offset, 100);
+    }
+
+    #[test]
+    fn reads_install_tags_from_json() {
+        let sha_blob: String = (1..=20u8).map(|b| format!("{b:03}")).collect();
+        let file = |name: &str, tags: Option<serde_json::Value>| {
+            let mut f = serde_json::json!({ "Filename": name, "FileHash": sha_blob, "FileChunkParts": [] });
+            if let Some(t) = tags {
+                f["InstallTags"] = t;
+            }
+            f
+        };
+        let json = serde_json::json!({
+            "ManifestFileVersion": blob(13, 4),
+            "AppNameString": "Fortnite",
+            "BuildVersionString": "1.0",
+            "ChunkHashList": {}, "ChunkShaList": {}, "DataGroupList": {}, "ChunkFilesizeList": {},
+            "FileManifestList": [file("a.pak", Some(serde_json::json!(["GFP_JunoRoot", ""]))), file("b.pak", None)]
+        });
+        let m = parse_manifest(json.to_string().as_bytes()).unwrap();
+        assert_eq!(m.files[0].install_tags, vec!["GFP_JunoRoot".to_string()]);
+        assert!(m.files[1].install_tags.is_empty());
     }
 
     #[test]

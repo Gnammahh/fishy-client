@@ -105,7 +105,7 @@ mod tests {
         ChunkInfo { guid: [n, 0, 0, 0], hash: n as u64, sha1: [0; 20], group: 0, window_size: 100, file_size: size }
     }
     fn file(name: &str, chunks: &[u32]) -> FileEntry {
-        FileEntry { filename: name.into(), sha1: [0; 20], executable: false, parts: chunks.iter().map(|&c| ChunkPart { guid: [c, 0, 0, 0], offset: 0, size: 10 }).collect() }
+        FileEntry { install_tags: vec![], filename: name.into(), sha1: [0; 20], executable: false, parts: chunks.iter().map(|&c| ChunkPart { guid: [c, 0, 0, 0], offset: 0, size: 10 }).collect() }
     }
     fn manifest(files: Vec<FileEntry>) -> Manifest {
         Manifest::new(ManifestMeta::default(), vec![chunk(1, 50), chunk(2, 60), chunk(3, 70)], files)
@@ -167,7 +167,7 @@ mod tests {
     }
     /// A file with explicit parts (chunk, offset, size) and a fingerprint byte.
     fn pfile(name: &str, sha: u8, parts: &[(u32, u32, u32)]) -> FileEntry {
-        FileEntry {
+        FileEntry { install_tags: vec![],
             filename: name.into(),
             sha1: [sha; 20],
             executable: false,

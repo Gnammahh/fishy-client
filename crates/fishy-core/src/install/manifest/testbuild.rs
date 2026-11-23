@@ -78,7 +78,10 @@ pub fn build_with(m: &Manifest, opts: BuildOpts) -> Vec<u8> {
     m.files.iter().for_each(|_| fstring(&mut fml, ""));
     m.files.iter().for_each(|f| fml.extend(f.sha1));
     m.files.iter().for_each(|f| fml.push(if f.executable { 0x4 } else { 0 }));
-    m.files.iter().for_each(|_| fml.extend(0u32.to_le_bytes())); // install tags
+    for f in &m.files {
+        fml.extend((f.install_tags.len() as u32).to_le_bytes());
+        f.install_tags.iter().for_each(|t| fstring(&mut fml, t));
+    }
     for f in &m.files {
         fml.extend((f.parts.len() as u32).to_le_bytes());
         for p in &f.parts {
@@ -130,14 +133,14 @@ pub fn sample() -> Manifest {
             ChunkInfo { guid: c2, hash: 0x3C4D, sha1: [2; 20], group: 42, window_size: 512, file_size: 300 },
         ],
         vec![
-            FileEntry {
+            FileEntry { install_tags: vec![],
                 filename: "Binaries/Tidepool.exe".into(),
                 sha1: [3; 20],
                 executable: true,
                 parts: vec![ChunkPart { guid: c1, offset: 0, size: 1000 }, ChunkPart { guid: c2, offset: 0, size: 200 }],
             },
-            FileEntry { filename: "readme.txt".into(), sha1: [4; 20], executable: false, parts: vec![ChunkPart { guid: c1, offset: 1000, size: 24 }] },
-            FileEntry { filename: "empty.cfg".into(), sha1: [5; 20], executable: false, parts: vec![] },
+            FileEntry { install_tags: vec![], filename: "readme.txt".into(), sha1: [4; 20], executable: false, parts: vec![ChunkPart { guid: c1, offset: 1000, size: 24 }] },
+            FileEntry { install_tags: vec![], filename: "empty.cfg".into(), sha1: [5; 20], executable: false, parts: vec![] },
         ],
     )
 }

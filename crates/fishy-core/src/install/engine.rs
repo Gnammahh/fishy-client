@@ -395,7 +395,7 @@ mod tests {
             for &(c, off, size) in *parts {
                 content.extend(&chunks[c][off as usize..(off + size) as usize]);
             }
-            entries.push(FileEntry {
+            entries.push(FileEntry { install_tags: vec![],
                 filename: name.to_string(),
                 sha1: Sha1::digest(&content).into(),
                 executable: false,

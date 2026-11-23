@@ -31,7 +31,7 @@ mod tests {
     use crate::install::manifest::{FileEntry, ManifestMeta};
 
     fn m(files: &[(&str, u8)]) -> Manifest {
-        let files = files.iter().map(|(n, s)| FileEntry { filename: n.to_string(), sha1: [*s; 20], executable: false, parts: vec![] }).collect();
+        let files = files.iter().map(|(n, s)| FileEntry { install_tags: vec![], filename: n.to_string(), sha1: [*s; 20], executable: false, parts: vec![] }).collect();
         Manifest::new(ManifestMeta::default(), vec![], files)
     }
 

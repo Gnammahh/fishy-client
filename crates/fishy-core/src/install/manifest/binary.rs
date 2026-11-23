@@ -134,10 +134,16 @@ fn read_files(r: &mut Reader) -> Result<Vec<FileEntry>, InstallError> {
         }
         let shas = (0..n).map(|_| Ok(r.bytes(20)?.try_into().expect("20 bytes"))).collect::<Result<Vec<[u8; 20]>, InstallError>>()?;
         let flags = (0..n).map(|_| r.u8()).collect::<Result<Vec<_>, _>>()?;
+        let mut tags = Vec::with_capacity(n);
         for _ in 0..n {
+            let mut list = Vec::new();
             for _ in 0..count(r, 4)? {
-                r.fstring()?; // install tags: we always install everything
+                let tag = r.fstring()?;
+                if !tag.is_empty() {
+                    list.push(tag); // "" means no part (Fortnite has some)
+                }
             }
+            tags.push(list);
         }
         let mut parts = Vec::with_capacity(n);
         for _ in 0..n {
@@ -162,7 +168,8 @@ fn read_files(r: &mut Reader) -> Result<Vec<FileEntry>, InstallError> {
             .zip(shas)
             .zip(flags)
             .zip(parts)
-            .map(|(((filename, sha1), flag), parts)| FileEntry { filename, sha1, executable: flag & 0x4 != 0, parts })
+            .zip(tags)
+            .map(|((((filename, sha1), flag), parts), install_tags)| FileEntry { filename, sha1, executable: flag & 0x4 != 0, parts, install_tags })
             .collect())
     })
 }
@@ -230,9 +237,18 @@ mod tests {
     fn utf16_filename() {
         let s = sample();
         let mut files = s.files.clone();
-        files.push(FileEntry { filename: "Données/çà.txt".into(), sha1: [9; 20], executable: false, parts: vec![ChunkPart { guid: [1, 2, 3, 4], offset: 0, size: 1 }] });
+        files.push(FileEntry { install_tags: vec![], filename: "Données/çà.txt".into(), sha1: [9; 20], executable: false, parts: vec![ChunkPart { guid: [1, 2, 3, 4], offset: 0, size: 1 }] });
         let m = Manifest::new(s.meta.clone(), s.chunks.clone(), files);
         assert_eq!(parse_manifest(&build_binary(&m, false)).unwrap(), m);
+    }
+
+    #[test]
+    fn reads_install_tags() {
+        let mut m = sample();
+        m.files[0].install_tags = vec!["Langde".into(), "".into()];
+        let got = parse_manifest(&build_binary(&m, true)).unwrap();
+        assert_eq!(got.files[0].install_tags, vec!["Langde".to_string()], "empty names are dropped");
+        assert!(got.files[1].install_tags.is_empty());
     }
 
     #[test]

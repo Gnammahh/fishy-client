@@ -1139,6 +1139,41 @@ Asked for by the user: open a game's files from the ⋯ menu, achievements and p
 - **UI (vitest):** the menu shows "Open game folder" and calls the command; the playtime line formats (0 → none, 30 s, 25 min, 12 h 5 min).
 - **By hand:** Open game folder opens Explorer in the game's folder; play a game for a few minutes, close it: the menu shows the time.
 
+## 6q. Game page and achievements (version 1.7.0, decided 2026-11-23)
+
+Asked for by the user: clicking a game's cover opens a page for that game with all its buttons and, further down, its achievements ("if achievements aren't possible, don't build them"). Genres "only if cheap": **not built** (Epic's library doesn't carry them; they'd need another Epic request per game).
+
+### Test with the real sign-in (2026-11-23)
+- `POST https://launcher.store.epicgames.com/graphql` with Fishy Client's launcher sign-in works (queries from Legendary's `legendary/models/gql.py`, `sandboxId` = the game's namespace):
+  - **Game's list** (`Achievement.productAchievementsRecordBySandbox`): total, and per achievement its name, hidden flag, locked/unlocked title, description and icon link, rarity %. The record is missing (null) for games without achievements.
+  - **The player's** (`PlayerAchievement.playerAchievementGameRecordsBySandbox`, with the account ID): `records` is null for a game never played, else one record whose `playerAchievements` rows have `achievementName`, `unlocked`, `unlockDate`. Rows can include locked ones with progress, so only `unlocked == true` counts.
+  - Checked on the user's account: Rocket League 63 of 88, We Were Here Together 8 of 22, 152 games asked one after another without trouble.
+
+### What the user sees
+- In the Library, the **cover** of every card is a button ("Open *Title*"). It opens the **game page** in place of the grid; **← Library** at the top goes back to the same tab, search and scroll as before.
+- **Top of the page:** the cover (left), the title, and the **same buttons as the card**, working the same way (Install / Play / Starting… / Running / Update / ⋯ menu, "Installs through …" note, errors and Try again). Under them: "Size: …" and "Played: …" when known (as in the ⋯ menu, §6p).
+- **Achievements** section below:
+  - Heading "Achievements" and **"63 / 88 unlocked"** with a fish progress bar.
+  - A switch **All · Unlocked · Locked** (the Library's tab style). It starts on All and resets when another game's page opens.
+  - One row per achievement: icon, title, description, and on the right "Unlocked 12 Mar 2025" or, when locked, "4.2% of players have it".
+  - **Unlocked** ones in color, newest first. **Locked** ones greyed (icon and text faded), most common first (highest %), so the next easy ones are at the top.
+  - A **hidden** achievement that's still locked shows "Hidden achievement" / "Keep playing to find out." with Epic's locked icon.
+  - Loading: the fish loader and "Loading achievements…". Error: "Couldn't load achievements from Epic." + **Try again**. A game without achievements: "This game has no Epic achievements." An empty filter: "None unlocked yet." / "You have them all!".
+  - The list is asked for again each time the page opens (two small requests); nothing is saved on the PC.
+- Not installed and other-store games have a page too (achievements come from Epic whatever the game's state).
+
+### How it's built
+- **Rust core** `crates/fishy-core/src/achievements.rs`: `AchievementsClient` (base URL changeable for tests) with `fetch(token, account_id, namespace) -> Result<Achievements, AuthError>`; sends the two queries one after the other with header `Authorization: bearer …` and User-Agent `EpicGamesLauncher/14.0.8-22004686+++Portal+Release-Live`, locale `en-US`. Retries and reads replies like the library client (`with_retries`, `read_json`); a reply with `errors` is an error too. An expired sign-in is caught when the token is fetched (`access_token`), as for the Library.
+- Pure function `merge(game_json, player_json) -> Achievements` (tested without network): `Achievements { total, unlocked, items: Vec<Achievement> }`, `Achievement { name, title, description, icon_url, unlocked, unlocked_at: Option<String>, hidden, rarity: Option<f64> }`. Hidden + locked → title/description replaced as above. Items already sorted (unlocked newest first, then locked by rarity, highest first). Null game record → `total 0, items []`. Null player records → nothing unlocked.
+- **Tauri command** `game_achievements(app_name)`: the namespace comes only from the cached library (never from the page); the account ID from the saved sign-in. Expired sign-in → the usual "session expired" flow. Log: "achievements loaded: U of T" (no title, no IDs, no Epic text); on failure "achievements failed" only.
+- **UI:** new `app/src/lib/library/GamePage.svelte` (props: the game, the action buttons as a Svelte snippet from `LibraryPage`, size and playtime lines, `onback`); `LibraryPage` keeps all button logic and dialogs (Install box, Uninstall, outdated-Play) and only swaps the grid for `GamePage` while a game is open. `app/src/lib/library/achievements.ts`: types, `loadAchievements(app)`, the filter, and date/percent formatting.
+- **README** "What is sent, and to whom": a row for `launcher.store.epicgames.com` ("a game's achievements and which ones you unlocked, when you open its page; your sign-in and account ID are sent").
+
+### Tests
+- **Rust:** `merge` with captured-shape JSON: counts, unlocked from rows with `unlocked: true` only, hidden-locked replaced, sort order, null game record, null player records; client sends both queries with the bearer header and namespace (wiremock); an HTTP error and `errors` in the reply → error.
+- **UI (vitest):** clicking the cover opens the page and ← Library goes back; the page shows the card's buttons; filter All/Unlocked/Locked; empty texts; error + Try again; "no achievements" text; date and % formatting.
+- **By hand:** open Rocket League's page: 63 / 88, filter works, icons show; Play from the page; a not-installed game's page shows Install; a game without achievements.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

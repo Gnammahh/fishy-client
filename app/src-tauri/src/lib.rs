@@ -6,6 +6,7 @@ mod login_window;
 mod play;
 mod running;
 mod session;
+mod store_window;
 mod updates;
 
 use fishy_core::auth::{parse_auth_code, AuthManager, AuthState, EpicClient, KeyringStore};
@@ -101,6 +102,7 @@ async fn logout(
     install.prepared.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let state = auth.manager.logout().await;
     let _ = library.cache.clear(); // the saved game list goes too (spec §6b)
+    store_window::sign_out(&app); // and the Store window's sign-in (spec §6o)
     info!("logged out");
     auth.set(state.clone()).await;
     Ok(state)
@@ -110,6 +112,13 @@ async fn logout(
 pub struct AppLibrary {
     client: LibraryClient,
     cache: LibraryCache,
+}
+
+impl AppLibrary {
+    /// The catalog item IDs of the saved Library, for "In your Library" in the Store (spec §6o).
+    pub fn catalog_item_ids(&self) -> std::collections::HashSet<String> {
+        self.cache.load().map(|c| c.games.into_iter().map(|g| g.catalog_item_id).collect()).unwrap_or_default()
+    }
 }
 
 const LIBRARY_ERROR: &str = "Couldn't load your library from Epic. Check your internet, then press Try again.";
@@ -519,6 +528,7 @@ pub fn run() {
             });
             app.manage(play::AppLaunch::new());
             app.manage(running::AppRunning::default());
+            app.manage(store_window::AppStore::new());
             let settings = updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() };
             // The saved speed limit applies from the first download, not only after a change.
             app.state::<AppInstall>().downloads.limiter.set(fishy_core::install::limit::limit_bytes(&settings.store.load()));
@@ -537,6 +547,8 @@ pub fn run() {
             start_login,
             submit_code,
             logout,
+            store_window::store_free_games,
+            store_window::store_open,
             open_login_in_browser,
             library_cached,
             library_refresh,

@@ -2,7 +2,7 @@
   import "$lib/theme.css";
   import OceanBackground from "$lib/ocean/OceanBackground.svelte";
   import { onMount, type Snippet } from "svelte";
-  import { syncMotionAttribute } from "$lib/motion";
+  import { syncMotionAttribute, syncPausedAttribute, watchMinimized } from "$lib/motion";
   import CrashBoundary from "$lib/crash/CrashBoundary.svelte";
   import { installGlobalHandlers } from "$lib/crash/crash";
 
@@ -10,6 +10,9 @@
 
   // CSS-only animations (ocean, sidebar fish) follow the Reduce motion setting through this attribute.
   onMount(() => syncMotionAttribute());
+  // They also pause while minimized or while a game runs, to stay light (spec §6r).
+  onMount(() => syncPausedAttribute());
+  onMount(() => watchMinimized());
   // Errors that don't break a screen still go to the log (spec §6f.2).
   onMount(() => installGlobalHandlers());
 </script>

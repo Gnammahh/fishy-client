@@ -607,6 +607,10 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.app_handle().exit(0);
             }
+            // Minimize and restore both change the size: the page pauses its animations (spec §6r).
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Resized(_)) {
+                let _ = window.emit("window-minimized", window.is_minimized().unwrap_or(false));
+            }
         })
         .invoke_handler(tauri::generate_handler![
             auth_state,

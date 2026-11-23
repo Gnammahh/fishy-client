@@ -111,6 +111,10 @@
   :global(html[data-reduce-motion]) .drifter {
     animation-play-state: paused;
   }
+  /* Minimized or a game running: paused to save CPU (spec §6r). */
+  :global(html[data-paused]) .drifter {
+    animation-play-state: paused;
+  }
   .brand {
     display: flex;
     align-items: center;

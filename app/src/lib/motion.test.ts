@@ -80,3 +80,22 @@ describe("reducedMotion", () => {
     stop();
   });
 });
+
+describe("paused animations (spec §6r)", () => {
+  it("data_paused_follows_minimized_and_running_games", async () => {
+    const { syncPausedAttribute, minimized } = await import("./motion");
+    const { running } = await import("./install/installs");
+    const html = document.createElement("html");
+    const stop = syncPausedAttribute(html);
+    expect(html.hasAttribute("data-paused")).toBe(false);
+    minimized.set(true);
+    expect(html.hasAttribute("data-paused")).toBe(true);
+    minimized.set(false);
+    expect(html.hasAttribute("data-paused")).toBe(false);
+    running.set(["KelpRunner"]);
+    expect(html.hasAttribute("data-paused")).toBe(true);
+    running.set([]);
+    expect(html.hasAttribute("data-paused")).toBe(false);
+    stop();
+  });
+});

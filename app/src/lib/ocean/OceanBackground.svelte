@@ -79,4 +79,8 @@
   :global(html[data-reduce-motion]) .layer {
     animation: none !important;
   }
+  /* Minimized or a game running: frozen where they are, to save CPU (spec §6r). */
+  :global(html[data-paused]) .layer {
+    animation-play-state: paused;
+  }
 </style>

@@ -98,7 +98,7 @@ impl InstallClient {
                 401 => InstallError::Rejected(code),
                 _ if code.contains("token") => InstallError::Rejected(code),
                 // Not owned, no Windows build, ...: signing in again won't help.
-                _ => InstallError::BadManifest(code),
+                _ => InstallError::BadManifest("refused by Epic".into()),
             },
             other => other.into(),
         })?;
@@ -313,6 +313,11 @@ mod tests {
         // Seen for real (Bendy and the Ink Machine, 2026-11-21): a library entry with no Windows build.
         let none = serde_json::json!({"errorCode": "errors.com.epicgames.launcher.download_info_not_found"});
         assert_eq!(status_of(ResponseTemplate::new(404).set_body_json(none)).await, Err(InstallError::NoDownload));
+        // Epic's own code never reaches the error, so it can't reach the log either (spec §12).
+        let not_owned = serde_json::json!({"errorCode": "errors.com.epicgames.launcher.not_entitled"});
+        let refused = status_of(ResponseTemplate::new(403).set_body_json(not_owned)).await.unwrap_err();
+        assert_eq!(refused, InstallError::BadManifest("refused by Epic".into()));
+        assert!(!refused.log_reason().contains("errors.com"));
         let busy = serde_json::json!({"errorCode": "errors.com.epicgames.common.server_error"});
         assert!(matches!(status_of(ResponseTemplate::new(503).set_body_json(busy)).await, Err(InstallError::Network(_))));
     }

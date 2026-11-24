@@ -413,7 +413,7 @@ mod tests {
             if let Some(d) = delay {
                 res = res.set_delay(d);
             }
-            let mock = Mock::given(method("GET")).and(path(format!("/base/{}", chunk_path("ChunksV4", info)))).respond_with(res);
+            let mock = Mock::given(method("GET")).and(path(format!("/base/{}", chunk_path(f.manifest.chunk_dir(), info)))).respond_with(res);
             let mock = match expect {
                 Some((idx, n)) if idx == i => mock.expect(n),
                 _ => mock,
@@ -476,6 +476,22 @@ mod tests {
         }
         let finished = e.store.finished_files(&e.job);
         assert_eq!(finished.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_level_24_game_downloads_from_chunks_v5_plain() {
+        // Agent A (2026-11-24): the server only has the pieces at ChunksV5/plain/... addresses.
+        let server = MockServer::start().await;
+        let mut f = basic();
+        f.manifest.meta.feature_level = 24;
+        serve(&server, &f, None, None).await;
+        let e = env(&server, &f);
+        run_download(&e.client, &e.store, &e.job, &f.manifest, CancellationToken::new(), |_| {}).await.unwrap();
+        for (name, content) in &f.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+        let asked: Vec<String> = server.received_requests().await.unwrap().iter().map(|r| r.url.path().to_string()).collect();
+        assert!(!asked.is_empty() && asked.iter().all(|p| p.starts_with("/base/ChunksV5/plain/")), "{asked:?}");
     }
 
     #[tokio::test]

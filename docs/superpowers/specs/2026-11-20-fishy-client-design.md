@@ -1512,15 +1512,21 @@ Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "
 
 **Version 1.9.1 (2026-11-23):** the title bar is solid black (the user's choice); a game started from its desktop shortcut no longer gives Fishy Client's taskbar button the game's icon (Fishy sets its Windows app ID, `com.fishyclient.app`, before any window opens); the notes say each game decides whether it understands launch options. **Tests now:** Rust 461, UI 279.
 
-### Still to check by hand (version 1.9.0 / 1.9.1)
+**Version 1.9.2 (2026-11-24):** Update now re-checks that the update it's about to install is newer than the running version (from an outside review; the updater plugin already refuses older ones by default). The README now covers Store payment pop-ups, the files 1.9 saves and game shortcuts, and labels its benchmark as 1.0.0.
+
+**Version 1.9.3 (2026-11-24):** found with Agent A ("download format Fishy Client can't install yet"): its file list is feature level 24, not encrypted. Levels 22 to 24 are now read, and their chunks are fetched from `ChunksV5/plain/<group>/<base64 hash>_<base64 guid>.chunk` (checked against Epic's four CDNs; Agent A then downloaded 560 MB and started). Encrypted chunks refuse the game in the Install box. The Install box now logs why it refused a game (never Epic's text). A fresh review found Epic's error code could reach that log line; fixed. Deferred from that review: an unknown chunk format would show "damaged" only after retries; the secret-guid read isn't bounded by its section; repeated parser warnings when importing encrypted Epic games. **Tests now:** Rust 469, UI 279.
+
+### Still to check by hand (version 1.9.0 to 1.9.3)
+- [x] Self-update 1.9.1 → 1.9.2 with the new version check (2026-11-24)
+- [x] Agent A (level 24) installs and starts with the 1.9.3 fix (2026-11-24)
 - [x] Open Manage from a card; the box sits below the title bar; choices (priority, launch options) stayed after closing and reopening (2026-11-23)
 - [x] A desktop shortcut started Rocket League with Fishy Client closed (2026-11-23); it showed the game's icon on Fishy's taskbar button, fixed in 1.9.1
-- [ ] 1.9.1: the taskbar keeps Fishy's icon when a shortcut starts it; the title bar is solid
-- [ ] Shortcut with Fishy Client already open; Remove deletes both icons
+- [x] 1.9.1: the taskbar keeps Fishy's icon when a shortcut starts it; the title bar is solid (2026-11-24)
+- [x] Shortcut with Fishy Client already open; Remove deletes the icons (2026-11-24)
 - [x] Verify a small game: "All files are fine." (2026-11-23)
-- [ ] Delete one file of a small game, Verify: "1 file is missing or damaged" → Download them repairs it
+- [x] Delete a file of a small game, Verify finds it → Download them repairs it (2026-11-24)
 - [x] Launch options reach the game: Bendy and the Ink Machine got `-windowed` (2026-11-23) but, being a Unity game, ignored it (and `-screen-fullscreen 0`); the user chose to ship with a note instead
-- [ ] A priority game jumps the waiting list; Start now → Pause, and → Download both
+- [x] Start now → Download both: two downloads at once (2026-11-24); priority is covered by automated tests only
 
 ### Still to check by hand (version 1.6.0)
 - [x] The installed 1.5.1 updates itself to 1.6.0; Open game folder opens the game's folder in Explorer (2026-11-24)

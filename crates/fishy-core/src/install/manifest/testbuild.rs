@@ -10,6 +10,8 @@ pub struct BuildOpts {
     pub meta_padding: usize,
     pub stored_as: Option<u8>,
     pub magic: Option<u32>,
+    /// Level 22+: give the first chunk a secret guid (an encrypted chunk).
+    pub secret_chunk: bool,
 }
 
 pub fn fstring(out: &mut Vec<u8>, s: &str) {
@@ -73,7 +75,9 @@ pub fn build_with(m: &Manifest, opts: BuildOpts) -> Vec<u8> {
     m.chunks.iter().for_each(|c| cdl.extend((c.file_size as i64).to_le_bytes()));
     if m.meta.feature_level >= 22 {
         // Version 22+ columns (Legendary CDL): secret guid, compressed window size, encryption tag.
-        m.chunks.iter().for_each(|_| cdl.extend([0u8; 16]));
+        for (i, _) in m.chunks.iter().enumerate() {
+            cdl.extend(if opts.secret_chunk && i == 0 { [7u8; 16] } else { [0u8; 16] });
+        }
         m.chunks.iter().for_each(|c| cdl.extend(c.window_size.to_le_bytes()));
         m.chunks.iter().for_each(|_| cdl.extend([0u8; 16]));
     }

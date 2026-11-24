@@ -358,7 +358,7 @@ Launch and Updates are later milestones and are left out here.
   - Sections follow, each starting with its own byte size: Meta, Chunk list, File list, Custom fields. The reader always skips to `start + size`, so unknown newer fields are ignored.
   - The full field layout is in `crates/fishy-core/src/install/manifest/binary.rs` comments.
 - **JSON format:** numbers are "blobs" (each 3-digit decimal group is one byte, little-endian), and GUIDs are 32 hex characters read as four big-endian u32.
-- **Not supported:** encrypted manifests or chunks (the `stored_as` encrypted flag), and feature levels above 24. Levels 22 to 24 without encryption are read since 2026-11-24 (found with Agent A, level 24): a longer header and extra chunk columns, skipped by their stated sizes, and chunks under `ChunksV5`. These show "This game uses a download format Fishy Client can't install yet."
+- **Not supported:** encrypted manifests or chunks (the `stored_as` encrypted flag), and feature levels above 24. Levels 22 to 24 without encryption are read since 2026-11-24 (found with Agent A, level 24): a longer header and extra chunk columns, skipped by their stated sizes, and chunks under `ChunksV5/plain/NN/<hash>_<guid>.chunk`, hash and guid as unpadded url-safe base64 of their little-endian bytes (Legendary `ChunkInfo.path`; checked against Epic's servers). A chunk with a secret guid is encrypted, so the Install box refuses the game up front. These show "This game uses a download format Fishy Client can't install yet."
 
 ### Chunk files (ported from Legendary `models/chunk.py`)
 - Header: magic `0xB1FE3AA2`, header version, header size, compressed size, guid, rolling hash, stored-as; from v2, SHA-1 and hash type; from v3, uncompressed size.

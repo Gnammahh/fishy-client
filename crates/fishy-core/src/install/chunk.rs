@@ -10,8 +10,16 @@ use super::InstallError;
 use sha1::{Digest, Sha1};
 use std::io::Read;
 
-/// Where a chunk lives under the CDN base URL.
+/// Where a chunk lives under the CDN base URL (Legendary `ChunkInfo.path`). Level 22+
+/// (`ChunksV5`): `plain/` (we only download unencrypted chunks), then the hash and guid as
+/// unpadded url-safe base64 of their little-endian bytes. Older: hex.
 pub fn chunk_path(dir: &str, c: &ChunkInfo) -> String {
+    if dir == "ChunksV5" {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        let guid: Vec<u8> = c.guid.iter().flat_map(|w| w.to_le_bytes()).collect();
+        return format!("{dir}/plain/{:02}/{}_{}.chunk", c.group, URL_SAFE_NO_PAD.encode(c.hash.to_le_bytes()), URL_SAFE_NO_PAD.encode(guid));
+    }
     let [a, b, d, e] = c.guid;
     format!("{dir}/{:02}/{:016X}_{a:08X}{b:08X}{d:08X}{e:08X}.chunk", c.group, c.hash)
 }
@@ -106,6 +114,14 @@ mod tests {
     fn chunk_path_format() {
         let c = ChunkInfo { guid: [0x1, 0xABCDEF, 0, 0xFFFF_FFFF], hash: 0x1A2B, sha1: [0; 20], group: 7, window_size: 0, file_size: 0 };
         assert_eq!(chunk_path("ChunksV4", &c), "ChunksV4/07/0000000000001A2B_0000000100ABCDEF00000000FFFFFFFF.chunk");
+    }
+
+    #[test]
+    fn chunk_path_for_level_22_and_up() {
+        // Checked against Epic's servers with Agent A (2026-11-24): an unencrypted chunk lives
+        // under "plain", hash and guid as unpadded url-safe base64 of their little-endian bytes.
+        let c = ChunkInfo { guid: [0x1, 0xABCDEF, 0, 0xFFFF_FFFF], hash: 0x1A2B, sha1: [0; 20], group: 7, window_size: 0, file_size: 0 };
+        assert_eq!(chunk_path("ChunksV5", &c), "ChunksV5/plain/07/KxoAAAAAAAA_AQAAAO_NqwAAAAAA_____w.chunk");
     }
 
     #[test]

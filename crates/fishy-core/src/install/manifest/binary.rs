@@ -66,7 +66,7 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
         tracing::warn!("manifest: feature level {} not supported (binary)", meta.feature_level);
         return Err(InstallError::Unsupported);
     }
-    let chunks = read_chunks(&mut r)?;
+    let chunks = read_chunks(&mut r, meta.feature_level)?;
     let files = read_files(&mut r)?;
     Ok(Manifest::new(meta, chunks, files))
 }
@@ -108,7 +108,7 @@ fn count(r: &mut Reader, min_bytes_each: usize) -> Result<usize, InstallError> {
     Ok(n)
 }
 
-fn read_chunks(r: &mut Reader) -> Result<Vec<ChunkInfo>, InstallError> {
+fn read_chunks(r: &mut Reader, feature_level: u32) -> Result<Vec<ChunkInfo>, InstallError> {
     section(r, |r| {
         let n = count(r, 16 + 8 + 20 + 1 + 4 + 8)?;
         let guids = (0..n).map(|_| r.guid()).collect::<Result<Vec<_>, _>>()?;
@@ -117,6 +117,15 @@ fn read_chunks(r: &mut Reader) -> Result<Vec<ChunkInfo>, InstallError> {
         let groups = (0..n).map(|_| r.u8()).collect::<Result<Vec<_>, _>>()?;
         let windows = (0..n).map(|_| r.u32()).collect::<Result<Vec<_>, _>>()?;
         let sizes = (0..n).map(|_| r.i64()).collect::<Result<Vec<_>, _>>()?;
+        // Level 22+: a chunk with a secret guid is encrypted; we can't decrypt it, so say so now
+        // rather than failing mid-download. The other new columns are skipped.
+        if feature_level >= 22 {
+            let secrets = r.bytes(16 * n)?;
+            if secrets.iter().any(|&b| b != 0) {
+                tracing::warn!("manifest: encrypted chunks");
+                return Err(InstallError::Unsupported);
+            }
+        }
         Ok((0..n)
             .map(|i| ChunkInfo {
                 guid: guids[i],
@@ -233,6 +242,14 @@ mod tests {
             m.meta.feature_level = level;
             assert_eq!(parse_manifest(&build_binary(&m, true)).unwrap(), m, "level {level}");
         }
+    }
+
+    #[test]
+    fn a_level_24_list_with_an_encrypted_chunk_is_unsupported() {
+        let mut m = sample();
+        m.meta.feature_level = 24;
+        let bytes = build_with(&m, BuildOpts { compress: true, secret_chunk: true, ..Default::default() });
+        assert_eq!(parse_manifest(&bytes), Err(InstallError::Unsupported));
     }
 
     #[test]

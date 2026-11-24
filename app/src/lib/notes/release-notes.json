@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.9.3",
+    "date": "2026-11-24",
+    "items": [
+      "Newer Epic games now install: games whose download uses Epic's newer format (like Agent A) no longer say \"This game uses a download format Fishy Client can't install yet.\"",
+      "Encrypted games still can't be installed; Fishy Client now says so right away instead of getting stuck at 0%."
+    ]
+  },
+  {
     "version": "1.9.2",
     "date": "2026-11-24",
     "items": [

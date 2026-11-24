@@ -1,6 +1,6 @@
 [package]
 name = "fishy-client"
-version = "1.9.2"
+version = "1.9.3"
 description = "Fishy Client, a lightweight Epic Games launcher"
 authors = ["Fishy Client contributors"]
 license = "GPL-3.0-or-later"

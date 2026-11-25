@@ -24,7 +24,9 @@ Most of Fishy Client's memory is Microsoft WebView2, which draws the window. Num
 
 Download `Fishy Client_<version>_x64_en-US.msi` and double-click it. It installs to `C:\Program Files\Fishy Client\` with a Start menu shortcut.
 
-The installer isn't code-signed yet, so Windows may say "Windows protected your PC". Click **More info → Run anyway**.
+**"Windows protected your PC":** Windows (SmartScreen) will probably show this when you open the installer. It appears because the installer isn't code-signed yet: that needs a certificate this free hobby project doesn't have, and Windows warns about any new program it hasn't seen many people run. It doesn't mean a virus was found. If you downloaded the file from this project's [Releases page](https://github.com/Gnammahh/fishy-client/releases), click **More info**, then **Run anyway**. If you got it anywhere else, don't run it.
+
+Updates don't show this prompt again: Fishy Client checks each update's signature itself (see [Privacy](#privacy)).
 
 Uninstalling (Settings → Apps → Installed apps) removes the program but keeps your games, settings and sign-in. To remove those too, use **Settings → Delete all my data** in Fishy Client first.
 
@@ -67,7 +69,7 @@ This page is not legal advice. If you're unsure, read [Epic's terms](https://www
 
 ## Privacy
 
-Fishy Client has **no telemetry, analytics or tracking**, and no server of its own. Nothing about you is sent to the people who make it.
+**In short:** Fishy Client talks only to **Epic** (to sign you in, list, download and start your games) and to **GitHub** (to check for its own updates). It has **no telemetry, analytics or tracking**, and no server of its own. Nothing about you is sent to the people who make it.
 
 ### Signing in
 - You sign in on **Epic's own login page**, in a private app window. Your password goes to Epic only; Fishy Client never sees it.
@@ -111,7 +113,7 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 | `%LOCALAPPDATA%\com.fishyclient.app\` | the app window's own browser cache (for example cover images), made by Microsoft WebView2 |
 | the Registry `Run` key | only if you turn on **Start with Windows** |
 
-**Logs** never contain your tokens, sign-in codes, Epic's error messages, account ID, email or name, and a filter masks anything secret-looking as a second safety net. They do contain file paths, which can include your Windows user name (for example `C:\Users\you\Games\…`). Logs never leave your PC.
+**Logs** never contain your tokens, sign-in codes, Epic's error messages, account ID, email or name, and a filter masks anything secret-looking as a second safety net. They do contain file paths, but your user folder is written as `%USERPROFILE%` (for example `%USERPROFILE%\Games\…` instead of `C:\Users\you\Games\…`), so your Windows user name isn't in them. Logs never leave your PC.
 
 **Running games:** after you press Play, Fishy Client checks every 5 seconds which programs are open, so it can show "Running". It only compares their file paths with the game's folder, in memory. They are never logged, saved or sent. The check stops when the game closes.
 
@@ -138,6 +140,8 @@ npm.cmd run tauri build   # builds the .msi into target\release\bundle\msi\
 ```powershell
 cargo test --workspace   # Rust tests (from the repo root)
 ```
+
+Every push and pull request is checked on GitHub Actions (`.github/workflows/ci.yml`): build, both test suites, `svelte-check`, and a scan of Rust and npm dependencies for known vulnerabilities. Releases are still built and signed on the maintainer's PC ([docs/RELEASING.md](docs/RELEASING.md)).
 
 The full design and progress log is in [docs/superpowers/specs/2026-11-20-fishy-client-design.md](docs/superpowers/specs/2026-11-20-fishy-client-design.md).
 

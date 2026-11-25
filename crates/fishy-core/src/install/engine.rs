@@ -206,7 +206,7 @@ pub async fn run_job(
     opts: RunOptions,
 ) -> Result<(), InstallError> {
     // An update builds its files aside and moves them in at the end, so it can be cancelled
-    // (spec §6u). One begun in place before 1.10.0 carries on in place.
+    // (spec §6u). One begun in place before 1.9.5 carries on in place.
     let aside = old.is_some() && (store.builds_aside(&job.app_name) || store.finished_names(job).is_empty());
     let aside_root = super::uninstall::aside_dir(&job.install_path, &job.app_name);
     let finished = if aside {
@@ -376,7 +376,7 @@ pub async fn run_job(
                 std::fs::create_dir_all(parent).map_err(io_err)?;
             }
             std::fs::rename(&from, &target).map_err(|e| swap_error(&job.install_path, &job.title, e))?;
-            // A half-written temp file an in-place update (before 1.10.0) left next to it.
+            // A half-written temp file an in-place update (before 1.9.5) left next to it.
             let _ = std::fs::remove_file(temp_path(&target));
         }
         super::uninstall::delete_aside(&job.install_path, &job.app_name);

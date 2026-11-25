@@ -1,10 +1,10 @@
 [
   {
-    "version": "1.10.0",
+    "version": "1.9.5",
     "date": "2026-11-25",
     "items": [
       "Updates can now be cancelled: an update gets ready on the side and only goes into the game at the very end, so Cancel leaves your game exactly as it was.",
-      "An update that started before 1.10.0 and already changed some files can still only be paused or finished.",
+      "An update that started before 1.9.5 and already changed some files can still only be paused or finished.",
       "Don't want Fortnite's Save the World or LEGO Fortnite? Open Fortnite's Manage box and remove them under Extra content. Their files are deleted and Fishy Client stops updating them.",
       "Updates now need room on the disk for every file they change, like Epic's launcher. If there isn't enough, Fishy Client says so before downloading."
     ]

@@ -223,7 +223,7 @@ impl InstallStore {
     }
 
     /// The update builds its files aside (spec §6u). Recorded when it starts that way, so a
-    /// resume keeps doing it; updates begun in place before 1.10.0 have no record.
+    /// resume keeps doing it; updates begun in place before 1.9.5 have no record.
     pub fn builds_aside(&self, app: &str) -> bool {
         self.job_dir(app).is_ok_and(|d| d.join("aside").is_file())
     }

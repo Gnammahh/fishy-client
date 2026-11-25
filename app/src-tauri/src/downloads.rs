@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 /// Removing a piece while its game downloads (spec §6u).
 pub const PIECE_BUSY: &str = "Pause the game's downloads first, then remove it.";
 
-/// An update begun in place before 1.10.0 that already changed files (spec §6u).
+/// An update begun in place before 1.9.5 that already changed files (spec §6u).
 pub const UPDATE_IN_PLACE: &str = "This update already changed some files, so it can't be cancelled. Pause it or let it finish.";
 
 /// After a run ends with Cancel pressed: whether what it wrote is thrown away. An update that
@@ -1106,7 +1106,7 @@ mod tests {
         u.info.install_path = dir.path().join("game");
         d.lock().jobs.push(u);
         assert_eq!(d.cancel_refusal("u"), None, "nothing written yet");
-        d.store.mark_finished("u", "x", "big.pak").unwrap(); // written in place before 1.10.0
+        d.store.mark_finished("u", "x", "big.pak").unwrap(); // written in place before 1.9.5
         assert_eq!(d.cancel_refusal("u"), Some(UPDATE_IN_PLACE));
         assert_eq!(d.cancel_refusal("none"), None);
     }

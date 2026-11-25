@@ -107,7 +107,10 @@ describe("watchMinimized (spec §6r)", () => {
     delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     const rejections: unknown[] = [];
     const onRejection = (reason: unknown) => rejections.push(reason);
-    process.on("unhandledRejection", onRejection);
+    // Vitest runs on Node, where a promise nobody catches ends up here.
+    type Proc = { on(e: string, f: (r: unknown) => void): void; off(e: string, f: (r: unknown) => void): void };
+    const proc = (globalThis as unknown as { process: Proc }).process;
+    proc.on("unhandledRejection", onRejection);
     try {
       const { watchMinimized } = await import("./motion");
       let stop: (() => void) | undefined;
@@ -116,7 +119,7 @@ describe("watchMinimized (spec §6r)", () => {
       stop?.();
       expect(rejections).toEqual([]);
     } finally {
-      process.off("unhandledRejection", onRejection);
+      proc.off("unhandledRejection", onRejection);
     }
   });
 

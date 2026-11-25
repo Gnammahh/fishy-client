@@ -59,6 +59,7 @@ If Epic's launcher already installed some of your games, the Library shows "3 ga
 
 ### It can stop working
 - Epic can change how its sign-in or downloads work at any time. Signing in, downloading or starting games may then **break until Fishy Client is updated**, and there's no promise when that will be.
+- When that happens, Fishy Client says **"Epic changed something. Update Fishy Client, or check back later."** instead of guessing. Your games and sign-in are kept. Fishy Client offers its own fix as soon as one is released. (For contributors: [docs/EPIC-CHANGES.md](docs/EPIC-CHANGES.md).)
 
 ### Your files and PC
 - **Uninstall** on a game's card, and **Delete all my data** when you also tick your games, **permanently delete those game folders.** Double-check before confirming. (Uninstalling Fishy Client itself keeps your games.)

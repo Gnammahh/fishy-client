@@ -1274,7 +1274,7 @@ Asked for by the user after the 1.9.4 Fortnite update: "why can't I cancel it wh
 - **Cancel** (the ✕ on a Downloads line, as for installs) works on updates too: "Cancel the update? What it downloaded is deleted; *Title* stays at the version you have." Cancel stops it and deletes that folder and the saved progress; the game keeps its version and shows **Update** again.
 - Cancel pressed while the files are being moved into place: the move finishes and the update counts as done (it takes seconds).
 - **Space:** building aside needs room for every changed file at once (as Epic's launcher does). The space check (§6c) counts that; not enough space says so before downloading, as today.
-- **Updates started before 1.9.5** were written in place. One that already changed some files can't be cancelled: "This update already changed some files, so it can't be cancelled. Pause it or let it finish." One that hadn't started writing can be cancelled.
+- **Updates started before 1.9.5** were written in place. One that already changed some files can't be cancelled: Downloads shows no Cancel (or ×) for it, only "This update started before 1.9.5 and already changed some files, so it can only be paused or finished." (found on the user's PC with Fortnite after 1.9.5; the backend still refuses with "This update already changed some files, so it can't be cancelled. Pause it or let it finish."). One that hadn't started writing can be cancelled.
 - Uninstall deletes the game's `.fishy-update` folder too. Resume after a restart keeps what was built aside.
 
 ### Remove a game's extra pieces (Fortnite's LEGO Fortnite and Save the World)

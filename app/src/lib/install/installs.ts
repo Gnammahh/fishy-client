@@ -15,6 +15,8 @@ export type DownloadItem = {
   error: string | null;
   /** An update (spec §6e): can be paused, not cancelled. */
   update?: boolean;
+  /** False for an update that already changed files in place (spec §6u): no Cancel. */
+  can_cancel?: boolean;
 };
 export type DownloadsView = { items: DownloadItem[] };
 export type InstalledGame = {

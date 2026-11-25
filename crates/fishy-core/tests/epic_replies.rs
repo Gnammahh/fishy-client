@@ -170,7 +170,7 @@ async fn downloads_read_epics_download_info_and_file_list() {
     assert_eq!(info.hash, hash, "lower-cased");
     assert_eq!(info.build_version, "1.4.2-CL-2026");
     let base = format!("{}/Builds/Org/o-fixture/tidepool/default", server.uri());
-    assert_eq!(info.base_urls, [base.clone()]);
+    assert_eq!(info.base_urls, std::slice::from_ref(&base));
     assert_eq!(info.urls, [format!("{base}/TidepoolApp.manifest?f_token=exp=1790000000~acl=%2F*~hmac=fixture"), format!("{base}/TidepoolApp.manifest")]);
 
     let bytes = client.download_manifest(&info).await.unwrap();

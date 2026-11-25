@@ -869,7 +869,8 @@ mod tests {
     #[test]
     fn the_page_gets_only_the_tauri_calls_it_uses() {
         // Not `core:default`: that also opens paths, menus, tray, images, resources, webviews and
-        // app info to the page. Events (listen, and onResized) and the title-bar buttons are all.
+        // app info to the page. Events (listen, and onResized) and the title-bar buttons and
+        // double-click are all.
         let cap: serde_json::Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         assert_eq!(cap["windows"], serde_json::json!(["main"]));
         assert_eq!(
@@ -880,6 +881,8 @@ mod tests {
                 "core:window:allow-is-maximized",
                 "core:window:allow-minimize",
                 "core:window:allow-toggle-maximize",
+                // Double-clicking the title bar (`data-tauri-drag-region`) uses its own command.
+                "core:window:allow-internal-toggle-maximize",
                 "core:window:allow-close",
                 "core:window:allow-start-dragging"
             ])

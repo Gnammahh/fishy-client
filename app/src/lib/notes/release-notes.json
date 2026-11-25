@@ -1,5 +1,17 @@
 [
   {
+    "version": "2.0.0",
+    "date": "2026-11-25",
+    "items": [
+      "Fishy Client 2.0 has no new features. It's about privacy, safety, and handling Epic's changes clearly.",
+      "If Epic changes something Fishy Client relies on, it now says \"Epic changed something. Update Fishy Client, or check back later.\" It no longer shows an empty Library, games without names, or a misleading error. Your games and sign-in are kept.",
+      "Logs no longer contain your Windows user name: your user folder is written as %USERPROFILE%.",
+      "The Fishy Client window is now only allowed to do what it actually needs.",
+      "Downloads no longer shows Cancel on an update that started before 1.9.5 and already changed some files.",
+      "Behind the scenes: every change is now built and tested automatically, and the libraries Fishy Client uses are checked for known security problems."
+    ]
+  },
+  {
     "version": "1.9.5",
     "date": "2026-11-25",
     "items": [

@@ -10,8 +10,9 @@ pub enum AuthError {
     /// Epic answered with an error. `code` is Epic's errorCode (e.g. `…authorization_code_not_found`).
     #[error("That sign-in didn't work. Please try again.")]
     Rejected { code: String },
-    /// Epic answered with something we couldn't understand.
-    #[error("Epic sent a reply Fishy Client didn't understand. Try again in a few minutes.")]
+    /// Epic answered with something we couldn't understand: usually Epic changed how it works
+    /// (docs/EPIC-CHANGES.md). The detail is Fishy Client's own parser text, for tests only.
+    #[error("{}", crate::epic::CHANGED_MESSAGE)]
     Unexpected(String),
     /// Windows Credential Manager refused to store the session.
     #[error("Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again.")]
@@ -27,7 +28,7 @@ mod tests {
 
     #[test]
     fn messages_say_what_to_do_next() {
-        assert_eq!(AuthError::Unexpected("x".into()).to_string(), "Epic sent a reply Fishy Client didn't understand. Try again in a few minutes.");
+        assert_eq!(AuthError::Unexpected("x".into()).to_string(), "Epic changed something. Update Fishy Client, or check back later.");
         assert_eq!(
             AuthError::Storage("x".into()).to_string(),
             "Couldn't save your sign-in to Windows Credential Manager. Restart Fishy Client and sign in again."

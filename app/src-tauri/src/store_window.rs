@@ -9,6 +9,14 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Windo
 
 pub const LABEL: &str = "epic-store";
 const LOAD_ERROR: &str = "Couldn't load the free games. Check your internet, then press Try again.";
+
+/// What the Store page says when the free games list can't be shown.
+fn load_error(e: fishy_core::store::StoreError) -> &'static str {
+    match e {
+        fishy_core::store::StoreError::Network => LOAD_ERROR,
+        fishy_core::store::StoreError::Format => fishy_core::epic::CHANGED_MESSAGE,
+    }
+}
 /// How long the free games list is kept before it's asked for again.
 const KEEP: Duration = Duration::from_secs(10 * 60);
 
@@ -45,18 +53,18 @@ pub async fn store_free_games(force: bool, store: tauri::State<'_, AppStore>, li
     let bytes = match kept {
         Some((_, b)) => b,
         None => {
-            let b = store.client.free_games_json().await.map_err(|_| {
+            let b = store.client.free_games_json().await.map_err(|e| {
                 tracing::warn!("store: couldn't load the free games");
-                LOAD_ERROR.to_string()
+                load_error(e).to_string()
             })?;
             *store.saved.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), b.clone()));
             b
         }
     };
     let owned = library.owned();
-    let games = parse_free_games(&bytes, fishy_core::chrono::Utc::now(), &owned).map_err(|_| {
-        tracing::warn!("store: couldn't load the free games");
-        LOAD_ERROR.to_string()
+    let games = parse_free_games(&bytes, fishy_core::chrono::Utc::now(), &owned).map_err(|e| {
+        tracing::warn!("store: Epic's free games list wasn't in the expected shape");
+        load_error(e).to_string()
     })?;
     tracing::info!("store: free games loaded ({} now, {} next)", games.now.len(), games.next.len());
     Ok(games)
@@ -127,6 +135,13 @@ pub fn sign_out(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_free_games_list_epic_changed_says_so() {
+        use fishy_core::store::StoreError;
+        assert_eq!(load_error(StoreError::Format), "Epic changed something. Update Fishy Client, or check back later.");
+        assert_eq!(load_error(StoreError::Network), "Couldn't load the free games. Check your internet, then press Try again.");
+    }
 
     #[test]
     fn a_close_by_log_out_is_not_announced() {

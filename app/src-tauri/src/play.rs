@@ -28,7 +28,7 @@ impl AppLaunch {
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct PlayError {
     message: String,
-    /// Show "Play offline" (Epic unreachable and the game may run offline).
+    /// Show "Play offline" (Epic unreachable or changed, and the game may run offline).
     can_offline: bool,
     /// The sign-in is gone: the UI goes back to Login.
     signed_out: bool,
@@ -37,7 +37,7 @@ pub struct PlayError {
 fn play_error(e: LaunchError, title: &str, game_can_run_offline: bool) -> PlayError {
     PlayError {
         message: e.user_message(title),
-        can_offline: e == LaunchError::Network && game_can_run_offline,
+        can_offline: matches!(e, LaunchError::Network | LaunchError::EpicChanged) && game_can_run_offline,
         signed_out: e == LaunchError::SignedOut,
     }
 }
@@ -45,7 +45,8 @@ fn play_error(e: LaunchError, title: &str, game_can_run_offline: bool) -> PlayEr
 /// Refreshing the session failed: no internet, or the sign-in is no longer valid.
 fn session_error(e: AuthError) -> LaunchError {
     match e {
-        AuthError::Network(_) | AuthError::Unexpected(_) => LaunchError::Network,
+        AuthError::Network(_) => LaunchError::Network,
+        AuthError::Unexpected(_) => LaunchError::EpicChanged,
         AuthError::Rejected { .. } | AuthError::Storage(_) | AuthError::Expired => LaunchError::SignedOut,
     }
 }
@@ -166,5 +167,13 @@ mod tests {
         let e = play_error(session_error(AuthError::Network("dns".into())), "Reef", true);
         assert!(!e.signed_out && e.can_offline);
         assert_eq!(e.message, "Couldn't reach Epic to sign the game in. Check your internet.");
+    }
+
+    #[test]
+    fn a_reply_epic_changed_says_so_and_still_offers_offline_play() {
+        let e = play_error(session_error(AuthError::Unexpected("x".into())), "Reef", true);
+        assert_eq!(e.message, "Epic changed something. Update Fishy Client, or check back later.");
+        assert!(e.can_offline && !e.signed_out);
+        assert!(!play_error(LaunchError::EpicChanged, "Reef", false).can_offline);
     }
 }

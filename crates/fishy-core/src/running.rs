@@ -133,11 +133,10 @@ mod windows_programs {
             entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
             let mut more = Process32FirstW(snap, &mut entry) != 0;
             while more {
-                if entry.cntThreads > 0 && entry.th32ProcessID != 0 {
-                    if let Some(p) = path_of(entry.th32ProcessID) {
+                if entry.cntThreads > 0 && entry.th32ProcessID != 0
+                    && let Some(p) = path_of(entry.th32ProcessID) {
                         out.push(p);
                     }
-                }
                 more = Process32NextW(snap, &mut entry) != 0;
             }
             CloseHandle(snap);

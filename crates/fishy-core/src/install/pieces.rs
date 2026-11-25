@@ -82,13 +82,12 @@ pub fn remove_piece(store: &InstallStore, app: &str) -> Result<Removed, InstallE
     store.forget_installed(app).map_err(io)?;
     store.set_parts(&game_name, plan.game_parts.clone()).map_err(io)?;
     // The game's waiting update no longer fetches the piece's part names either.
-    if let Some(mut job) = store.pending_jobs().into_iter().find(|j| j.app_name == game_name) {
-        if let Some(p) = job.parts.as_mut() {
+    if let Some(mut job) = store.pending_jobs().into_iter().find(|j| j.app_name == game_name)
+        && let Some(p) = job.parts.as_mut() {
             p.retain(|t| !part_names.contains(t));
             let bytes = store.job_manifest(&game_name).map_err(io)?;
             store.save_job(&job, &bytes).map_err(io)?;
         }
-    }
     tracing::info!("piece removed ({} files deleted)", plan.delete.len());
     Ok(Removed { game: game_name, files: plan.delete.len(), part_names })
 }

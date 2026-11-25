@@ -188,8 +188,8 @@ mod tests {
         let w = buf.clone();
         let sub = tracing_subscriber::fmt().with_ansi(false).with_writer(move || w.clone()).finish();
         tracing::subscriber::with_default(sub, f);
-        let text = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
-        text
+        
+        String::from_utf8(buf.0.lock().unwrap().clone()).unwrap()
     }
 
     #[test]

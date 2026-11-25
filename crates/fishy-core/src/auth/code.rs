@@ -22,11 +22,10 @@ pub fn parse_auth_code(input: &str) -> Option<String> {
         return Some(trimmed.to_string());
     }
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(input.trim()) {
-        if let Some(code) = json.get("authorizationCode").and_then(|v| v.as_str()).map(str::trim) {
-            if is_code(code) {
+        if let Some(code) = json.get("authorizationCode").and_then(|v| v.as_str()).map(str::trim)
+            && is_code(code) {
                 return Some(code.to_string());
             }
-        }
         return json.get("redirectUrl").and_then(|v| v.as_str()).and_then(code_in_url);
     }
     code_in_url(trimmed)

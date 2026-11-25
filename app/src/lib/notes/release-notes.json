@@ -1,5 +1,14 @@
 [
   {
+    "version": "2.0.1",
+    "date": "2026-11-25",
+    "items": [
+      "Game cards no longer overlap at some window sizes: when Play, Update and ⋯ don't fit, the last button moves to a second line.",
+      "The \"Update available\" label on a game's cover is easy to read again (black on orange).",
+      "Under the hood: the core of Fishy Client now uses the newest edition of Rust, like the rest of the app."
+    ]
+  },
+  {
     "version": "2.0.0",
     "date": "2026-11-25",
     "items": [

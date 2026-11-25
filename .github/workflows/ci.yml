@@ -1,0 +1,93 @@
+# Checks every push and pull request. It builds and tests only: releases are still built and
+# signed on the maintainer's PC (docs/RELEASING.md), and this workflow uses no secrets.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Rust toolchain
+        run: rustup update stable --no-self-update && rustup default stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install page dependencies
+        run: npm ci --prefix app
+
+      # The Tauri build embeds the built page, so it has to exist before cargo runs.
+      - name: Build the page
+        run: npm run --prefix app build
+
+      - name: Svelte check
+        run: npm run --prefix app check
+
+      - name: Page tests
+        run: npm test --prefix app
+
+      - name: Build (Rust)
+        run: cargo build --workspace --locked
+
+      - name: Rust tests
+        run: cargo test --workspace --locked
+
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: cargo audit (known vulnerabilities in Rust crates)
+        run: cargo audit --file Cargo.lock
+
+      - name: cargo deny (advisories, licenses, sources)
+        run: cargo deny --all-features check
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26"
+
+      # What ships inside the app must have no known vulnerabilities.
+      - name: npm audit (shipped packages)
+        run: npm audit --prefix app --omit=dev
+
+      # Build tools never ship; their findings are listed here but don't fail the check.
+      - name: npm audit (build tools, report only)
+        run: npm audit --prefix app || true

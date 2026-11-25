@@ -1,0 +1,45 @@
+# cargo-deny settings, run by CI (.github/workflows/ci.yml).
+
+[graph]
+# Fishy Client only ships for Windows; Linux/macOS-only crates in Cargo.lock don't matter.
+targets = ["x86_64-pc-windows-msvc"]
+all-features = true
+
+[advisories]
+# Known vulnerabilities always fail. Unmaintained crates fail only when we use them directly.
+unmaintained = "workspace"
+ignore = [
+    # chrono is marked unmaintained (no known vulnerability). Fishy Client uses it for dates in
+    # saved files across fishy-core; replacing it is planned separately, not in a hardening pass.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained only; replacement planned separately" },
+]
+
+[licenses]
+# Licences that can be shipped inside a GPL-3.0-or-later program.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-or-later",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

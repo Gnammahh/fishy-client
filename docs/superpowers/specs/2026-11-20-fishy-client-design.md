@@ -1558,8 +1558,8 @@ Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "
 - **Tests now:** Rust 526 (core 403 + 10 Epic-reply tests, app 108 + 5 signature tests), UI 289. Seen once and not fixed: `a_chunk_that_wont_inflate_logs_its_format_once` can fail when the Rust tests run in parallel (tracing's shared callsite cache); it passed 3 reruns.
 
 ### Still to check by hand (pre-Reddit hardening)
-- [ ] In the built app (`npm.cmd --prefix app run tauri build`, install the MSI): the title bar's minimize, maximize/restore (button and double-click), close and dragging still work, and the restore icon changes when the window is maximized or snapped. A missing permission shows as a button that does nothing.
-- [ ] Downloads, Play, Store and sign-in still update the screen as they go (they use the event permission).
+- [x] Checked 2026-11-25 in `tauri dev` (same permission rules as the built app): the title bar's minimize, maximize/restore (button and double-click), close and dragging still work, and the restore icon changes when the window is maximized or snapped. A missing permission shows as a button that does nothing.
+- [x] Library and Store load, and events reach the page (checked 2026-11-25; one listen permission covers every event). Found and fixed: double-clicking the title bar needs `allow-internal-toggle-maximize`.
 - [ ] Open the logs folder after installing a game: paths show `%USERPROFILE%\…`, not your user name.
 - [ ] After pushing: the CI workflow passes on GitHub (it has never run yet), and Dependabot opens its first pull requests.
 

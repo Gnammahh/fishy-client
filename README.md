@@ -4,6 +4,10 @@ A lightweight, open-source launcher for your Epic Games library, written in Rust
 
 It signs you in, shows your games, installs them, updates them (downloading only what changed) and starts them. Windows 10/11 only.
 
+![Fishy Client's Library: game cards with Install, Play and Update buttons, on a dark sea-themed background](docs/images/library.png)
+
+*The Library, shown in demo mode with made-up games.*
+
 ## How light is it?
 
 **These numbers are from version 1.0.0** and haven't been measured again since. Later versions added the Store, achievements, the Manage box and more, so today's numbers may differ.

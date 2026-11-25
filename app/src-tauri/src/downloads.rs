@@ -69,11 +69,13 @@ pub struct Job {
     priority: bool,
     /// Stopped by Start now → Pause: it waits again instead of pausing.
     requeue: bool,
+    /// An update begun in place before 1.9.5 that already changed files: no Cancel (spec §6u).
+    in_place: bool,
 }
 
 impl Job {
     pub fn new(info: JobInfo, manifest: Arc<Manifest>, state: JobState) -> Self {
-        Self { info, manifest, old: None, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false, priority: false, requeue: false }
+        Self { info, manifest, old: None, state, downloaded: 0, bytes_per_sec: 0.0, error: None, stop: None, cancel_requested: false, priority: false, requeue: false, in_place: false }
     }
 }
 
@@ -94,8 +96,10 @@ pub struct DownloadItem {
     pub total: u64,
     pub bytes_per_sec: f64,
     pub error: Option<String>,
-    /// An update (can be paused, not cancelled).
+    /// An update (spec §6e).
     pub update: bool,
+    /// False for an update that already changed files in place (spec §6u): Cancel isn't offered.
+    pub can_cancel: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -268,6 +272,7 @@ impl Inner {
                     bytes_per_sec: if j.state == JobState::Downloading { j.bytes_per_sec } else { 0.0 },
                     error: j.error.clone(),
                     update: j.info.update_from.is_some(),
+                    can_cancel: !j.in_place,
                 })
                 .collect(),
         }
@@ -751,6 +756,7 @@ fn load_job(store: &InstallStore, info: JobInfo) -> Option<Job> {
             .map(|m| Arc::new(keep_siblings_files(only_parts(m, old_parts.as_deref()), &job.manifest, &siblings)));
     }
     job.downloaded = already_downloaded(store, &job.info, &job.manifest, job.old.as_deref());
+    job.in_place = !fishy_core::install::uninstall::update_can_be_cancelled(store, &job.info);
     // The Priority download switch is kept through a restart (spec §6t).
     job.priority = store.installed().iter().any(|g| g.app_name == job.info.app_name && g.options.priority);
     Some(job)
@@ -1027,6 +1033,27 @@ mod tests {
         let taken: Vec<String> = inner.take_all().into_iter().map(|j| j.app_name).collect();
         assert_eq!(taken, vec!["p", "e"]);
         assert!(inner.jobs.is_empty());
+    }
+
+    #[test]
+    fn an_update_that_changed_files_in_place_shows_it_cant_be_cancelled() {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        for app in ["Old", "New"] {
+            let mut info = job(app, JobState::Paused).info;
+            info.install_path = dir.path().join(app);
+            store.save_job(&info, &build_binary(&sample(), true)).unwrap();
+            store.finish_install(&info, &sample()).unwrap();
+            info.update_from = Some("1.0.0-CL1".into());
+            store.save_job(&info, &build_binary(&sample(), true)).unwrap();
+        }
+        store.mark_finished("Old", "x", "readme.txt").unwrap(); // written in place by 1.9.4
+        let d = Downloads::new(store, InstallClient::new());
+        let v = d.view();
+        let can = |app: &str| v.items.iter().find(|i| i.app_name == app).unwrap().can_cancel;
+        assert!(!can("Old"));
+        assert!(can("New"));
     }
 
     #[test]

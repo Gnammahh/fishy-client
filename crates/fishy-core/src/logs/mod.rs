@@ -133,6 +133,24 @@ mod tests {
     }
 
     #[test]
+    fn a_written_log_never_contains_the_user_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = std::env::var("USERPROFILE").unwrap_or_else(|_| r"C:\Users\FishTester".into());
+        let name = profile.rsplit(['\\', '/']).next().unwrap().to_string();
+        let sub = tracing_subscriber::fmt().with_ansi(false).with_writer(make_writer(dir.path()).unwrap()).finish();
+        tracing::subscriber::with_default(sub, || {
+            tracing::info!(r"install queued for Bad Cheese into {profile}\Games\Bad Cheese");
+            tracing::info!(r"wipe failed: C:\Users\FishTester\AppData\Local\FishyClient");
+            tracing::info!(path = ?std::path::Path::new(&profile).join("Games"), "verify failed");
+        });
+        let file = std::fs::read_dir(dir.path()).unwrap().next().unwrap().unwrap().path();
+        let text = std::fs::read_to_string(file).unwrap();
+        assert!(text.contains(r"%USERPROFILE%\Games\Bad Cheese"), "{text}");
+        assert!(!text.to_lowercase().contains(&name.to_lowercase()), "{text}");
+        assert!(!text.contains("FishTester"), "{text}");
+    }
+
+    #[test]
     fn init_fails_cleanly_when_the_folder_cant_be_made() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("a-file");

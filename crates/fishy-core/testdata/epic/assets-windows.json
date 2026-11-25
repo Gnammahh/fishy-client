@@ -1,0 +1,22 @@
+[
+  {
+    "appName": "TidepoolApp",
+    "labelName": "Live-Windows",
+    "buildVersion": "1.4.2-CL-2026",
+    "catalogItemId": "cat-tide",
+    "namespace": "ns-tide",
+    "metadata": {
+      "installationPoolId": "pool-1"
+    },
+    "assetId": "TidepoolApp"
+  },
+  {
+    "appName": "ReefApp",
+    "labelName": "Live-Windows",
+    "buildVersion": "++Reef+Release-0.9-CL-77",
+    "catalogItemId": "cat-reef",
+    "namespace": "ns-reef",
+    "metadata": {},
+    "assetId": "ReefApp"
+  }
+]

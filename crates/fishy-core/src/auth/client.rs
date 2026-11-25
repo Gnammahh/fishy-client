@@ -2,16 +2,12 @@ use super::{AuthError, Secret, Session};
 use reqwest::{Client, Response};
 use serde_json::Value;
 
-pub const EPIC_ACCOUNT_HOST: &str = "https://account-public-service-prod03.ol.epicgames.com";
-/// The Epic Games Launcher's public OAuth client (same as Legendary/Heroic).
-pub const CLIENT_ID: &str = "34a02cf8f4414e29b15921876da36f9a";
-const CLIENT_SECRET: &str = "daafbccc737745039dffe53d94fc76cf";
-const USER_AGENT: &str = "UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
+use crate::epic::{ACCOUNT_HOST, ACCOUNT_USER_AGENT, CLIENT_ID, CLIENT_SECRET};
 
 /// HTTP client with the launcher User-Agent and a 20 s timeout, shared by all Epic calls.
 pub(crate) fn http_client() -> Client {
     Client::builder()
-        .user_agent(USER_AGENT)
+        .user_agent(ACCOUNT_USER_AGENT)
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .expect("http client")
@@ -38,7 +34,7 @@ impl Default for EpicClient {
 
 impl EpicClient {
     pub fn new() -> Self {
-        Self::with_base_url(EPIC_ACCOUNT_HOST)
+        Self::with_base_url(ACCOUNT_HOST)
     }
 
     /// For tests: point the client at a fake Epic server.

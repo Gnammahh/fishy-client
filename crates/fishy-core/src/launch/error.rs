@@ -18,6 +18,8 @@ pub enum LaunchError {
     ThirdParty(String),
     NotInLibrary,
     NotInstalled,
+    /// Epic replied with something Fishy Client doesn't understand (docs/EPIC-CHANGES.md).
+    EpicChanged,
 }
 
 impl LaunchError {
@@ -32,6 +34,7 @@ impl LaunchError {
             Self::ThirdParty(store) => format!("{title} starts through {store}, which Fishy Client can't do yet."),
             Self::NotInLibrary => "Refresh your Library, then try again.".into(),
             Self::NotInstalled => "That game isn't installed any more. Refresh your Library.".into(),
+            Self::EpicChanged => crate::epic::CHANGED_MESSAGE.into(),
         }
     }
 }
@@ -42,7 +45,8 @@ impl From<AuthError> for LaunchError {
         match e {
             AuthError::Network(_) => Self::Network,
             AuthError::Rejected { code } => Self::Rejected(code),
-            AuthError::Unexpected(_) | AuthError::Storage(_) => Self::Rejected("unexpected_reply".into()),
+            AuthError::Unexpected(_) => Self::EpicChanged,
+            AuthError::Storage(_) => Self::Rejected("unexpected_reply".into()),
             AuthError::Expired => Self::SignedOut,
         }
     }
@@ -74,5 +78,7 @@ mod tests {
     fn auth_errors_map_without_details() {
         assert_eq!(LaunchError::from(AuthError::Network("dns".into())), LaunchError::Network);
         assert_eq!(LaunchError::from(AuthError::Rejected { code: "c".into() }), LaunchError::Rejected("c".into()));
+        assert_eq!(LaunchError::from(AuthError::Unexpected("no code".into())), LaunchError::EpicChanged);
+        assert_eq!(LaunchError::EpicChanged.user_message("Reef"), "Epic changed something. Update Fishy Client, or check back later.");
     }
 }

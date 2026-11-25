@@ -49,7 +49,7 @@ struct RawItem {
 /// `%PROGRAMDATA%\Epic\EpicGamesLauncher\Data\Manifests`, where Epic keeps one `.item` per install.
 pub fn epic_manifests_dir() -> Option<PathBuf> {
     let base = std::env::var_os("PROGRAMDATA")?;
-    Some(PathBuf::from(base).join("Epic").join("EpicGamesLauncher").join("Data").join("Manifests"))
+    Some(crate::epic::LAUNCHER_MANIFESTS_DIR.iter().fold(PathBuf::from(base), |p, part| p.join(part)))
 }
 
 fn read_item(path: &Path) -> Option<EpicItem> {
@@ -105,7 +105,7 @@ pub fn local_manifest(item: &EpicItem) -> Option<Vec<u8>> {
     if guid.is_empty() || guid.contains(['/', '\\', ':', '.']) {
         return None;
     }
-    std::fs::read(item.install_path.join(".egstore").join(format!("{guid}.manifest"))).ok()
+    std::fs::read(item.install_path.join(crate::epic::EGSTORE_DIR).join(format!("{guid}.manifest"))).ok()
 }
 
 /// The manifest, if it parses. Its own app name isn't compared: Epic often puts the build's name

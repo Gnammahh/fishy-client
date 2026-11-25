@@ -176,6 +176,16 @@ describe("DownloadsPage", () => {
     expect(screen.getByText("Cancel the update? What it downloaded is deleted, and Title B stays at the version you have.")).toBeTruthy();
   });
 
+  it("an_update_that_already_changed_files_offers_no_cancel_and_says_why", async () => {
+    mock();
+    downloads.set([item("A", "paused", { update: true, can_cancel: false }), item("B", "queued", { update: true, can_cancel: false })]);
+    render(DownloadsPage);
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove Title B from the queue" })).toBeNull();
+    expect(screen.getByText("This update started before 1.9.5 and already changed some files, so it can only be paused or finished.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+
   it("speed_limit_line_shows_when_a_limit_is_on", async () => {
     settings.set({ ...DEFAULT_SETTINGS, speed_limit_mbps: 1 });
     let opened = 0;

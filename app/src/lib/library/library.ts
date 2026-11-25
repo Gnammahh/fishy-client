@@ -45,6 +45,8 @@ export type LibraryView = {
 };
 
 const LIBRARY_ERROR = "Couldn't load your library from Epic. Check your internet, then press Try again.";
+/** The Rust side's message when Epic's reply wasn't understood (docs/EPIC-CHANGES.md). */
+const EPIC_CHANGED = "Epic changed something. Update Fishy Client, or check back later.";
 /** The Rust side's message when the sign-in expired (spec §6f.2): the app goes to Login. */
 const EXPIRED = "Your sign-in has expired. Please sign in again.";
 const initial: LibraryView = { status: "loading", games: [], updating: false, error: "", latestVersions: {} };
@@ -152,8 +154,7 @@ export async function refreshLibrary() {
     online = false;
     // Expired: the old account's games are gone and Login shows; leave a clean library behind.
     if (e === EXPIRED) return resetLibrary();
-    library.update((v) =>
-      hadGames ? { ...v, updating: false, error: LIBRARY_ERROR } : { ...initial, status: "error", error: LIBRARY_ERROR },
-    );
+    const error = e === EPIC_CHANGED ? EPIC_CHANGED : LIBRARY_ERROR;
+    library.update((v) => (hadGames ? { ...v, updating: false, error } : { ...initial, status: "error", error }));
   }
 }

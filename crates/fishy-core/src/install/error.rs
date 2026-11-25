@@ -44,6 +44,10 @@ pub enum InstallError {
     /// The admin copy couldn't create the folder, or it still isn't writable (spec §6k).
     #[error("couldn't create {folder}")]
     FolderFailed { folder: String },
+    /// Epic replied with something Fishy Client doesn't understand (docs/EPIC-CHANGES.md).
+    /// The detail is never shown or logged: a parser message can quote the reply.
+    #[error("unexpected reply from Epic")]
+    EpicChanged(String),
 }
 
 impl InstallError {
@@ -66,6 +70,7 @@ impl InstallError {
             Self::Expired => "sign-in expired".into(),
             Self::NoWriteAccess { .. } => "no write access".into(),
             Self::PermissionDeclined => "permission declined".into(),
+            Self::EpicChanged(_) => "unexpected reply from Epic".into(),
             Self::FolderFailed { .. } => "folder not created".into(),
         }
     }
@@ -86,6 +91,7 @@ impl InstallError {
             Self::FilesInUse(title) => format!("Some of {title}'s files are in use. Close the game, then press Retry."),
             Self::Expired => "Your sign-in has expired. Please sign in again.".into(),
             Self::PermissionDeclined => "Fishy Client needs your permission to use that folder. Pick a different folder.".into(),
+            Self::EpicChanged(_) => crate::epic::CHANGED_MESSAGE.into(),
             Self::FolderFailed { folder } => format!("Couldn't create {folder}. Pick a different folder."),
             Self::NoWriteAccess { folder } => {
                 format!("Fishy Client can't create folders in {folder} without administrator rights. Pick a different folder.")
@@ -102,7 +108,8 @@ impl From<AuthError> for InstallError {
         match e {
             AuthError::Network(d) => Self::Network(d),
             AuthError::Rejected { code } => Self::Rejected(code),
-            AuthError::Unexpected(d) | AuthError::Storage(d) => Self::Network(d),
+            AuthError::Unexpected(d) => Self::EpicChanged(d),
+            AuthError::Storage(d) => Self::Network(d),
             AuthError::Expired => Self::Expired,
         }
     }
@@ -191,5 +198,13 @@ mod tests {
     fn auth_errors_convert() {
         assert_eq!(InstallError::from(AuthError::Network("dns".into())), InstallError::Network("dns".into()));
         assert_eq!(InstallError::from(AuthError::Rejected { code: "c".into() }), InstallError::Rejected("c".into()));
+    }
+
+    #[test]
+    fn a_reply_epic_changed_says_so() {
+        let e = InstallError::from(AuthError::Unexpected("missing field `records`".into()));
+        assert_eq!(e, InstallError::EpicChanged("missing field `records`".into()));
+        assert_eq!(e.user_message(), "Epic changed something. Update Fishy Client, or check back later.");
+        assert_eq!(e.log_reason(), "unexpected reply from Epic");
     }
 }

@@ -106,8 +106,13 @@
         {:else if current.state === "paused"}
           <PixelButton onclick={() => resume(current.app_name)}>Resume</PixelButton>
         {/if}
-        <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
+        {#if current.can_cancel !== false}
+          <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
+        {/if}
       </div>
+      {#if current.can_cancel === false}
+        <p class="note small">This update started before 1.9.5 and already changed some files, so it can only be paused or finished.</p>
+      {/if}
     </article>
   {/each}
 
@@ -125,7 +130,9 @@
             title={running.length >= 2 ? TWO_RUNNING : undefined}
             onclick={() => askStart(d)}>Start now</PixelButton
           >
-          <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
+          {#if d.can_cancel !== false}
+            <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
+          {/if}
         </li>
       {/each}
     </ul>

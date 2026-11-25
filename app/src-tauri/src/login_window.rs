@@ -14,13 +14,13 @@ const MAIN: &str = "main";
 pub const LABEL: &str = "epic-login";
 
 /// Epic login page that ends on the JSON redirect containing `authorizationCode` (spec §6a).
-pub const LOGIN_URL: &str = "https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fwww.epicgames.com%2Fid%2Fapi%2Fredirect%3FclientId%3D34a02cf8f4414e29b15921876da36f9a%26responseType%3Dcode";
+pub use fishy_core::epic::LOGIN_URL;
 
 /// Runs on every page in the login window. Only on Epic's redirect page does it read the
 /// JSON and hand the code to a local address that Rust intercepts and cancels.
 const CAPTURE_SCRIPT: &str = r#"
 (function () {
-  if (location.host !== "www.epicgames.com" || location.pathname !== "/id/api/redirect") return;
+  if (location.host !== "{LOGIN_HOST}" || location.pathname !== "{REDIRECT_PATH}") return;
   function run() {
     try {
       var data = JSON.parse(document.body.innerText);
@@ -33,6 +33,11 @@ const CAPTURE_SCRIPT: &str = r#"
   else run();
 })();
 "#;
+
+/// [`CAPTURE_SCRIPT`] for Epic's current login host and redirect page.
+fn capture_script() -> String {
+    CAPTURE_SCRIPT.replace("{LOGIN_HOST}", fishy_core::epic::LOGIN_HOST).replace("{REDIRECT_PATH}", fishy_core::epic::REDIRECT_PATH)
+}
 
 /// Opens the login window, or focuses it if it's already open.
 pub fn open(app: &AppHandle) -> tauri::Result<()> {
@@ -50,7 +55,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<()> {
         .title("Sign in with Epic")
         .inner_size(480.0, 720.0)
         .resizable(true)
-        .initialization_script(CAPTURE_SCRIPT)
+        .initialization_script(capture_script())
         // Private (InPrivate) window: Epic's website cookies are never kept, so after
         // Log out nobody on this PC lands in your Epic account by clicking Sign in.
         .incognito(true)

@@ -5,11 +5,10 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::time::Duration;
 
-/// Epic's public promotions list: no sign-in, no country sent.
-pub const FREE_GAMES_URL: &str = "https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions?locale=en-US";
+// Epic's public promotions list (no sign-in, no country sent) and the Store pages.
+use crate::epic::{DOMAIN, FREE_GAMES_PAGE, FREE_GAMES_URL, STORE_PRODUCT_PAGE};
 /// Where "Open Epic's store" goes.
-pub const STORE_HOME: &str = "https://store.epicgames.com/";
-const FREE_GAMES_PAGE: &str = "https://store.epicgames.com/free-games";
+pub use crate::epic::STORE_HOME;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FreeGame {
@@ -60,7 +59,7 @@ fn page_url(e: &Value) -> String {
             maps.iter().find(|m| m.get("pageType").and_then(Value::as_str) == Some("productHome"))?.get("pageSlug")?.as_str().map(str::to_string)
         })
         .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '/'));
-    slug.map_or_else(|| FREE_GAMES_PAGE.to_string(), |s| format!("https://store.epicgames.com/p/{s}"))
+    slug.map_or_else(|| FREE_GAMES_PAGE.to_string(), |s| format!("{STORE_PRODUCT_PAGE}{s}"))
 }
 
 fn cover(e: &Value) -> Option<String> {
@@ -114,7 +113,7 @@ pub fn parse_free_games(json: &[u8], now: DateTime<Utc>, library: &Owned) -> Res
 /// Pages the Store window shows itself: https on epicgames.com or its subdomains.
 pub fn store_nav_allowed(url: &str) -> bool {
     let Ok(u) = url::Url::parse(url) else { return false };
-    u.scheme() == "https" && u.host_str().is_some_and(|h| h == "epicgames.com" || h.ends_with(".epicgames.com"))
+    u.scheme() == "https" && u.host_str().is_some_and(|h| h == DOMAIN || h.strip_suffix(DOMAIN).is_some_and(|sub| sub.ends_with('.')))
 }
 
 /// Fetches Epic's promotions list.

@@ -1,0 +1,30 @@
+{
+  "elements": [
+    {
+      "appName": "TidepoolApp",
+      "labelName": "Live-Windows",
+      "buildVersion": "1.4.2-CL-2026",
+      "hash": "{{HASH}}",
+      "useSignedUrl": true,
+      "metadata": {
+        "installationPoolId": "pool-1",
+        "update_type": "delta"
+      },
+      "manifests": [
+        {
+          "uri": "{{SERVER}}/Builds/Org/o-fixture/tidepool/default/TidepoolApp.manifest",
+          "queryParams": [
+            {
+              "name": "f_token",
+              "value": "exp=1790000000~acl=%2F*~hmac=fixture"
+            }
+          ]
+        },
+        {
+          "uri": "{{SERVER}}/Builds/Org/o-fixture/tidepool/default/TidepoolApp.manifest",
+          "queryParams": []
+        }
+      ]
+    }
+  ]
+}

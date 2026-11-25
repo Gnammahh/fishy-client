@@ -6,8 +6,7 @@ use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
 
-pub const STORE_GQL_HOST: &str = "https://launcher.store.epicgames.com";
-const USER_AGENT: &str = "EpicGamesLauncher/14.0.8-22004686+++Portal+Release-Live";
+use crate::epic::{STORE_GQL_HOST, STORE_USER_AGENT};
 const LOCALE: &str = "en-US";
 
 /// Legendary's `egl_game_achievements_query`, trimmed to the fields used.
@@ -146,7 +145,7 @@ impl AchievementsClient {
                 .http
                 .post(format!("{}/graphql", self.base))
                 .header("Authorization", format!("bearer {}", token.expose()))
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", STORE_USER_AGENT)
                 .json(&body)
                 .send()
                 .await

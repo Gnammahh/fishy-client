@@ -1,10 +1,11 @@
 [package]
 name = "fishy-client"
-version = "1.9.5"
+version = "2.0.0"
 description = "Fishy Client, a lightweight Epic Games launcher"
 authors = ["Fishy Client contributors"]
 license = "GPL-3.0-or-later"
 edition = "2024"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -40,3 +41,7 @@ windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", 
 [dev-dependencies]
 fishy-core = { path = "../../crates/fishy-core", features = ["test-support"] }
 tempfile = "3"
+# Update-signature tests: a throwaway key pair and the updater plugin in a mock app.
+tauri = { version = "2.12", features = ["test"] }
+minisign = "0.7"
+base64 = "0.22"

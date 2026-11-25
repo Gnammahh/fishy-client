@@ -1,0 +1,18 @@
+{
+  "responseMetadata": {
+    "stateToken": "state-2"
+  },
+  "records": [
+    {
+      "namespace": "ns-reef",
+      "catalogItemId": "cat-reef",
+      "appName": "ReefApp",
+      "productId": "prod-reef",
+      "sandboxName": "Live",
+      "sandboxType": "PUBLIC",
+      "recordType": "APPLICATION",
+      "acquisitionDate": "2025-06-01T12:00:00.000Z",
+      "dependencies": []
+    }
+  ]
+}

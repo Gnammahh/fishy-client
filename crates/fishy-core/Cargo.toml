@@ -2,6 +2,7 @@
 name = "fishy-core"
 version = "0.1.0"
 edition = "2021"
+publish = false
 license = "GPL-3.0-or-later"
 description = "Epic Games logic for Fishy Client (auth, library, downloads)"
 

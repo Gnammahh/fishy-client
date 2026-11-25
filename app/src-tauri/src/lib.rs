@@ -131,6 +131,15 @@ impl AppLibrary {
 }
 
 const LIBRARY_ERROR: &str = "Couldn't load your library from Epic. Check your internet, then press Try again.";
+
+/// The error line for a failed Epic call: "Epic changed something" when its reply wasn't
+/// understood (docs/EPIC-CHANGES.md), otherwise `usual`.
+fn epic_error(e: &fishy_core::auth::AuthError, usual: &str) -> String {
+    match e {
+        fishy_core::auth::AuthError::Unexpected(_) => fishy_core::epic::CHANGED_MESSAGE.to_string(),
+        _ => usual.to_string(),
+    }
+}
 const BROWSER_ERROR: &str = "Couldn't open your browser. Use Sign in with Epic instead.";
 
 /// The last saved library (instant, no network), if any.
@@ -153,9 +162,10 @@ fn may_save_refresh(before: Option<&AuthState>, now: Option<&AuthState>) -> bool
 #[tauri::command]
 async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>, library: tauri::State<'_, AppLibrary>) -> Result<CachedLibrary, String> {
     let started = std::time::Instant::now();
-    let failed = || {
-        warn!("library refresh failed: {LIBRARY_ERROR}");
-        LIBRARY_ERROR.to_string()
+    let failed = |e: Option<&fishy_core::auth::AuthError>| {
+        let message = e.map_or_else(|| LIBRARY_ERROR.to_string(), |e| epic_error(e, LIBRARY_ERROR));
+        warn!("library refresh failed: {message}");
+        message
     };
     let before = auth.current.lock().await.clone();
     let token = match auth.manager.access_token().await {
@@ -164,13 +174,13 @@ async fn library_refresh(app: tauri::AppHandle, auth: tauri::State<'_, AppAuth>,
             session::expire(&app).await;
             return Err(session::EXPIRED.to_string());
         }
-        Err(_) => return Err(failed()),
+        Err(e) => return Err(failed(Some(&e))),
     };
-    let data = library.client.fetch_library(&token).await.map_err(|_| failed())?;
+    let data = library.client.fetch_library(&token).await.map_err(|e| failed(Some(&e)))?;
     info!("library refreshed: {} games in {:.1} s", data.games.len(), started.elapsed().as_secs_f64());
     if !may_save_refresh(before.as_ref(), auth.current.lock().await.as_ref()) {
         warn!("library refresh dropped: the sign-in changed while it ran");
-        return Err(failed());
+        return Err(failed(None));
     }
     let fresh = CachedLibrary { updated_at: fishy_core::chrono::Utc::now(), games: data.games, latest_versions: data.latest_versions };
     let _ = library.cache.save(&fresh); // a failed save only costs the instant start next time
@@ -200,10 +210,14 @@ async fn game_achievements(app: tauri::AppHandle, app_name: String, auth: tauri:
             session::expire(&app).await;
             return Err(session::EXPIRED.to_string());
         }
-        Err(_) => return Err(failed()),
+        Err(e) => return Err(epic_error(&e, ACHIEVEMENTS_ERROR)),
     };
     let (_, account_id) = auth.manager.saved_identity().ok_or_else(failed)?;
-    let a = library.achievements.fetch(&token, &account_id, &namespace).await.map_err(|_| failed())?;
+    let a = library.achievements.fetch(&token, &account_id, &namespace).await.map_err(|e| {
+        let message = epic_error(&e, ACHIEVEMENTS_ERROR);
+        warn!("achievements failed: {message}");
+        message
+    })?;
     info!("achievements loaded: {} of {}", a.unlocked, a.total);
     Ok(a)
 }
@@ -824,7 +838,7 @@ mod tests {
         let bundle = &conf["bundle"];
         assert_eq!(conf["productName"], "Fishy Client");
         // Version 1 (spec §1, decided 2026-11-22); the program and the installer must agree.
-        assert_eq!(conf["version"], "1.9.5");
+        assert_eq!(conf["version"], "2.0.0");
         assert_eq!(conf["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(bundle["targets"], serde_json::json!(["msi"]));
         assert_eq!(bundle["publisher"], "Fishy Client");
@@ -841,6 +855,38 @@ mod tests {
         assert_eq!(updater["endpoints"], serde_json::json!(["https://github.com/Gnammahh/fishy-client/releases/latest/download/latest.json"]));
         assert_eq!(updater["windows"]["installMode"], "passive");
         assert!(updater["pubkey"].as_str().is_some_and(|k| !k.is_empty() && k != "REPLACE_WITH_PUBLIC_KEY"));
+    }
+
+    #[test]
+    fn library_and_achievements_say_when_epic_changed_something() {
+        use fishy_core::auth::AuthError;
+        assert_eq!(epic_error(&AuthError::Unexpected("x".into()), LIBRARY_ERROR), fishy_core::epic::CHANGED_MESSAGE);
+        assert_eq!(epic_error(&AuthError::Unexpected("x".into()), ACHIEVEMENTS_ERROR), fishy_core::epic::CHANGED_MESSAGE);
+        assert_eq!(epic_error(&AuthError::Network("dns".into()), LIBRARY_ERROR), LIBRARY_ERROR);
+        assert_eq!(epic_error(&AuthError::Rejected { code: "c".into() }, ACHIEVEMENTS_ERROR), ACHIEVEMENTS_ERROR);
+    }
+
+    #[test]
+    fn the_page_gets_only_the_tauri_calls_it_uses() {
+        // Not `core:default`: that also opens paths, menus, tray, images, resources, webviews and
+        // app info to the page. Events (listen, and onResized) and the title-bar buttons and
+        // double-click are all.
+        let cap: serde_json::Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(cap["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            cap["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:window:allow-is-maximized",
+                "core:window:allow-minimize",
+                "core:window:allow-toggle-maximize",
+                // Double-clicking the title bar (`data-tauri-drag-region`) uses its own command.
+                "core:window:allow-internal-toggle-maximize",
+                "core:window:allow-close",
+                "core:window:allow-start-dragging"
+            ])
+        );
     }
 
     #[test]

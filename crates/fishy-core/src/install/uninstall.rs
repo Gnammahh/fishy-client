@@ -95,11 +95,10 @@ pub fn uninstall(store: &InstallStore, app: &str) -> Result<(), InstallError> {
 /// An imported game's files were there before (spec §6g), so only the saved progress goes.
 pub fn discard_download(store: &InstallStore, job: &JobInfo) -> Result<(), InstallError> {
     let manifest = if job.imported { None } else { store.job_manifest(&job.app_name).ok().and_then(|b| parse_manifest(&b).ok()) };
-    if let Some(manifest) = manifest {
-        if !delete_manifest_files(&job.install_path, &manifest) {
+    if let Some(manifest) = manifest
+        && !delete_manifest_files(&job.install_path, &manifest) {
             return Err(InstallError::InUse);
         }
-    }
     store
         .remove_job(&job.app_name)
         .map_err(|e| InstallError::Io { folder: job.install_path.display().to_string(), detail: e.to_string() })

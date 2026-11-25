@@ -33,11 +33,10 @@ impl AppVerify {
 
     /// Stops a running check of this game (Uninstall, Stop).
     pub fn stop(&self, app_name: &str) {
-        if let Some((app, stop)) = self.lock_current().as_ref() {
-            if app == app_name {
+        if let Some((app, stop)) = self.lock_current().as_ref()
+            && app == app_name {
                 stop.store(true, Ordering::Relaxed);
             }
-        }
     }
 
     /// Delete all my data: stops whatever check runs and waits (up to `timeout`) until it has.

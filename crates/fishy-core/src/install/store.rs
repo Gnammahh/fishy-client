@@ -222,6 +222,18 @@ impl InstallStore {
         writeln!(f, "{sha1_hex}:{filename}")
     }
 
+    /// The update builds its files aside (spec §6u). Recorded when it starts that way, so a
+    /// resume keeps doing it; updates begun in place before 1.10.0 have no record.
+    pub fn builds_aside(&self, app: &str) -> bool {
+        self.job_dir(app).is_ok_and(|d| d.join("aside").is_file())
+    }
+
+    pub fn mark_builds_aside(&self, app: &str) -> io::Result<()> {
+        let dir = self.job_dir(app)?;
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("aside"), b"")
+    }
+
     pub fn remove_job(&self, app: &str) -> io::Result<()> {
         ignore_missing(std::fs::remove_dir_all(self.job_dir(app)?))
     }

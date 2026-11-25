@@ -106,11 +106,8 @@
         {:else if current.state === "paused"}
           <PixelButton onclick={() => resume(current.app_name)}>Resume</PixelButton>
         {/if}
-        {#if !current.update}
-          <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
-        {/if}
+        <PixelButton variant="ghost" onclick={() => (confirmCancel = current.app_name)}>Cancel</PixelButton>
       </div>
-      {#if current.update}<p class="note small">Updates can be paused but not cancelled.</p>{/if}
     </article>
   {/each}
 
@@ -128,9 +125,7 @@
             title={running.length >= 2 ? TWO_RUNNING : undefined}
             onclick={() => askStart(d)}>Start now</PixelButton
           >
-          {#if !d.update}
-            <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
-          {/if}
+          <button class="remove" aria-label="Remove {d.title} from the queue" onclick={() => (confirmCancel = d.app_name)}>×</button>
         </li>
       {/each}
     </ul>
@@ -169,9 +164,13 @@
 {/if}
 
 {#if confirmCancel}
+  {@const job = $downloads.find((d) => d.app_name === confirmCancel)}
+  <!-- An update is built aside, so cancelling it keeps the game as it is (spec §6u). -->
   <ConfirmDialog
-    message="Stop and delete the downloaded files?"
-    confirmLabel="Delete files"
+    message={job?.update
+      ? `Cancel the update? What it downloaded is deleted, and ${job.title} stays at the version you have.`
+      : "Stop and delete the downloaded files?"}
+    confirmLabel={job?.update ? "Cancel update" : "Delete files"}
     onconfirm={confirmDelete}
     oncancel={() => (confirmCancel = null)}
   />

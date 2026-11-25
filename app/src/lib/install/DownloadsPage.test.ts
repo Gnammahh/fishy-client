@@ -161,15 +161,19 @@ describe("DownloadsPage", () => {
     ]);
     expect(await screen.findByText("Finished: Title A. It's in your Library.")).toBeTruthy();
   });
-  it("an_update_says_updating_and_has_no_cancel_or_remove", async () => {
-    mock();
+  it("an_update_can_be_cancelled_and_keeps_the_version_you_have", async () => {
+    const calls = mock();
     downloads.set([item("A", "downloading", { update: true }), item("B", "queued", { update: true })]);
     render(DownloadsPage);
     expect(screen.getByText("Updating…")).toBeTruthy();
-    expect(screen.getByText("Updates can be paused but not cancelled.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Remove Title B from the queue" })).toBeNull();
+    expect(screen.queryByText("Updates can be paused but not cancelled.")).toBeNull();
     expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Cancel the update? What it downloaded is deleted, and Title A stays at the version you have.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel update" }));
+    await waitFor(() => expect(calls).toContainEqual(["download_cancel", { appName: "A" }]));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove Title B from the queue" }));
+    expect(screen.getByText("Cancel the update? What it downloaded is deleted, and Title B stays at the version you have.")).toBeTruthy();
   });
 
   it("speed_limit_line_shows_when_a_limit_is_on", async () => {

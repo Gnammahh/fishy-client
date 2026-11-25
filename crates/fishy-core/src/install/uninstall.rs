@@ -6,6 +6,39 @@ use super::InstallError;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+/// The folder in the game's folder where updates are built (spec §6u).
+pub const ASIDE: &str = ".fishy-update";
+
+/// Where `app`'s update builds its files: `<game folder>\.fishy-update\<app>`.
+pub fn aside_dir(root: &Path, app: &str) -> PathBuf {
+    root.join(ASIDE).join(app)
+}
+
+/// Deletes `app`'s side folder, and `.fishy-update` if nothing else is in it. False if it couldn't.
+pub fn delete_aside(root: &Path, app: &str) -> bool {
+    let ok = match std::fs::remove_dir_all(aside_dir(root, app)) {
+        Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+        Ok(()) => true,
+    };
+    let _ = std::fs::remove_dir(root.join(ASIDE));
+    ok
+}
+
+/// Whether Cancel may stop this download (spec §6u): always for installs; for an update, only
+/// while every file it finished is still aside (none is in the game yet).
+pub fn update_can_be_cancelled(store: &InstallStore, job: &JobInfo) -> bool {
+    job.update_from.is_none()
+        || store.finished_names(job).iter().all(|n| file_path(&aside_dir(&job.install_path, &job.app_name), n).is_ok_and(|p| p.is_file()))
+}
+
+/// Cancel of an update: what it built aside and its saved progress go; the game keeps its version.
+pub fn discard_update(store: &InstallStore, job: &JobInfo) -> Result<(), InstallError> {
+    if !delete_aside(&job.install_path, &job.app_name) {
+        return Err(InstallError::InUse);
+    }
+    store.remove_job(&job.app_name).map_err(|e| InstallError::Io { folder: job.install_path.display().to_string(), detail: e.to_string() })
+}
+
 /// Deletes the manifest's files under `root` and the folders left empty. False if a file that
 /// exists couldn't be deleted (for example, the game is running).
 pub fn delete_manifest_files(root: &Path, m: &Manifest) -> bool {
@@ -50,7 +83,8 @@ pub fn uninstall(store: &InstallStore, app: &str) -> Result<(), InstallError> {
         .filter_map(|b| b.as_ref().ok().and_then(|b| parse_manifest(b).ok()))
         .flat_map(|m| m.files.into_iter().map(|f| f.filename))
         .collect();
-    if !delete_named_files(&game.install_path, names.iter().map(String::as_str), true) {
+    // A paused update's side folder goes first (spec §6u); the game folder may then be empty.
+    if !delete_aside(&game.install_path, app) || !delete_named_files(&game.install_path, names.iter().map(String::as_str), true) {
         return Err(InstallError::InUse);
     }
     store.remove_job(app).map_err(io_err)?;
@@ -140,6 +174,17 @@ mod tests {
         assert!(root(&e).parent().unwrap().exists(), "the Games folder stays");
         assert!(e.store.installed().is_empty());
         assert!(e.store.installed_manifest("Tide").is_err());
+    }
+
+    #[test]
+    fn uninstall_deletes_a_paused_updates_side_folder() {
+        let e = installed();
+        e.store.finish_install(&e.job, &sample()).unwrap();
+        let aside = aside_dir(&root(&e), "Tide").join("Content");
+        std::fs::create_dir_all(&aside).unwrap();
+        std::fs::write(aside.join("new.pak"), b"half").unwrap();
+        uninstall(&e.store, "Tide").unwrap();
+        assert!(!root(&e).exists(), "nothing left, the side folder included");
     }
 
     #[test]

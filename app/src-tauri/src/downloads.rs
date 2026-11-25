@@ -16,7 +16,14 @@ use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
 /// Shown when Cancel or the queue's × is used on an update (spec §6e).
-pub const UPDATE_NO_CANCEL: &str = "Updates can be paused but not cancelled.";
+/// An update begun in place before 1.10.0 that already changed files (spec §6u).
+pub const UPDATE_IN_PLACE: &str = "This update already changed some files, so it can't be cancelled. Pause it or let it finish.";
+
+/// After a run ends with Cancel pressed: whether what it wrote is thrown away. An update that
+/// already moved its files into the game is finished instead (spec §6u).
+pub fn discard_after_run(cancel_requested: bool, is_update: bool, ok: bool) -> bool {
+    cancel_requested && !(is_update && ok)
+}
 
 /// Progress events are sent at most this often (spec: about 4 times a second).
 const EMIT_EVERY: Duration = Duration::from_millis(250);
@@ -319,9 +326,6 @@ impl Inner {
     pub fn begin_removal(&mut self, app: &str) -> Option<JobInfo> {
         let i = self.find(app)?;
         let job = &mut self.jobs[i];
-        if job.info.update_from.is_some() {
-            return None; // updates can't be cancelled (spec §6e)
-        }
         match job.state {
             JobState::Removing => None,
             JobState::Downloading => {
@@ -334,10 +338,6 @@ impl Inner {
                 Some(job.info.clone())
             }
         }
-    }
-
-    pub fn is_update(&self, app: &str) -> bool {
-        self.find(app).is_some_and(|i| self.jobs[i].info.update_from.is_some())
     }
 
     /// Uninstall of a game with a paused (or failed) update: the job leaves the list.
@@ -522,9 +522,18 @@ impl Downloads {
     }
 
     /// Stops the download and deletes what it wrote.
+    /// Why Cancel can't stop this game's download, if it can't (spec §6u).
+    pub fn cancel_refusal(&self, app_name: &str) -> Option<&'static str> {
+        let info = {
+            let inner = self.lock();
+            inner.jobs[inner.find(app_name)?].info.clone()
+        };
+        (!fishy_core::install::uninstall::update_can_be_cancelled(&self.store, &info)).then_some(UPDATE_IN_PLACE)
+    }
+
     pub async fn cancel(&self, app: &AppHandle, app_name: &str) -> Result<(), String> {
-        if self.lock().is_update(app_name) {
-            return Err(UPDATE_NO_CANCEL.to_string());
+        if let Some(refusal) = self.cancel_refusal(app_name) {
+            return Err(refusal.to_string());
         }
         // A running job's own task deletes the files once it has stopped writing.
         tracing::info!("cancel {app_name}");
@@ -541,7 +550,14 @@ impl Downloads {
 
     async fn discard(&self, info: JobInfo) -> Result<(), String> {
         let store = self.store.clone();
-        tauri::async_runtime::spawn_blocking(move || discard_download(&store, &info))
+        tauri::async_runtime::spawn_blocking(move || {
+            if info.update_from.is_some() {
+                tracing::info!("update: cancelled");
+                fishy_core::install::uninstall::discard_update(&store, &info)
+            } else {
+                discard_download(&store, &info)
+            }
+        })
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.user_message())
@@ -658,7 +674,8 @@ impl Downloads {
     async fn finish(&self, app: &AppHandle, info: JobInfo, manifest: &Manifest, result: Result<(), InstallError>) {
         let cancel = {
             let inner = self.lock();
-            inner.find(&info.app_name).is_some_and(|i| inner.jobs[i].cancel_requested)
+            let asked = inner.find(&info.app_name).is_some_and(|i| inner.jobs[i].cancel_requested);
+            discard_after_run(asked, info.update_from.is_some(), result.is_ok())
         };
         if cancel {
             // Stay in the list (hidden, busy) until the files are gone, so Install can't race it.
@@ -1045,14 +1062,48 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_an_update_is_refused() {
-        let mut inner = Inner { jobs: vec![update("u", JobState::Downloading)], wiping: false };
+    fn a_running_update_is_cancelled_like_an_install() {
+        let mut inner = Inner { jobs: vec![update("u", JobState::Downloading), update("p", JobState::Paused)], wiping: false };
         let stop = CancellationToken::new();
         inner.jobs[0].stop = Some(stop.clone());
-        assert!(inner.is_update("u"));
-        assert!(inner.begin_removal("u").is_none());
-        assert!(!stop.is_cancelled() && !inner.jobs[0].cancel_requested);
-        assert_eq!(inner.jobs[0].state, JobState::Downloading);
+        assert!(inner.begin_removal("u").is_none(), "its task deletes what it built");
+        assert!(stop.is_cancelled() && inner.jobs[0].cancel_requested);
+        assert_eq!(inner.begin_removal("p").map(|j| j.app_name), Some("p".to_string()));
+        assert_eq!(inner.jobs[1].state, JobState::Removing);
+    }
+
+    #[test]
+    fn an_update_that_already_changed_files_refuses_cancel() {
+        let mut u = update("u", JobState::Paused);
+        let (dir, d) = downloads_with(vec![]);
+        u.info.install_path = dir.path().join("game");
+        d.lock().jobs.push(u);
+        assert_eq!(d.cancel_refusal("u"), None, "nothing written yet");
+        d.store.mark_finished("u", "x", "big.pak").unwrap(); // written in place before 1.10.0
+        assert_eq!(d.cancel_refusal("u"), Some(UPDATE_IN_PLACE));
+        assert_eq!(d.cancel_refusal("none"), None);
+    }
+
+    #[test]
+    fn cancelling_a_paused_update_deletes_only_what_it_built_aside() {
+        let mut u = update("u", JobState::Paused);
+        let (dir, d) = downloads_with(vec![]);
+        let game = dir.path().join("game");
+        u.info.install_path = game.clone();
+        std::fs::create_dir_all(game.join(".fishy-update").join("u")).unwrap();
+        std::fs::write(game.join(".fishy-update").join("u").join("big.pak"), b"new").unwrap();
+        std::fs::write(game.join("big.pak"), b"old").unwrap();
+        tauri::async_runtime::block_on(d.discard(u.info.clone())).unwrap();
+        assert!(!game.join(".fishy-update").exists());
+        assert_eq!(std::fs::read(game.join("big.pak")).unwrap(), b"old", "the game keeps its version");
+    }
+
+    #[test]
+    fn a_cancel_that_comes_too_late_lets_the_update_finish() {
+        assert!(discard_after_run(true, false, true), "an install that was cancelled goes");
+        assert!(discard_after_run(true, true, false), "an update stopped before the move goes");
+        assert!(!discard_after_run(true, true, true), "an update that moved its files is done");
+        assert!(!discard_after_run(false, true, false));
     }
 
     #[test]

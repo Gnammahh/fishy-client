@@ -25,6 +25,8 @@ pub struct DownloadPlan {
     pub removed: Vec<String>,
     /// Free space this run needs.
     pub space_needed: u64,
+    /// Free space it needs when the update is built aside (spec §6u): every changed file whole.
+    pub aside_space: u64,
 }
 
 pub fn build_plan(m: &Manifest, finished: &HashSet<String>) -> Result<DownloadPlan, InstallError> {
@@ -60,7 +62,7 @@ pub fn build_update_plan(m: &Manifest, old: Option<&Manifest>, finished: &HashSe
         old.map(|o| o.files.iter().map(|f| (f.filename.as_str(), f)).collect()).unwrap_or_default();
     let mut reuse = HashMap::new();
     let mut replace = HashSet::new();
-    let (mut added_size, mut growth, mut largest_changed) = (0u64, 0u64, 0u64);
+    let (mut added_size, mut growth, mut largest_changed, mut changed_size) = (0u64, 0u64, 0u64, 0u64);
     for &i in &files {
         let entry = &m.files[i];
         match old_files.get(entry.filename.as_str()) {
@@ -69,6 +71,7 @@ pub fn build_update_plan(m: &Manifest, old: Option<&Manifest>, finished: &HashSe
                 replace.insert(i);
                 growth += entry.size().saturating_sub(old_entry.size());
                 largest_changed = largest_changed.max(entry.size());
+                changed_size += entry.size();
             }
             None => added_size += entry.size(),
         }
@@ -93,7 +96,8 @@ pub fn build_update_plan(m: &Manifest, old: Option<&Manifest>, finished: &HashSe
     }
     let removed = comparison.map(|c| c.removed.into_iter().collect()).unwrap_or_default();
     let space_needed = added_size + growth + largest_changed;
-    Ok(DownloadPlan { files, chunk_order, uses, download_size, done_size, reuse, replace, removed, space_needed })
+    let aside_space = added_size + changed_size;
+    Ok(DownloadPlan { files, chunk_order, uses, download_size, done_size, reuse, replace, removed, space_needed, aside_space })
 }
 
 #[cfg(test)]

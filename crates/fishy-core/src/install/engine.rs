@@ -205,14 +205,23 @@ pub async fn run_job(
     on_progress: impl Fn(Progress) + Send + Sync,
     opts: RunOptions,
 ) -> Result<(), InstallError> {
-    let plan = build_update_plan(manifest, old, &store.finished_files(job))?;
+    // An update builds its files aside and moves them in at the end, so it can be cancelled
+    // (spec §6u). One begun in place before 1.10.0 carries on in place.
+    let aside = old.is_some() && (store.builds_aside(&job.app_name) || store.finished_names(job).is_empty());
+    let aside_root = super::uninstall::aside_dir(&job.install_path, &job.app_name);
+    let finished = if aside {
+        store.finished_names(job).into_iter().filter(|n| file_path(&aside_root, n).is_ok_and(|p| p.is_file())).collect()
+    } else {
+        store.finished_files(job)
+    };
+    let plan = build_update_plan(manifest, old, &finished)?;
     if job.base_urls.is_empty() {
         return Err(InstallError::BadManifest("no CDN".into()));
     }
     let dir = manifest.chunk_dir();
 
     // Space for what's left, checked on every start and resume (spec §6c, §6e).
-    let needed = plan.space_needed;
+    let needed = if aside { plan.aside_space } else { plan.space_needed };
     let free = (opts.free_space)(&job.install_path).unwrap_or(u64::MAX);
     super::space::check_space(&job.install_path, needed, free)?;
 
@@ -236,6 +245,9 @@ pub async fn run_job(
         }
     });
     tracing::info!("download: using {}", host_of(&bases[0]));
+    if aside {
+        store.mark_builds_aside(&job.app_name).map_err(|e| write_error(&job.install_path, &job.title, e, needed, 0))?;
+    }
     let started = std::time::Instant::now();
     let first_downloaded = downloaded;
 
@@ -267,8 +279,14 @@ pub async fn run_job(
         }
         let entry: &FileEntry = &manifest.files[index];
         let target = file_path(&job.install_path, &entry.filename)?;
-        // A changed file is built next to the old one and swapped in only once it's checked.
-        let path = if plan.replace.contains(&index) { temp_path(&target) } else { target.clone() };
+        // Built aside (an update), or a changed file next to the old one, swapped in once checked.
+        let path = if aside {
+            file_path(&aside_root, &entry.filename)?
+        } else if plan.replace.contains(&index) {
+            temp_path(&target)
+        } else {
+            target.clone()
+        };
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(io_err)?;
         }
@@ -342,10 +360,24 @@ pub async fn run_job(
         if sha != entry.sha1 {
             return Err(InstallError::DamagedFile(entry.filename.clone()));
         }
-        if path != target {
+        if path != target && !aside {
             std::fs::rename(&path, &target).map_err(|e| swap_error(&job.install_path, &job.title, e))?; // replaces the old file
         }
         store.mark_finished(&job.app_name, &hex::encode(sha), &entry.filename).map_err(io_err)?;
+    }
+    if aside {
+        // Everything is downloaded and checked: move it all into the game (no more stopping).
+        let ready: Vec<&FileEntry> = manifest.files.iter().filter(|f| file_path(&aside_root, &f.filename).is_ok_and(|p| p.is_file())).collect();
+        tracing::info!("update: built aside, moving {} files", ready.len());
+        for entry in ready {
+            let from = file_path(&aside_root, &entry.filename)?;
+            let target = file_path(&job.install_path, &entry.filename)?;
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(io_err)?;
+            }
+            std::fs::rename(&from, &target).map_err(|e| swap_error(&job.install_path, &job.title, e))?;
+        }
+        super::uninstall::delete_aside(&job.install_path, &job.app_name);
     }
     if !plan.removed.is_empty() {
         // Best effort: a removed file that can't be deleted doesn't stop the update.
@@ -930,7 +962,95 @@ mod tests {
             Ok(10)
         }
         let r = run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, opts(1 << 20, tiny)).await;
-        // added 100 + growth 200 + largest changed 3200
-        assert_eq!(r, Err(InstallError::NoSpace { drive: crate::install::space::drive_label(&e.job.install_path), needed: 3500, free: 10 }));
+        // Built aside (spec §6u): added 100 + every changed file whole (big.pak, 3200).
+        assert_eq!(r, Err(InstallError::NoSpace { drive: crate::install::space::drive_label(&e.job.install_path), needed: 3300, free: 10 }));
+    }
+
+    /// The old version's files, all exactly as before.
+    fn assert_old_version(e: &Env, old: &Fixture) {
+        for (name, content) in &old.expected {
+            assert_eq!(&read(&e.job.install_path, name), content, "{name}");
+        }
+        assert!(!e.job.install_path.join("added.txt").exists(), "nothing new in the game yet");
+    }
+
+    #[tokio::test]
+    async fn an_update_stopped_midway_leaves_the_old_version_untouched_then_resumes() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[]).await;
+        let e = installed_old(&server, &old, &new);
+        let stop = CancellationToken::new();
+        let s = stop.clone();
+        let r = run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), stop, {
+            // The first report is the starting point; stop at the first chunk downloaded.
+            let calls = std::sync::atomic::AtomicUsize::new(0);
+            move |_| {
+                if calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 1 {
+                    s.cancel();
+                }
+            }
+        }, RunOptions::default())
+        .await;
+        assert_eq!(r, Err(InstallError::Stopped));
+        assert_old_version(&e, &old);
+        assert!(e.job.install_path.join(".fishy-update").join("Tide").is_dir(), "built aside");
+        assert!(!e.store.finished_names(&e.job).is_empty(), "a file was finished aside");
+        assert!(crate::install::uninstall::update_can_be_cancelled(&e.store, &e.job));
+
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+        assert!(!e.job.install_path.join(".fishy-update").exists(), "the side folder is gone");
+    }
+
+    #[tokio::test]
+    async fn cancelling_an_update_deletes_what_it_built_and_keeps_the_old_version() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[]).await;
+        let e = installed_old(&server, &old, &new);
+        let stop = CancellationToken::new();
+        let s = stop.clone();
+        let _ = run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), stop, {
+            // The first report is the starting point; stop at the first chunk downloaded.
+            let calls = std::sync::atomic::AtomicUsize::new(0);
+            move |_| {
+                if calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 1 {
+                    s.cancel();
+                }
+            }
+        }, RunOptions::default())
+        .await;
+        crate::install::uninstall::discard_update(&e.store, &e.job).unwrap();
+        assert_old_version(&e, &old);
+        assert!(!e.job.install_path.join(".fishy-update").exists());
+        assert!(e.store.pending_jobs().is_empty(), "the saved update is gone");
+    }
+
+    #[test]
+    fn an_old_in_place_update_that_changed_files_cant_be_cancelled() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let mut job = JobInfo {
+            app_name: "Tide".into(),
+            title: "Tidepool".into(),
+            namespace: "ns".into(),
+            catalog_item_id: "cat".into(),
+            install_path: dir.path().join("Games").join("Tidepool"),
+            download_size: 1,
+            install_size: 1,
+            base_urls: vec![],
+            update_from: Some("1".into()),
+            imported: false,
+            parts: None,
+            parent: None,
+        };
+        assert!(crate::install::uninstall::update_can_be_cancelled(&store, &job), "nothing written yet");
+        store.mark_finished("Tide", "x", "big.pak").unwrap(); // written in place by 1.9.4
+        assert!(!crate::install::uninstall::update_can_be_cancelled(&store, &job));
+        job.update_from = None;
+        assert!(crate::install::uninstall::update_can_be_cancelled(&store, &job), "installs can always be cancelled");
     }
 }

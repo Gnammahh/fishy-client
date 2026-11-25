@@ -71,13 +71,14 @@ pub(super) fn parse(bytes: &[u8]) -> Result<Manifest, InstallError> {
     Ok(Manifest::new(meta, chunks, files))
 }
 
-/// Reads a section's size and version, runs `read`, then jumps to the section's end.
-fn section<T>(r: &mut Reader, read: impl FnOnce(&mut Reader) -> Result<T, InstallError>) -> Result<T, InstallError> {
+/// Reads a section's size and version, runs `read` (told where the section ends), then jumps
+/// to the section's end.
+fn section<T>(r: &mut Reader, read: impl FnOnce(&mut Reader, usize) -> Result<T, InstallError>) -> Result<T, InstallError> {
     let start = r.pos();
     let size = r.u32()? as usize;
     let _version = r.u8()?;
-    let value = read(r)?;
     let end = start.checked_add(size).ok_or_else(|| bad("section size"))?;
+    let value = read(r, end)?;
     if r.pos() > end {
         return Err(bad("section overrun"));
     }
@@ -86,7 +87,7 @@ fn section<T>(r: &mut Reader, read: impl FnOnce(&mut Reader) -> Result<T, Instal
 }
 
 fn read_meta(r: &mut Reader) -> Result<ManifestMeta, InstallError> {
-    section(r, |r| {
+    section(r, |r, _| {
         let feature_level = r.u32()?;
         let _is_file_data = r.u8()?;
         let _app_id = r.u32()?;
@@ -109,7 +110,7 @@ fn count(r: &mut Reader, min_bytes_each: usize) -> Result<usize, InstallError> {
 }
 
 fn read_chunks(r: &mut Reader, feature_level: u32) -> Result<Vec<ChunkInfo>, InstallError> {
-    section(r, |r| {
+    section(r, |r, end| {
         let n = count(r, 16 + 8 + 20 + 1 + 4 + 8)?;
         let guids = (0..n).map(|_| r.guid()).collect::<Result<Vec<_>, _>>()?;
         let hashes = (0..n).map(|_| r.u64()).collect::<Result<Vec<_>, _>>()?;
@@ -120,6 +121,10 @@ fn read_chunks(r: &mut Reader, feature_level: u32) -> Result<Vec<ChunkInfo>, Ins
         // Level 22+: a chunk with a secret guid is encrypted; we can't decrypt it, so say so now
         // rather than failing mid-download. The other new columns are skipped.
         if feature_level >= 22 {
+            // Only from this section: past its end is the file list, not secret guids.
+            if r.pos().saturating_add(16 * n) > end {
+                return Err(bad("chunk list"));
+            }
             let secrets = r.bytes(16 * n)?;
             if secrets.iter().any(|&b| b != 0) {
                 tracing::warn!("manifest: encrypted chunks");
@@ -140,7 +145,7 @@ fn read_chunks(r: &mut Reader, feature_level: u32) -> Result<Vec<ChunkInfo>, Ins
 }
 
 fn read_files(r: &mut Reader) -> Result<Vec<FileEntry>, InstallError> {
-    section(r, |r| {
+    section(r, |r, _| {
         let n = count(r, 4 + 4 + 20 + 1 + 4 + 4)?;
         let names = (0..n).map(|_| r.fstring()).collect::<Result<Vec<_>, _>>()?;
         for _ in 0..n {
@@ -250,6 +255,19 @@ mod tests {
         m.meta.feature_level = 24;
         let bytes = build_with(&m, BuildOpts { compress: true, secret_chunk: true, ..Default::default() });
         assert_eq!(parse_manifest(&bytes), Err(InstallError::Unsupported));
+    }
+
+    #[test]
+    fn the_secret_guid_column_must_fit_in_the_chunk_list() {
+        // Says level 22 but its chunk list has no level 22 columns: the secret guids would be
+        // read from the file list after it. That's a damaged list, not an encrypted one.
+        let mut m = sample();
+        m.meta.feature_level = 21;
+        let mut bytes = build_with(&m, BuildOpts { compress: false, ..Default::default() });
+        let at = 41 + 4 + 1; // header, then the meta section's size and version
+        assert_eq!(bytes[at..at + 4], 21u32.to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(&22u32.to_le_bytes());
+        assert!(matches!(parse_manifest(&bytes), Err(InstallError::BadManifest(_))), "{:?}", parse_manifest(&bytes));
     }
 
     #[test]

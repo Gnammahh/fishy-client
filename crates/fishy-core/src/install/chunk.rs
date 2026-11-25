@@ -32,6 +32,17 @@ fn bad(why: &str) -> InstallError {
     InstallError::BadChunk(why.into())
 }
 
+/// Logs a chunk's format byte the first time chunks with that byte won't inflate, so a new
+/// format shows in the log once instead of hiding behind "damaged" retries. Not sensitive.
+fn note_inflate_failure(stored_as: u8) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEEN: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
+    let bit = 1u64 << (stored_as % 64);
+    if SEEN[usize::from(stored_as / 64)].fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+        tracing::warn!("chunk: couldn't inflate (stored_as {stored_as})");
+    }
+}
+
 /// Checks the header, inflates the data and verifies it against the manifest.
 pub fn decode_chunk(bytes: &[u8], expected: &ChunkInfo) -> Result<Vec<u8>, InstallError> {
     let mut r = super::reader::Reader::new(bytes);
@@ -58,7 +69,10 @@ pub fn decode_chunk(bytes: &[u8], expected: &ChunkInfo) -> Result<Vec<u8>, Insta
         // Never inflate past the size the manifest states (a "zip bomb" would fill memory).
         let limit = expected.window_size as u64;
         let mut out = Vec::with_capacity(expected.window_size as usize);
-        flate2::read::ZlibDecoder::new(payload).take(limit + 1).read_to_end(&mut out).map_err(|_| bad("zlib"))?;
+        flate2::read::ZlibDecoder::new(payload).take(limit + 1).read_to_end(&mut out).map_err(|_| {
+            note_inflate_failure(stored_as);
+            bad("zlib")
+        })?;
         if out.len() as u64 > limit {
             return Err(bad("too big"));
         }
@@ -154,6 +168,43 @@ mod tests {
         let mut bytes = build_chunk(info.guid, &data, true, None);
         bytes.truncate(bytes.len() - 5);
         assert!(matches!(decode_chunk(&bytes, &info), Err(InstallError::BadChunk(_))));
+    }
+
+    /// A log line goes to `buf` while `f` runs on this thread.
+    fn logged(f: impl FnOnce()) -> String {
+        use std::sync::{Arc, Mutex};
+        #[derive(Clone)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let buf = Buf(Arc::default());
+        let w = buf.clone();
+        let sub = tracing_subscriber::fmt().with_ansi(false).with_writer(move || w.clone()).finish();
+        tracing::subscriber::with_default(sub, f);
+        let text = String::from_utf8(buf.0.lock().unwrap().clone()).unwrap();
+        text
+    }
+
+    #[test]
+    fn a_chunk_that_wont_inflate_logs_its_format_once() {
+        // 0x41: compressed plus a flag no format we know uses (a new codec, say).
+        let data = b"kelp".repeat(50);
+        let info = info_for([9, 9, 9, 9], &data, 0);
+        let mut bytes = build_chunk(info.guid, &data, true, Some(0x41));
+        bytes.truncate(bytes.len() - 5);
+        let text = logged(|| {
+            for _ in 0..3 {
+                assert!(matches!(decode_chunk(&bytes, &info), Err(InstallError::BadChunk(_))));
+            }
+        });
+        assert_eq!(text.matches("stored_as 65").count(), 1, "{text}");
     }
 
     #[test]

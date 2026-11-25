@@ -40,14 +40,24 @@ export function syncPausedAttribute(target: HTMLElement = document.documentEleme
   return pausedMotion.subscribe((on) => target.toggleAttribute("data-paused", on));
 }
 
-/** Follows the window's minimized state sent by Rust. Returns the unsubscribe. */
+/**
+ * Follows the window's minimized state sent by Rust. Returns the unsubscribe. Without a Tauri
+ * backend (the dev browser preview, before its mock is installed) it quietly does nothing, so
+ * start-up never shows the crash page.
+ */
 export function watchMinimized(): () => void {
   let stop: (() => void) | null = null;
   let gone = false;
-  listen<boolean>("window-minimized", (e) => minimized.set(e.payload)).then((un) => {
-    if (gone) un();
-    else stop = un;
-  });
+  try {
+    listen<boolean>("window-minimized", (e) => minimized.set(e.payload))
+      .then((un) => {
+        if (gone) un();
+        else stop = un;
+      })
+      .catch(() => {});
+  } catch {
+    // No Tauri backend: nothing to follow.
+  }
   return () => {
     gone = true;
     stop?.();

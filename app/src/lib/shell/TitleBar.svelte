@@ -4,12 +4,14 @@
   import icon from "../../../src-tauri/icons/32x32.png";
 
   /** Fishy Client's own title bar, in place of Windows' white one (spec §6s). */
-  const win = getCurrentWindow();
+  // Asked for when needed: without a Tauri backend (the dev browser preview) asking throws,
+  // and asking while the bar is created would show the crash page.
+  const win = () => getCurrentWindow();
   let maximized = $state(false);
 
   async function readMaximized() {
     try {
-      maximized = await win.isMaximized();
+      maximized = await win().isMaximized();
     } catch {
       // Not in the app (tests, browser preview): keep "Maximize".
     }
@@ -19,10 +21,14 @@
     readMaximized();
     let stop: (() => void) | null = null;
     let gone = false;
-    win
-      .onResized(() => readMaximized())
-      .then((un) => (gone ? un() : (stop = un)))
-      .catch(() => {});
+    try {
+      win()
+        .onResized(() => readMaximized())
+        .then((un) => (gone ? un() : (stop = un)))
+        .catch(() => {});
+    } catch {
+      // Not in the app: nothing to follow.
+    }
     return () => {
       gone = true;
       stop?.();
@@ -36,10 +42,10 @@
     <span data-tauri-drag-region>Fishy Client</span>
   </div>
   <div class="buttons">
-    <button aria-label="Minimize" title="Minimize" onclick={() => win.minimize()}>
+    <button aria-label="Minimize" title="Minimize" onclick={() => win().minimize()}>
       <svg viewBox="0 0 10 10" width="10" height="10" shape-rendering="crispEdges" aria-hidden="true"><rect x="0" y="8" width="10" height="2" /></svg>
     </button>
-    <button aria-label={maximized ? "Restore" : "Maximize"} title={maximized ? "Restore" : "Maximize"} onclick={() => win.toggleMaximize()}>
+    <button aria-label={maximized ? "Restore" : "Maximize"} title={maximized ? "Restore" : "Maximize"} onclick={() => win().toggleMaximize()}>
       {#if maximized}
         <svg viewBox="0 0 10 10" width="10" height="10" shape-rendering="crispEdges" aria-hidden="true">
           <rect x="3" y="0" width="7" height="2" /><rect x="8" y="0" width="2" height="7" />
@@ -51,7 +57,7 @@
         </svg>
       {/if}
     </button>
-    <button class="close" aria-label="Close" title="Close" onclick={() => win.close()}>
+    <button class="close" aria-label="Close" title="Close" onclick={() => win().close()}>
       <svg viewBox="0 0 10 10" width="10" height="10" shape-rendering="crispEdges" aria-hidden="true">
         <path d="M0 0h2v2H0zM2 2h2v2H2zM4 4h2v2H4zM6 6h2v2H6zM8 8h2v2H8zM8 0h2v2H8zM6 2h2v2H6zM2 6h2v2H2zM0 8h2v2H0z" />
       </svg>

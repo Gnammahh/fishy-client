@@ -99,3 +99,42 @@ describe("paused animations (spec §6r)", () => {
     stop();
   });
 });
+
+describe("watchMinimized (spec §6r)", () => {
+  it("does_not_crash_without_a_tauri_backend_like_the_dev_preview", async () => {
+    const { clearMocks } = await import("@tauri-apps/api/mocks");
+    clearMocks();
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    try {
+      const { watchMinimized } = await import("./motion");
+      let stop: (() => void) | undefined;
+      expect(() => (stop = watchMinimized())).not.toThrow();
+      await new Promise((r) => setTimeout(r, 20));
+      stop?.();
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
+  });
+
+  it("the_window_minimized_event_updates_the_minimized_store", async () => {
+    const { mockIPC, clearMocks } = await import("@tauri-apps/api/mocks");
+    mockIPC(() => null, { shouldMockEvents: true });
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      const { watchMinimized, minimized } = await import("./motion");
+      const stop = watchMinimized();
+      await new Promise((r) => setTimeout(r, 0));
+      await emit("window-minimized", true);
+      expect(get(minimized)).toBe(true);
+      await emit("window-minimized", false);
+      expect(get(minimized)).toBe(false);
+      stop();
+    } finally {
+      clearMocks();
+    }
+  });
+});

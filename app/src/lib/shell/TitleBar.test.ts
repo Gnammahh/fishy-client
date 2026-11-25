@@ -36,6 +36,13 @@ describe("TitleBar (spec §6s)", () => {
     await waitFor(() => expect(calls).toEqual(expect.arrayContaining(["plugin:window|minimize", "plugin:window|toggle_maximize", "plugin:window|close"])));
   });
 
+  it("renders_without_a_tauri_backend_like_the_dev_preview", () => {
+    clearMocks();
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    render(TitleBar);
+    expect(screen.getByRole("button", { name: "Maximize" })).toBeTruthy();
+  });
+
   it("a_maximized_window_offers_restore", async () => {
     setup(true);
     render(TitleBar);

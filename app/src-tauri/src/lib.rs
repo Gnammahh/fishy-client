@@ -844,6 +844,26 @@ mod tests {
     }
 
     #[test]
+    fn the_page_gets_only_the_tauri_calls_it_uses() {
+        // Not `core:default`: that also opens paths, menus, tray, images, resources, webviews and
+        // app info to the page. Events (listen, and onResized) and the title-bar buttons are all.
+        let cap: serde_json::Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert_eq!(cap["windows"], serde_json::json!(["main"]));
+        assert_eq!(
+            cap["permissions"],
+            serde_json::json!([
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "core:window:allow-is-maximized",
+                "core:window:allow-minimize",
+                "core:window:allow-toggle-maximize",
+                "core:window:allow-close",
+                "core:window:allow-start-dragging"
+            ])
+        );
+    }
+
+    #[test]
     fn folder_fields_ask_for_permission_when_it_is_safe() {
         let no = || Err(std::path::PathBuf::from(r"C:\Program Files\Epic Games"));
         assert_eq!(folder_fields(Ok(()), true), (true, false, None));

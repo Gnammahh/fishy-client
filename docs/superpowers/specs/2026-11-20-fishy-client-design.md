@@ -1264,6 +1264,34 @@ Asked for by the user, with Epic's launcher's **Manage** box as the model: every
 - **By hand:** open Manage from a card and from a game page; flip each switch and reopen; make a shortcut, also in the Start menu, start the game from it with Fishy closed and with it open, then Remove; Verify a small game, delete one of its files, Verify again and Download them; launch options (for example `-windowed`) work; a priority game jumps the waiting list; Start now → Pause and → Download both.
 - **Known limits:** Verify doesn't check a game's add-on pieces (§6n). Uninstalling Fishy Client itself leaves the game shortcuts behind (they then do nothing).
 
+## 6u. Cancel an update, and remove a game's extra pieces (version 1.10.0, decided 2026-11-25)
+
+Asked for by the user after the 1.9.4 Fortnite update: "why can't I cancel it while it's updating, and why does it want to install LEGO Fortnite and Save the World? I don't want those." The user asked Claude to decide the details.
+
+### Cancel an update
+- **Why it couldn't:** until now an update rewrote the game's files one by one in place, so stopping halfway left a mix of old and new files.
+- **Now an update is built aside:** every file it changes or adds is written to `<game folder>\.fishy-update\<app name>\` (same drive, so moving is instant). Only when every file is downloaded and checked are they moved into place, then removed files are deleted. Until that last step the game stays exactly the old version and still plays (the outdated-play warning, §6e, as before).
+- **Cancel** (the ✕ on a Downloads line, as for installs) works on updates too: "Cancel the update? What it downloaded is deleted; *Title* stays at the version you have." Cancel stops it and deletes that folder and the saved progress; the game keeps its version and shows **Update** again.
+- Cancel pressed while the files are being moved into place: the move finishes and the update counts as done (it takes seconds).
+- **Space:** building aside needs room for every changed file at once (as Epic's launcher does). The space check (§6c) counts that; not enough space says so before downloading, as today.
+- **Updates started before 1.10.0** were written in place. One that already changed some files can't be cancelled: "This update already changed some files, so it can't be cancelled. Pause it or let it finish." One that hadn't started writing can be cancelled.
+- Uninstall deletes the game's `.fishy-update` folder too. Resume after a restart keeps what was built aside.
+
+### Remove a game's extra pieces (Fortnite's LEGO Fortnite and Save the World)
+- **Why they're there:** Epic's launcher installed them with Fortnite, and Fishy Client imported all three pieces (§6n), so it updates all three.
+- The **Manage box** of a game with add-on pieces gets a section **Extra content**: one line per piece, with Epic's name and size ("LEGO® Fortnite Content · 9.0 GB") and a **Remove** button. The main game has none (that's Uninstall).
+- **Remove** asks: "Remove *LEGO® Fortnite Content*? Its files are deleted (9.0 GB) and Fishy Client stops updating it. To get it back, install it with Epic's launcher." with **Remove** and **Keep it**.
+- **What Remove does:** the piece's part names are taken out of the game's chosen parts (§6n); the files that belonged only to it (its own files, and the game's files that belonged only through those part names) are deleted, never a file the game or another piece still lists; the piece's record goes; a waiting or paused update of the piece goes (its built-aside folder too); a waiting or paused update of the game is narrowed to the remaining parts. Folders left empty go.
+- **Refused:** while the game runs ("Close the game first."), while one of its pieces is downloading ("Pause *Title*'s downloads first."), and while it's being checked ("Wait for the file check to finish."). A file that can't be deleted: "Some files couldn't be deleted. Close the game and try again." and nothing is forgotten.
+- Epic's launcher may still list the piece; if you use it for Fortnite, it may download it again. Fishy Client's import never re-adds a piece (it only offers whole games).
+
+### Logs
+- "update: cancelled", "update: built aside, moving N files", "piece removed (N files deleted)"; never paths, part names or titles.
+
+### Tests
+- **Rust:** an update writes changed and new files only under `.fishy-update` until the end, then moves them and deletes removed files; stopping mid-way leaves every old file untouched; a resume keeps built-aside files; cancel deletes the folder and the job and keeps the installed version; an old in-place update with finished files refuses cancel; Cancel during the move finishes it; uninstall removes `.fishy-update`; the space needed counts all changed files. Remove piece: deletes the piece's own files and the game's files only that piece's parts chose, keeps shared files, narrows the game's parts and its waiting update, drops the piece's update; refusals.
+- **UI:** the ✕ shows on update lines with the update wording; the Extra content section, its confirmation and errors.
+
 ## 7. Error handling
 
 - Every error shown in the UI has **a plain-English message plus a next step**, for example "Couldn't reach Epic. Check your internet. [Retry]".

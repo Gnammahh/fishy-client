@@ -1,9 +1,9 @@
 //! The two Epic calls Play makes (spec §6d, Legendary `api/egs.py` `get_game_token` / `get_ownership_token`).
-use crate::auth::client::{http_client, network, read_json, EPIC_ACCOUNT_HOST};
+use crate::auth::client::{http_client, network, read_json};
 use crate::auth::{AuthError, Secret};
 use reqwest::Client;
 
-pub const ECOMMERCE_HOST: &str = "https://ecommerceintegration-public-service-ecomprod02.ol.epicgames.com";
+use crate::epic::{ACCOUNT_HOST, ECOMMERCE_HOST};
 
 #[derive(Clone)]
 pub struct LaunchClient {
@@ -21,7 +21,7 @@ impl Default for LaunchClient {
 
 impl LaunchClient {
     pub fn new() -> Self {
-        Self::with_base_urls(EPIC_ACCOUNT_HOST, ECOMMERCE_HOST)
+        Self::with_base_urls(ACCOUNT_HOST, ECOMMERCE_HOST)
     }
 
     /// For tests: point both services at a fake Epic server.

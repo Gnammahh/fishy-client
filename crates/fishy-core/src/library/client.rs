@@ -7,9 +7,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
-pub const LIBRARY_HOST: &str = "https://library-service.live.use1a.on.epicgames.com";
-pub const CATALOG_HOST: &str = "https://catalog-public-service-prod06.ol.epicgames.com";
-pub const LAUNCHER_HOST: &str = crate::install::client::LAUNCHER_HOST;
+use crate::epic::{CATALOG_HOST, LAUNCHER_HOST, LIBRARY_HOST};
 /// How many catalog lookups run at the same time.
 const PARALLEL_LOOKUPS: usize = 8;
 

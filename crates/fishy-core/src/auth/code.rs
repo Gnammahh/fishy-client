@@ -53,7 +53,7 @@ pub struct CaptureGuard {
 
 fn is_epic_redirect_page(url: &str) -> bool {
     Url::parse(url)
-        .map(|u| u.scheme() == "https" && u.host_str() == Some("www.epicgames.com") && u.path() == "/id/api/redirect")
+        .map(|u| u.scheme() == "https" && u.host_str() == Some(crate::epic::LOGIN_HOST) && u.path() == crate::epic::REDIRECT_PATH)
         .unwrap_or(false)
 }
 

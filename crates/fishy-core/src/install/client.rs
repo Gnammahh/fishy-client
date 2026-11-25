@@ -9,8 +9,7 @@ use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::time::Duration;
 
-pub const LAUNCHER_HOST: &str = "https://launcher-public-service-prod06.ol.epicgames.com";
-const CDN_USER_AGENT: &str = "EpicGamesLauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit";
+use crate::epic::{CDN_USER_AGENT, LAUNCHER_HOST};
 /// Like Legendary's 10 s: how long the CDN may stay silent, not how long a whole download may take.
 const CDN_TIMEOUT: Duration = Duration::from_secs(10);
 /// The most the quick server test may take, for all servers together (spec §6m.2).

@@ -44,3 +44,32 @@ npm.cmd --prefix app run tauri signer generate -- --ci -w "$env:USERPROFILE\.fis
 
    GitHub renames the installer to `Fishy.Client_<version>_x64_en-US.msi` (spaces become dots); `latest.json` already points at that name.
 5. **Check:** on a PC with the previous version, start Fishy Client: the bar "Fishy Client <version> is available." appears; Update now installs it and restarts. Windows asks for administrator rights once (the app is installed for all users); if you say no, Fishy Client stays closed: start it again from the Start menu.
+
+## Checking that tampered updates are refused
+
+Installed copies only accept an installer whose signature matches the public key in `tauri.conf.json`. This is tested automatically on every `cargo test --workspace` (`app/src-tauri/tests/update_signature.rs`): with a throwaway key made for the test, never the real one, the updater's own check accepts a correctly signed installer and refuses one with a changed byte, one signed by a different key, an old release offered under a new version number, and anything the real public key didn't sign. To run only these tests:
+
+```powershell
+cargo test -p fishy-client --test update_signature
+```
+
+**By hand (optional, after step 2 of a release).** This checks the real installer you just built against the real public key. It needs the free `minisign` tool (from its official GitHub page, jedisct1/minisign). Tauri stores the key and the signature base64-encoded, so decode them first:
+
+```powershell
+$msi = Get-ChildItem "target\release\bundle\msi\*.msi" | Select-Object -First 1
+$sig = Get-Content "$($msi.FullName).sig" -Raw
+$pub = (Get-Content "app\src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).plugins.updater.pubkey
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($sig)) | Set-Content -Encoding ascii "$env:TEMP\fishy.minisig"
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($pub)) | Set-Content -Encoding ascii "$env:TEMP\fishy.pub"
+minisign -V -m $msi.FullName -x "$env:TEMP\fishy.minisig" -p "$env:TEMP\fishy.pub"
+```
+
+It should say `Signature and comment signature verified`. Then try a copy with its last byte changed, which must fail:
+
+```powershell
+Copy-Item $msi.FullName "$env:TEMP\tampered.msi"
+$f = [IO.File]::Open("$env:TEMP\tampered.msi", "Open"); $f.Seek(-1, "End") | Out-Null; $b = $f.ReadByte(); $f.Seek(-1, "End") | Out-Null; $f.WriteByte($b -bxor 1); $f.Close()
+minisign -V -m "$env:TEMP\tampered.msi" -x "$env:TEMP\fishy.minisig" -p "$env:TEMP\fishy.pub"
+```
+
+It should say `Signature verification failed`. Delete `fishy.minisig`, `fishy.pub` and `tampered.msi` from `%TEMP%` afterwards. Neither command touches the private key.

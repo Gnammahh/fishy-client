@@ -14,6 +14,13 @@ pub fn default_data_root() -> PathBuf {
 /// `data_root`. Returns how many things couldn't be deleted.
 pub fn delete_everything(store: &InstallStore, data_root: &Path, jobs: Vec<JobInfo>, also_games: bool) -> usize {
     let mut failed = 0;
+    // An update's half-built files (spec §6u) go either way: without its saved job nothing would
+    // ever finish or delete them.
+    for job in jobs.iter().filter(|j| j.update_from.is_some()) {
+        if !crate::install::uninstall::delete_aside(&job.install_path, &job.app_name) {
+            failed += 1;
+        }
+    }
     if also_games {
         // An update's files belong to its installed game, which uninstall handles (both versions).
         for job in jobs.iter().filter(|j| j.update_from.is_none()) {
@@ -161,6 +168,21 @@ mod tests {
         assert_eq!(remaining(&data), 0);
         assert!(g.dir.path().join("games").join("A").exists());
         assert!(g.dir.path().join("games").join("B").exists());
+    }
+
+    #[test]
+    fn a_paused_updates_side_folder_goes_even_when_games_stay() {
+        let mut g = games();
+        let mut update = job(g.dir.path(), "A");
+        update.update_from = Some("1".into());
+        let aside = crate::install::uninstall::aside_dir(&update.install_path, "A");
+        fs::create_dir_all(&aside).unwrap();
+        fs::write(aside.join("new.pak"), b"x").unwrap();
+        g.jobs.push(update);
+        let data = g.dir.path().join("data");
+        assert_eq!(delete_everything(&g.store, &data, g.jobs, false), 0);
+        assert!(!g.dir.path().join("games").join("A").join(".fishy-update").exists(), "the half-built update goes");
+        assert!(g.dir.path().join("games").join("A").join("readme.txt").exists(), "the game stays");
     }
 
     #[test]

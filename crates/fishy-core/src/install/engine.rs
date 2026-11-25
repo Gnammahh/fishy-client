@@ -376,6 +376,8 @@ pub async fn run_job(
                 std::fs::create_dir_all(parent).map_err(io_err)?;
             }
             std::fs::rename(&from, &target).map_err(|e| swap_error(&job.install_path, &job.title, e))?;
+            // A half-written temp file an in-place update (before 1.10.0) left next to it.
+            let _ = std::fs::remove_file(temp_path(&target));
         }
         super::uninstall::delete_aside(&job.install_path, &job.app_name);
     }
@@ -932,6 +934,20 @@ mod tests {
         let e = installed_old(&server, &old, &new);
         write_new(&e, &new, "added.txt"); // done before the pause
         std::fs::write(e.job.install_path.join("big.pak.fishy-update"), b"half").unwrap(); // half-written temp
+        run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
+            .await
+            .unwrap();
+        assert_new_version(&e, &new);
+    }
+
+    #[tokio::test]
+    async fn an_old_half_written_temp_file_is_cleaned_up() {
+        let server = MockServer::start().await;
+        let (old, new) = versions();
+        serve_counted(&server, &new, &[]).await;
+        let e = installed_old(&server, &old, &new);
+        // Paused by 1.9.4 in the middle of its first file: no file finished yet.
+        std::fs::write(e.job.install_path.join("big.pak.fishy-update"), b"half").unwrap();
         run_job(&e.client, &e.store, &e.job, &new.manifest, Some(&old.manifest), CancellationToken::new(), |_| {}, RunOptions::default())
             .await
             .unwrap();

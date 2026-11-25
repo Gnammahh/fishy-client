@@ -1279,10 +1279,10 @@ Asked for by the user after the 1.9.4 Fortnite update: "why can't I cancel it wh
 
 ### Remove a game's extra pieces (Fortnite's LEGO Fortnite and Save the World)
 - **Why they're there:** Epic's launcher installed them with Fortnite, and Fishy Client imported all three pieces (§6n), so it updates all three.
-- The **Manage box** of a game with add-on pieces gets a section **Extra content**: one line per piece, with Epic's name and size ("LEGO® Fortnite Content · 9.0 GB") and a **Remove** button. The main game has none (that's Uninstall).
-- **Remove** asks: "Remove *LEGO® Fortnite Content*? Its files are deleted (9.0 GB) and Fishy Client stops updating it. To get it back, install it with Epic's launcher." with **Remove** and **Keep it**.
+- The **Manage box** of a game with add-on pieces gets a section **Extra content**: one line per piece, with Epic's name and size ("LEGO® Fortnite Content · 8.4 GB") and a **Remove** button. The main game has none (that's Uninstall).
+- **Remove** asks: "Remove *LEGO® Fortnite Content*? Its files are deleted (8.4 GB) and Fishy Client stops updating it. To get it back, install it with Epic's launcher." with **Remove** and **Keep it**.
 - **What Remove does:** the piece's part names are taken out of the game's chosen parts (§6n); the files that belonged only to it (its own files, and the game's files that belonged only through those part names) are deleted, never a file the game or another piece still lists; the piece's record goes; a waiting or paused update of the piece goes (its built-aside folder too); a waiting or paused update of the game is narrowed to the remaining parts. Folders left empty go.
-- **Refused:** while the game runs ("Close the game first."), while one of its pieces is downloading ("Pause *Title*'s downloads first."), and while it's being checked ("Wait for the file check to finish."). A file that can't be deleted: "Some files couldn't be deleted. Close the game and try again." and nothing is forgotten.
+- **Refused:** while the game runs ("Close the game first."), while the game or one of its pieces is downloading ("Pause the game's downloads first, then remove it."), and while it's being checked ("Wait for the file check to finish."). A file that can't be deleted: "Couldn't delete some files. Close the game and try again." and nothing is forgotten.
 - Epic's launcher may still list the piece; if you use it for Fortnite, it may download it again. Fishy Client's import never re-adds a piece (it only offers whole games).
 
 ### Logs

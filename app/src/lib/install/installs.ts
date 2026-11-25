@@ -316,6 +316,17 @@ export const createShortcut = (appName: string) => withRecord("shortcut_create",
 export const addStartMenu = (appName: string) => withRecord("shortcut_add_start_menu", { appName });
 export const removeShortcut = (appName: string) => withRecord("shortcut_remove", { appName });
 
+/** Extra content → Remove (spec §6u): deletes an add-on piece. Returns an error message, or null. */
+export async function removePiece(appName: string): Promise<string | null> {
+  try {
+    const list = await invoke<InstalledGame[]>("piece_remove", { appName });
+    if (Array.isArray(list)) installed.set(list);
+    return null;
+  } catch (e) {
+    return message(e);
+  }
+}
+
 /** Starts checking the game's files; progress arrives in `verifying`. Returns an error, or null. */
 export async function verifyStart(appName: string): Promise<string | null> {
   try {

@@ -36,7 +36,9 @@ function devDownloads() {
   ];
   const installed = [
     { app_name: "KelpRunner", title: "Kelp Runner", version: "1.0", install_path: "C:\\Users\\you\\Games\\Kelp Runner", executable: "Kelp.exe", launch_parameters: "", install_size: 2 * GB, installed_at: new Date().toISOString() },
-  ];
+    // An add-on piece, like Fortnite's LEGO content (spec §6u): no card, shown under Extra content.
+    { app_name: "KelpRunnerReef", title: "Kelp Runner Reef Pack", version: "1.0", install_path: "C:\\Users\\you\\Games\\Kelp Runner", executable: "", launch_parameters: "", install_size: 0.7 * GB, installed_at: new Date().toISOString(), parent: "KelpRunner" },
+  ] as { app_name: string; title: string; parent?: string; options?: Record<string, unknown>; [k: string]: unknown }[];
   const send = () => emit("downloads-changed", { items: [...items].sort((a, b) => rank(a.state) - rank(b.state)) });
   const rank = (s: string) => (s === "downloading" ? 0 : s === "queued" ? 1 : 2);
   const pump = () => {
@@ -77,6 +79,11 @@ function devDownloads() {
         }
         case "installed_list":
           return installed;
+        case "piece_remove": {
+          const name = (args as { appName: string }).appName;
+          installed.splice(installed.findIndex((g) => g.app_name === name), 1);
+          return installed;
+        }
         case "install_options": {
           const game = (args as { game: { title: string } }).game;
           const parent = (args as { parent?: string | null }).parent ?? "C:\\Users\\you\\Games";

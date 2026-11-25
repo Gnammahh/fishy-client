@@ -217,3 +217,60 @@ describe("ManageDialog", () => {
     expect(onclose).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("Extra content (spec §6u)", () => {
+  const fortnite = () => record({}, { app_name: "SolCesto", title: "Fortnite" });
+  const lego = record({}, { app_name: "Lego", title: "LEGO® Fortnite Content", parent: "SolCesto", install_size: 9_043_132_409 });
+  const stw = record({}, { app_name: "Stw", title: "Fortnite Save the World Content", parent: "SolCesto", install_size: 4_616_242_010 });
+
+  it("a_game_without_pieces_has_no_extra_content", () => {
+    mock();
+    show();
+    expect(screen.queryByText("Extra content")).toBeNull();
+  });
+
+  it("lists_each_piece_and_removes_one_after_asking", async () => {
+    const calls = mock({ piece_remove: () => [fortnite(), stw] });
+    const rec = fortnite();
+    installed.set([rec, lego, stw]);
+    render(ManageDialog, { game, installed: rec, running: false, hasDownload: false, sharedWithEpic: false, onclose: vi.fn(), onuninstall: vi.fn() });
+    expect(screen.getByText("Extra content")).toBeTruthy();
+    expect(screen.getByText("LEGO® Fortnite Content")).toBeTruthy();
+    expect(screen.getByText("Fortnite Save the World Content")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Remove LEGO® Fortnite Content" }));
+    expect(
+      screen.getByText("Remove LEGO® Fortnite Content? Its files are deleted (8.4 GB) and Fishy Client stops updating it. To get it back, install it with Epic's launcher."),
+    ).toBeTruthy();
+    expect(calls.map(([c]) => c)).not.toContain("piece_remove");
+    await fireEvent.click(screen.getByRole("button", { name: "Keep it" }));
+    expect(screen.queryByText(/Its files are deleted/)).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Remove LEGO® Fortnite Content" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(calls).toContainEqual(["piece_remove", { appName: "Lego" }]));
+    await waitFor(() => expect(screen.queryByText("LEGO® Fortnite Content")).toBeNull());
+    expect(screen.getByText("Fortnite Save the World Content")).toBeTruthy();
+  });
+
+  it("a_refused_removal_shows_why", async () => {
+    mock({
+      piece_remove: () => {
+        throw "Pause the game's downloads first, then remove it.";
+      },
+    });
+    const rec = fortnite();
+    installed.set([rec, lego]);
+    render(ManageDialog, { game, installed: rec, running: false, hasDownload: false, sharedWithEpic: false, onclose: vi.fn(), onuninstall: vi.fn() });
+    await fireEvent.click(screen.getByRole("button", { name: "Remove LEGO® Fortnite Content" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(await screen.findByText("Pause the game's downloads first, then remove it.")).toBeTruthy();
+    expect(screen.getByText("LEGO® Fortnite Content")).toBeTruthy();
+  });
+
+  it("is_disabled_while_the_game_runs", () => {
+    mock();
+    const rec = fortnite();
+    installed.set([rec, lego]);
+    render(ManageDialog, { game, installed: rec, running: true, hasDownload: false, sharedWithEpic: false, onclose: vi.fn(), onuninstall: vi.fn() });
+    expect((screen.getByRole("button", { name: "Remove LEGO® Fortnite Content" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});

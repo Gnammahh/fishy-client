@@ -328,6 +328,15 @@ impl InstallStore {
         self.save_installed(&games)
     }
 
+    /// The game's chosen parts (spec §6n), after a piece was removed (§6u).
+    pub fn set_parts(&self, app: &str, parts: Option<Vec<String>>) -> io::Result<()> {
+        let _lock = installed_lock();
+        let mut games = self.installed();
+        let Some(game) = games.iter_mut().find(|g| g.app_name == app) else { return Ok(()) };
+        game.parts = parts;
+        self.save_installed(&games)
+    }
+
     /// Removes the record and the saved manifest.
     pub fn forget_installed(&self, app: &str) -> io::Result<()> {
         let path = self.saved_manifest(app)?;

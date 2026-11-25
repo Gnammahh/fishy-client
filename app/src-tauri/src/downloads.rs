@@ -5,6 +5,7 @@ use fishy_core::install::manifest::{parse_manifest, Manifest};
 use fishy_core::install::parts::{keep_siblings_files, only_parts, sibling_files};
 use fishy_core::install::speed::SpeedMeter;
 use fishy_core::install::store::{InstallStore, JobInfo};
+use fishy_core::install::pieces::{remove_piece, Removed};
 use fishy_core::install::uninstall::discard_download;
 use fishy_core::install::client::InstallClient;
 use fishy_core::install::limit::SpeedLimiter;
@@ -16,6 +17,9 @@ use tauri::{AppHandle, Emitter};
 use tokio_util::sync::CancellationToken;
 
 /// Shown when Cancel or the queue's × is used on an update (spec §6e).
+/// Removing a piece while its game downloads (spec §6u).
+pub const PIECE_BUSY: &str = "Pause the game's downloads first, then remove it.";
+
 /// An update begun in place before 1.10.0 that already changed files (spec §6u).
 pub const UPDATE_IN_PLACE: &str = "This update already changed some files, so it can't be cancelled. Pause it or let it finish.";
 
@@ -388,30 +392,7 @@ type FinishedHook = Box<dyn Fn(&str) + Send + Sync>;
 impl Downloads {
     /// Downloads left from last time come back as Paused.
     pub fn new(store: InstallStore, client: InstallClient) -> Self {
-        let jobs = store
-            .pending_jobs()
-            .into_iter()
-            .filter_map(|info| {
-                let bytes = store.job_manifest(&info.app_name).ok()?;
-                // Only the files of the chosen parts (spec §6n); None keeps every file.
-                let manifest = only_parts(parse_manifest(&bytes).ok()?, info.parts.as_deref());
-                let mut job = Job::new(info, Arc::new(manifest), JobState::Paused);
-                if job.info.update_from.is_some() {
-                    // Without the old manifest the update still works, it just downloads everything.
-                    let old_parts = store.installed().into_iter().find(|g| g.app_name == job.info.app_name).and_then(|g| g.parts);
-                    let siblings = sibling_files(&store, &job.info.app_name);
-                    job.old = store
-                        .installed_manifest(&job.info.app_name)
-                        .ok()
-                        .and_then(|b| parse_manifest(&b).ok())
-                        .map(|m| Arc::new(keep_siblings_files(only_parts(m, old_parts.as_deref()), &job.manifest, &siblings)));
-                }
-                job.downloaded = already_downloaded(&store, &job.info, &job.manifest, job.old.as_deref());
-                // The Priority download switch is kept through a restart (spec §6t).
-                job.priority = store.installed().iter().any(|g| g.app_name == job.info.app_name && g.options.priority);
-                Some(job)
-            })
-            .collect();
+        let jobs = store.pending_jobs().into_iter().filter_map(|info| load_job(&store, info)).collect();
         Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs, wiping: false })), on_finished: Arc::default() }
     }
 
@@ -522,6 +503,30 @@ impl Downloads {
     }
 
     /// Stops the download and deletes what it wrote.
+    /// Removes an add-on piece (spec §6u), under the queue's lock so nothing of its game starts
+    /// meanwhile: its waiting update leaves the list and the game's is reloaded, narrowed.
+    pub fn remove_piece(&self, app_name: &str) -> Result<Removed, String> {
+        let mut inner = self.lock();
+        let game = self.store.installed().into_iter().find(|g| g.app_name == app_name).and_then(|g| g.parent).ok_or_else(|| InstallError::NotInstalled.user_message())?;
+        let of_game = |j: &Job| j.info.app_name == game || j.info.app_name == app_name || j.info.parent.as_deref() == Some(game.as_str());
+        if inner.wiping || inner.jobs.iter().any(|j| of_game(j) && matches!(j.state, JobState::Downloading | JobState::Removing)) {
+            return Err(PIECE_BUSY.to_string());
+        }
+        let removed = remove_piece(&self.store, app_name).map_err(|e| e.user_message())?;
+        inner.jobs.retain(|j| j.info.app_name != app_name);
+        if let Some(i) = inner.find(&game) {
+            let saved = self.store.pending_jobs().into_iter().find(|j| j.app_name == game);
+            if let Some(mut job) = saved.and_then(|info| load_job(&self.store, info)) {
+                let before = &inner.jobs[i];
+                job.state = before.state;
+                job.error = before.error.clone();
+                job.priority = before.priority;
+                inner.jobs[i] = job;
+            }
+        }
+        Ok(removed)
+    }
+
     /// Why Cancel can't stop this game's download, if it can't (spec §6u).
     pub fn cancel_refusal(&self, app_name: &str) -> Option<&'static str> {
         let info = {
@@ -727,6 +732,28 @@ impl Downloads {
             }
         }
     }
+}
+
+/// A saved download as a paused job, with its manifest filtered to the chosen parts.
+fn load_job(store: &InstallStore, info: JobInfo) -> Option<Job> {
+    let bytes = store.job_manifest(&info.app_name).ok()?;
+    // Only the files of the chosen parts (spec §6n); None keeps every file.
+    let manifest = only_parts(parse_manifest(&bytes).ok()?, info.parts.as_deref());
+    let mut job = Job::new(info, Arc::new(manifest), JobState::Paused);
+    if job.info.update_from.is_some() {
+        // Without the old manifest the update still works, it just downloads everything.
+        let old_parts = store.installed().into_iter().find(|g| g.app_name == job.info.app_name).and_then(|g| g.parts);
+        let siblings = sibling_files(store, &job.info.app_name);
+        job.old = store
+            .installed_manifest(&job.info.app_name)
+            .ok()
+            .and_then(|b| parse_manifest(&b).ok())
+            .map(|m| Arc::new(keep_siblings_files(only_parts(m, old_parts.as_deref()), &job.manifest, &siblings)));
+    }
+    job.downloaded = already_downloaded(store, &job.info, &job.manifest, job.old.as_deref());
+    // The Priority download switch is kept through a restart (spec §6t).
+    job.priority = store.installed().iter().any(|g| g.app_name == job.info.app_name && g.options.priority);
+    Some(job)
 }
 
 /// Rough "already downloaded" for the bar and the space others reserve, until the job runs and
@@ -1189,6 +1216,70 @@ mod tests {
         d.finished_ok("a");
         assert!(d.lock().find("a").is_none(), "the job leaves the list");
         assert_eq!(*seen.lock().unwrap(), vec!["a".to_string()]);
+    }
+
+    /// Fortnite in small (spec §6u): the game lists every file, "Lego" lists its two. Every file
+    /// is on disk; each has a paused update.
+    fn fortnite_with_lego() -> (tempfile::TempDir, Downloads) {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        use fishy_core::install::manifest::{ChunkPart, FileEntry};
+        let file = |name: &str, tag: Option<&str>| FileEntry {
+            install_tags: tag.map(|t| vec![t.to_string()]).unwrap_or_default(),
+            filename: name.into(),
+            sha1: [3; 20],
+            executable: false,
+            parts: vec![ChunkPart { guid: [1, 2, 3, 4], offset: 0, size: 10 }],
+        };
+        let m = |files: Vec<FileEntry>| {
+            let s = sample();
+            Manifest::new(s.meta, s.chunks, files)
+        };
+        let game = m(vec![file("Fortnite.exe", None), file("br.pak", Some("BR")), file("juno.pak", Some("Juno"))]);
+        let lego = m(vec![file("juno.pak", Some("Juno"))]);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Fortnite");
+        std::fs::create_dir_all(&root).unwrap();
+        for f in &game.files {
+            std::fs::write(root.join(&f.filename), b"x").unwrap();
+        }
+        let store = InstallStore::at(dir.path().join("data"));
+        for (app, parts, parent, man) in [("Fortnite", vec!["BR", "Juno"], None, &game), ("Lego", vec!["Juno"], Some("Fortnite"), &lego)] {
+            let mut info = job(app, JobState::Paused).info;
+            info.install_path = root.clone();
+            info.imported = true;
+            info.parts = Some(parts.iter().map(|p| p.to_string()).collect());
+            info.parent = parent.map(str::to_string);
+            store.save_job(&info, &build_binary(man, true)).unwrap();
+            store.finish_install(&info, man).unwrap();
+            info.update_from = Some("1".into());
+            store.save_job(&info, &build_binary(man, true)).unwrap();
+        }
+        let d = Downloads::new(store, InstallClient::new());
+        (dir, d)
+    }
+
+    #[test]
+    fn removing_a_piece_drops_its_update_and_narrows_the_games() {
+        let (dir, d) = fortnite_with_lego();
+        assert_eq!(d.lock().jobs[0].manifest.files.len(), 3, "the game's update has all three files");
+        d.remove_piece("Lego").unwrap();
+        assert!(!dir.path().join("Fortnite").join("juno.pak").exists());
+        let inner = d.lock();
+        assert_eq!(inner.jobs.iter().map(|j| j.info.app_name.as_str()).collect::<Vec<_>>(), vec!["Fortnite"]);
+        assert_eq!(inner.jobs[0].info.parts, Some(vec!["BR".to_string()]));
+        assert_eq!(inner.jobs[0].manifest.files.len(), 2, "juno.pak isn't fetched any more");
+        assert_eq!(inner.jobs[0].state, JobState::Paused);
+    }
+
+    #[test]
+    fn a_piece_isnt_removed_while_its_game_downloads() {
+        let (dir, d) = fortnite_with_lego();
+        d.lock().jobs[1].state = JobState::Downloading; // the piece's update runs
+        assert_eq!(d.remove_piece("Lego").unwrap_err(), PIECE_BUSY);
+        d.lock().jobs[1].state = JobState::Paused;
+        d.lock().jobs[0].state = JobState::Downloading; // the game's runs
+        assert_eq!(d.remove_piece("Lego").unwrap_err(), PIECE_BUSY);
+        assert!(dir.path().join("Fortnite").join("juno.pak").exists());
     }
 
     #[test]

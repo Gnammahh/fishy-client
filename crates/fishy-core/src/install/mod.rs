@@ -9,6 +9,7 @@ pub mod compare;
 pub mod elevate;
 pub mod engine;
 pub mod parts;
+pub mod pieces;
 pub mod plan;
 pub mod space;
 pub mod verify;

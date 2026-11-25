@@ -134,6 +134,46 @@ pub fn game_options_set(
     Ok(saved)
 }
 
+/// Why a piece can't be removed now, if it can't (spec §6u). Downloads refuse on their own.
+pub fn piece_refusal(running: bool, checking: bool) -> Option<&'static str> {
+    if running {
+        Some("Close the game first.")
+    } else if checking {
+        Some("Wait for the file check to finish.")
+    } else {
+        None
+    }
+}
+
+/// Extra content → Remove (spec §6u): deletes an add-on piece such as LEGO Fortnite. Returns
+/// the installed games afterwards.
+#[tauri::command]
+pub async fn piece_remove(
+    app: tauri::AppHandle,
+    app_name: String,
+    install: tauri::State<'_, AppInstall>,
+    running: tauri::State<'_, crate::running::AppRunning>,
+    verify: tauri::State<'_, Arc<AppVerify>>,
+) -> Result<Vec<InstalledGame>, String> {
+    let rec = installed_record(&install, &app_name)?;
+    let game = rec.parent.clone().ok_or_else(|| InstallError::NotInstalled.user_message())?;
+    let checked = verify.lock_current().as_ref().is_some_and(|(a, _)| *a == game || *a == app_name);
+    let refusal = piece_refusal(running.contains(&game) || running.contains(&app_name), checked || install.checking.is_busy(&game));
+    if let Some(r) = refusal {
+        return Err(r.into());
+    }
+    let downloads = install.downloads.clone();
+    let name = app_name.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || downloads.remove_piece(&name)).await.map_err(|e| e.to_string())?;
+    let _ = app.emit("downloads-changed", install.downloads.view());
+    let _ = app.emit("installed-changed", ());
+    if let Err(m) = &result {
+        tracing::warn!("removing a piece failed: {m}");
+    }
+    result?;
+    Ok(install.downloads.store.installed())
+}
+
 /// Starts checking a game's files in the background; progress comes as events.
 #[tauri::command]
 pub fn verify_start(
@@ -324,6 +364,13 @@ mod tests {
         assert!(v.lock_current().is_none());
         checker.join().unwrap();
         assert!(tauri::async_runtime::block_on(AppVerify::default().stop_all(Duration::from_millis(10))), "nothing running is fine");
+    }
+
+    #[test]
+    fn a_piece_isnt_removed_while_the_game_runs_or_is_checked() {
+        assert_eq!(piece_refusal(true, true), Some("Close the game first."));
+        assert_eq!(piece_refusal(false, true), Some("Wait for the file check to finish."));
+        assert_eq!(piece_refusal(false, false), None);
     }
 
     #[test]

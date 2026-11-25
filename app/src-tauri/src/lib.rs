@@ -679,6 +679,7 @@ pub fn run() {
             download_start_now,
             verify::game_options_set,
             verify::verify_start,
+            verify::piece_remove,
             verify::verify_stop,
             verify::verify_repair,
             shortcuts::shortcut_create,

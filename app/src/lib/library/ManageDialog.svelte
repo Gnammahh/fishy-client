@@ -10,6 +10,7 @@
     formatPlaytime,
     installed as installedStore,
     openGameFolder,
+    removePiece,
     removeShortcut,
     setGameOptions,
     verifying,
@@ -114,6 +115,20 @@
       askStartMenu = false;
       shortcutError = await removeShortcut(game.app_name);
     });
+
+  // Extra content (spec §6u): the game's add-on pieces, such as Fortnite's LEGO content.
+  const pieces = $derived($installedStore.filter((g) => g.parent === game.app_name));
+  let askRemove = $state<InstalledGame | null>(null);
+  let pieceBusy = $state(false);
+  let pieceError = $state<string | null>(null);
+  async function confirmRemovePiece() {
+    const piece = askRemove;
+    if (!piece || pieceBusy) return;
+    pieceBusy = true;
+    pieceError = await removePiece(piece.app_name);
+    pieceBusy = false;
+    askRemove = null;
+  }
 
   // Verify (spec §6t): this game's progress or result, or another game's check.
   const v = $derived($verifying);
@@ -269,6 +284,41 @@
       {#if formatPlaytime(rec.playtime_secs)}<p class="hint">{formatPlaytime(rec.playtime_secs)}</p>{/if}
       {#if sharedWithEpic}<p class="hint">Also in Epic's launcher. Updating in one may make the other update again.</p>{/if}
     </section>
+
+    {#if pieces.length > 0}
+      <section class="panel">
+        <span class="name">Extra content</span>
+        {#each pieces as piece (piece.app_name)}
+          <div class="line">
+            <span class="text">
+              <span>{piece.title}</span>
+              <span class="hint">{formatBytes(piece.install_size)}</span>
+            </span>
+            <PixelButton
+              variant="ghost"
+              label="Remove {piece.title}"
+              disabled={running || pieceBusy}
+              title={running ? "Close the game first." : undefined}
+              onclick={() => {
+                pieceError = null;
+                askRemove = piece;
+              }}>Remove</PixelButton
+            >
+          </div>
+          {#if askRemove?.app_name === piece.app_name}
+            <div class="ask">
+              <span
+                >Remove {piece.title}? Its files are deleted ({formatBytes(piece.install_size)}) and Fishy Client stops updating it. To get it back, install
+                it with Epic's launcher.</span
+              >
+              <PixelButton variant="ghost" disabled={pieceBusy} onclick={() => (askRemove = null)}>Keep it</PixelButton>
+              <PixelButton variant="danger" disabled={pieceBusy} onclick={confirmRemovePiece}>Remove</PixelButton>
+            </div>
+          {/if}
+        {/each}
+        {#if pieceError}<p class="error" role="alert">{pieceError}</p>{/if}
+      </section>
+    {/if}
 
     <section class="panel">
       <label class="line">

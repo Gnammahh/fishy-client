@@ -1563,7 +1563,7 @@ Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "
 - [ ] Open the logs folder after installing a game: paths show `%USERPROFILE%\…`, not your user name.
 - [x] The CI workflow passes on GitHub (2026-11-25).
 - [ ] Dependabot opens its first pull requests (weekly).
-- [ ] On a PC with 1.9.5: the bar offers 2.0.0, and Update now installs it.
+- [x] On the maintainer's PC with 1.9.5: the bar offered 2.0.0, and Update now installed it (2026-11-25).
 
 ### Still to check by hand (version 1.9.5)
 - [ ] Remove LEGO Fortnite and Save the World from Fortnite's Manage box (with the updates paused); about 13 GB freed; Fortnite still starts

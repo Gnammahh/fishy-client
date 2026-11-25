@@ -287,7 +287,7 @@
                 </div>
               {/if}
               {#if s === "installed"}
-                <span class="badge" class:update={outdated(game)}>{outdated(game) ? "Update available" : "Installed"}</span>
+                <span class="badge" class:outdated={outdated(game)}>{outdated(game) ? "Update available" : "Installed"}</span>
               {/if}
             </button>
             <span class="title">{game.title}</span>
@@ -567,6 +567,10 @@
   }
   .card {
     display: grid;
+    /* Never wider than its column, whatever the buttons need. */
+    grid-template-columns: minmax(0, 1fr);
+    /* Content stays at the top when a neighbour in the row is taller. */
+    align-content: start;
     gap: 8px;
     min-width: 0;
   }
@@ -645,6 +649,9 @@
   }
   .row {
     display: flex;
+    /* Play, Update and ⋯ go onto a second line when the column is narrow. */
+    flex-wrap: wrap;
+    gap: 8px;
     align-items: center;
     min-height: 30px;
   }
@@ -665,14 +672,11 @@
   .dots:hover {
     background: rgba(79, 227, 209, 0.15);
   }
-  .update {
-    margin-right: 8px;
-  }
-  .badge.update {
+  /* Not `.update`: that's the Update button's class, and its text and border made this hard to read. */
+  .badge.outdated {
     background: var(--orange);
   }
   .play {
-    margin-right: 8px;
     color: var(--orange);
     border-color: var(--orange);
   }

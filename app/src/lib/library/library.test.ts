@@ -522,6 +522,27 @@ describe("LibraryPage", () => {
     await waitFor(() => expect(started).toEqual([{ appName: "KelpRunner" }]));
   });
 
+  it("the_update_available_badge_never_takes_a_buttons_style", async () => {
+    // Sharing the Update button's class gave the badge aqua text and a border on its orange
+    // background, so it was hard to read.
+    mockCommands({ library_cached: () => null, library_refresh: () => withUpdate([game("Kelp Runner")], { KelpRunner: "2" }) });
+    installed.set([installedGame("KelpRunner")]);
+    render(LibraryPage, { name: "FishFan" });
+    const badge = await screen.findByText("Update available");
+    for (const buttonClass of ["update", "play", "install", "dots"]) expect(badge.classList.contains(buttonClass)).toBe(false);
+  });
+
+  it("a_cards_buttons_wrap_instead_of_pushing_into_the_next_card", () => {
+    // Play, Update and ⋯ don't fit a narrow column (a 1280-pixel window): the row must wrap,
+    // and the card must stay as wide as its column.
+    const src = import.meta.glob("./LibraryPage.svelte", { query: "?raw", import: "default", eager: true })["./LibraryPage.svelte"] as string;
+    const rule = (sel: string) => new RegExp("\\n  \\." + sel.slice(1) + " \\{([^}]*)\\}").exec(src)?.[1] ?? "";
+    expect(rule(".row")).toMatch(/flex-wrap:\s*wrap;/);
+    expect(rule(".card")).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+    // A taller neighbour must not stretch the gaps inside the other cards of its row.
+    expect(rule(".card")).toMatch(/align-content:\s*start;/);
+  });
+
   it("update_shown_when_only_a_piece_is_outdated", async () => {
     const started: unknown[] = [];
     mockCommands({

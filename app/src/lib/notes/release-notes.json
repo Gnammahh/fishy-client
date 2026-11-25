@@ -1,5 +1,16 @@
 [
   {
+    "version": "1.9.4",
+    "date": "2026-11-25",
+    "items": [
+      "Delete all my data now also deletes your game shortcuts, and stops a file check (Verify) that's running first.",
+      "Uninstall keeps a game's shortcuts if the uninstall fails, and gives the right message while a repair is waiting in Downloads.",
+      "Remove, Uninstall and Delete all my data only delete a shortcut if it still starts that game through Fishy Client.",
+      "After a game updates or is repaired, its old Verify result goes away.",
+      "Small fixes for Start now in Downloads and for reading newer Epic games' file lists."
+    ]
+  },
+  {
     "version": "1.9.3",
     "date": "2026-11-24",
     "items": [

@@ -157,6 +157,25 @@ describe("Manage box helpers", () => {
     stop();
   });
 
+  it("a finished update or repair clears that game's old Verify result", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "installed_list") return [];
+      },
+      { shouldMockEvents: true },
+    );
+    const stop = await initInstalls();
+    verifying.set({ app: "A", result: { kind: "bad", files: 2, bytes: 340 } });
+    await emit("download-finished", "B");
+    expect(get(verifying)?.app).toBe("A");
+    await emit("download-finished", "A");
+    expect(get(verifying)).toBeNull();
+    verifying.set({ app: "A", done: 1, total: 9 });
+    await emit("download-finished", "A");
+    expect(get(verifying)).toEqual({ app: "A", done: 1, total: 9 });
+    stop();
+  });
+
   it("a play-request event takes the request from Rust, so it's used once", async () => {
     let waiting: string | null = "Reef";
     const taken: string[] = [];

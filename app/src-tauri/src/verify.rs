@@ -39,6 +39,27 @@ impl AppVerify {
             }
         }
     }
+
+    /// Delete all my data: stops whatever check runs and waits (up to `timeout`) until it has.
+    /// False if it was still running at the end.
+    pub async fn stop_all(&self, timeout: Duration) -> bool {
+        if let Some((_, stop)) = self.lock_current().as_ref() {
+            stop.store(true, Ordering::Relaxed);
+        }
+        let deadline = Instant::now() + timeout;
+        while self.lock_current().is_some() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        true
+    }
+
+    /// The game's files changed (an update or repair finished): its last result no longer holds.
+    pub fn forget(&self, app_name: &str) {
+        self.bad.lock().unwrap_or_else(|p| p.into_inner()).remove(app_name);
+    }
 }
 
 /// Why Verify can't start now, if it can't.
@@ -273,6 +294,36 @@ mod tests {
         assert_eq!(verify_refusal(false, true, true, true), Some("Finish or cancel its download first."));
         assert_eq!(verify_refusal(false, false, true, false), Some("Another game is being checked."));
         assert_eq!(verify_refusal(false, false, false, true), Some("Finish or cancel its download first."));
+    }
+
+    #[test]
+    fn a_finished_update_or_repair_forgets_the_old_result() {
+        let v = AppVerify::default();
+        v.bad.lock().unwrap().insert("kelp".into(), FileCheck::default());
+        v.bad.lock().unwrap().insert("tide".into(), FileCheck::default());
+        v.forget("kelp");
+        let bad = v.bad.lock().unwrap();
+        assert!(!bad.contains_key("kelp"));
+        assert!(bad.contains_key("tide"), "other games keep theirs");
+    }
+
+    #[test]
+    fn delete_all_my_data_stops_any_running_check_and_waits_for_it() {
+        let v = Arc::new(AppVerify::default());
+        let stop = Arc::new(AtomicBool::new(false));
+        *v.lock_current() = Some(("kelp".into(), stop.clone()));
+        let (v2, s2) = (v.clone(), stop.clone());
+        let checker = std::thread::spawn(move || {
+            while !s2.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            *v2.lock_current() = None;
+        });
+        assert!(tauri::async_runtime::block_on(v.stop_all(Duration::from_secs(5))));
+        assert!(stop.load(Ordering::Relaxed));
+        assert!(v.lock_current().is_none());
+        checker.join().unwrap();
+        assert!(tauri::async_runtime::block_on(AppVerify::default().stop_all(Duration::from_millis(10))), "nothing running is fine");
     }
 
     #[test]

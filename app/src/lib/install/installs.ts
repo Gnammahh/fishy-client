@@ -129,6 +129,10 @@ export async function initInstalls(): Promise<() => void> {
     const v = p as { app_name: string; done: number; total: number };
     verifying.set({ app: v.app_name, done: v.done, total: v.total });
   });
+  // An update or repair of the game finished: its last Verify result is old now.
+  const stopFinished = await safeListen("download-finished", (p) => {
+    verifying.update((v) => (v && v.app === p && "result" in v ? null : v));
+  });
   const stopDone = await safeListen("verify-done", (p) => {
     const v = p as { app_name: string; result: VerifyResult };
     verifying.set({ app: v.app_name, result: v.result });
@@ -154,6 +158,7 @@ export async function initInstalls(): Promise<() => void> {
     stopRunning();
     stopProgress();
     stopDone();
+    stopFinished();
     stopPlay();
   };
 }

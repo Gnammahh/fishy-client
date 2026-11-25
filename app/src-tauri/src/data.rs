@@ -20,6 +20,8 @@ pub(crate) fn browser_data_failed<E>(clear: Option<impl FnOnce() -> Result<(), E
 
 pub(crate) const STOP_ERROR: &str = "A download wouldn't stop, so nothing was deleted. Try again in a minute.";
 
+pub(crate) const VERIFY_STOP_ERROR: &str = "A file check wouldn't stop, so nothing was deleted. Try again in a minute.";
+
 pub(crate) const AUTOSTART_ERROR: &str = "Couldn't change Start with Windows.";
 
 /// Start with Windows, read from the Registry each time (never saved in settings.json).
@@ -78,9 +80,15 @@ pub async fn delete_all_data(
     library: tauri::State<'_, AppLibrary>,
     install: tauri::State<'_, AppInstall>,
     running: tauri::State<'_, crate::running::AppRunning>,
+    verify: tauri::State<'_, std::sync::Arc<crate::verify::AppVerify>>,
 ) -> Result<DeleteReport, String> {
     tracing::info!("delete all my data (games too: {also_games})");
     games_free_to_delete(also_games, &running.in_use())?;
+    // A Verify reading a game's files stops first, like the downloads.
+    if !verify.stop_all(std::time::Duration::from_secs(10)).await {
+        tracing::warn!("{VERIFY_STOP_ERROR}");
+        return Err(VERIFY_STOP_ERROR.to_string());
+    }
     // 1. Stop every download and forget prepared Install boxes.
     let jobs = install.downloads.stop_for_wipe(std::time::Duration::from_secs(60)).await.map_err(|_| {
         tracing::warn!("{STOP_ERROR}");
@@ -115,6 +123,11 @@ pub async fn delete_all_data(
         tracing::warn!("couldn't clear the window's browser data");
     }
     install.downloads.limiter.set(None); // the saved limit is deleted too
+    // The games' shortcuts would start a Fishy Client that no longer knows them (spec §6t).
+    let removed = crate::shortcuts::remove_all(&install.downloads.store.installed());
+    if removed > 0 {
+        tracing::info!("{removed} shortcuts removed");
+    }
     // 3 and 5. Games (if ticked), then everything in %APPDATA%\FishyClient.
     let store = install.downloads.store.clone();
     let failed = tauri::async_runtime::spawn_blocking(move || delete_everything(&store, &default_data_root(), jobs, also_games))

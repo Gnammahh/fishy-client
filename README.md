@@ -103,7 +103,7 @@ When a game starts, Fishy Client passes it your Epic display name, account ID, l
 | `%APPDATA%\FishyClient\settings.json` | your settings |
 | `%APPDATA%\FishyClient\library.json` | your list of games, so the Library shows at once |
 | `%APPDATA%\FishyClient\installed.json` | your installed games: folder, version, size, install date, when you last pressed Play (for the "Recently played" sort), time played through Fishy Client, and each game's Manage box choices (auto update, priority download, launch options, which shortcuts Fishy Client made) |
-| your Desktop, and Start menu → `Fishy Client` | game shortcuts, only the ones you make with **Create** in a game's Manage box. **Remove** or uninstalling the game deletes them; **Delete all my data** doesn't yet, so delete them by hand if you like |
+| your Desktop, and Start menu → `Fishy Client` | game shortcuts, only the ones you make with **Create** in a game's Manage box. **Remove**, uninstalling the game and **Delete all my data** delete them (only shortcuts that still start that game through Fishy Client; anything else you put there stays) |
 | `%APPDATA%\FishyClient\manifests\`, `downloads\` | file lists for installed games, and downloads in progress |
 | `%APPDATA%\FishyClient\logs\` | logs, kept for 7 days |
 | `%TEMP%\FishyClient\` | an ownership token file for the few games that need one; deleted when Fishy Client starts |

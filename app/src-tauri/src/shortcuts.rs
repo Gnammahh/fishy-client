@@ -30,14 +30,42 @@ pub fn taken_by_other(path: &Path, recorded: &[PathBuf]) -> bool {
     path.symlink_metadata().is_ok() && !recorded.iter().any(|r| r == path)
 }
 
-/// Deletes the recorded shortcuts that are still `.lnk` files; returns how many.
-pub fn remove_recorded(paths: &[PathBuf]) -> usize {
+/// The arguments a game's shortcut carries.
+fn play_args(app_name: &str) -> String {
+    if app_name.contains(' ') {
+        format!("--play \"{app_name}\"")
+    } else {
+        format!("--play {app_name}")
+    }
+}
+
+/// A shortcut that starts `fishy` with `--play <app_name>`, nothing else: one Fishy Client made.
+pub fn link_is_ours(target: &Path, args: &str, fishy: &Path, app_name: &str) -> bool {
+    let same_exe = target.as_os_str().to_string_lossy().to_lowercase() == fishy.as_os_str().to_string_lossy().to_lowercase();
+    same_exe && args.trim() == play_args(app_name)
+}
+
+/// Deletes the recorded shortcuts that are still `.lnk` files starting `fishy` for this game;
+/// returns how many. Anything else at a recorded path (the user replaced it) is left alone.
+pub fn remove_links(paths: &[PathBuf], fishy: &Path, app_name: &str) -> usize {
     paths
         .iter()
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("lnk")))
         .filter(|p| p.symlink_metadata().is_ok_and(|m| m.is_file()))
+        .filter(|p| win::read_lnk(p).is_some_and(|(target, args)| link_is_ours(&target, &args, fishy, app_name)))
         .filter(|p| std::fs::remove_file(p).is_ok())
         .count()
+}
+
+/// `remove_links` for this running Fishy Client.
+pub fn remove_recorded(paths: &[PathBuf], app_name: &str) -> usize {
+    let Ok(fishy) = std::env::current_exe() else { return 0 };
+    remove_links(paths, &fishy, app_name)
+}
+
+/// Delete all my data: every installed game's shortcuts go too. Returns how many.
+pub fn remove_all(games: &[InstalledGame]) -> usize {
+    games.iter().map(|g| remove_recorded(&g.options.shortcuts, &g.app_name)).sum()
 }
 
 /// Where the shortcut goes.
@@ -68,7 +96,7 @@ fn make(install: &AppInstall, app_name: &str, place: Place) -> Result<InstalledG
     let fishy = std::env::current_exe().map_err(|_| SHORTCUT_ERROR)?;
     let exe = rec.executable.trim().trim_start_matches(['/', '\\']);
     let icon = file_path(&rec.install_path, exe).ok().filter(|p| p.is_file()).unwrap_or_else(|| fishy.clone());
-    let args = if app_name.contains(' ') { format!("--play \"{app_name}\"") } else { format!("--play {app_name}") };
+    let args = play_args(app_name);
     let workdir = fishy.parent().map(Path::to_path_buf).unwrap_or_default();
     win::write_lnk(&path, &fishy, &args, &icon, &workdir).map_err(|_| SHORTCUT_ERROR)?;
     if !recorded.contains(&path) {
@@ -85,7 +113,7 @@ pub fn remove_for(install: &AppInstall, app_name: &str) {
     if rec.options.shortcuts.is_empty() {
         return;
     }
-    remove_recorded(&rec.options.shortcuts);
+    remove_recorded(&rec.options.shortcuts, app_name);
     let _ = install.downloads.store.set_shortcuts(app_name, Vec::new());
     tracing::info!("shortcut removed");
 }
@@ -110,7 +138,7 @@ pub async fn shortcut_remove(app_name: String, install: tauri::State<'_, AppInst
 mod win {
     use std::path::{Path, PathBuf};
     use windows::core::{Interface, HSTRING};
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM_READ};
     use windows::Win32::UI::Shell::{
         FOLDERID_Desktop, FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath, SetCurrentProcessExplicitAppUserModelID, ShellLink,
         KNOWN_FOLDER_FLAG,
@@ -171,6 +199,32 @@ mod win {
         .join()
         .map_err(|_| "shortcut thread failed".to_string())?
     }
+
+    /// Reads a `.lnk`'s target and arguments with Windows' own shortcut reader. None if it
+    /// isn't a shortcut Windows can read.
+    pub fn read_lnk(path: &Path) -> Option<(PathBuf, String)> {
+        let path = path.to_path_buf();
+        std::thread::spawn(move || unsafe {
+            let init = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let result = (|| -> windows::core::Result<(PathBuf, String)> {
+                let link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+                link.cast::<IPersistFile>()?.Load(&HSTRING::from(path.as_os_str()), STGM_READ)?;
+                let mut target = vec![0u16; 32768];
+                link.GetPath(&mut target, std::ptr::null_mut(), 0)?;
+                let mut args = vec![0u16; 32768];
+                link.GetArguments(&mut args)?;
+                let text = |b: &[u16]| String::from_utf16_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]);
+                Ok((PathBuf::from(text(&target)), text(&args)))
+            })();
+            if init.is_ok() {
+                CoUninitialize();
+            }
+            result.ok()
+        })
+        .join()
+        .ok()
+        .flatten()
+    }
 }
 
 #[cfg(not(windows))]
@@ -189,6 +243,16 @@ mod win {
     pub fn write_lnk(_: &Path, _: &Path, _: &str, _: &Path, _: &Path) -> Result<(), String> {
         Err("Windows only".into())
     }
+    pub fn read_lnk(_: &Path) -> Option<(PathBuf, String)> {
+        None
+    }
+}
+
+/// A real shortcut to this test program for `app_name`, as Create makes it.
+#[cfg(all(test, windows))]
+pub(crate) fn make_test_link(path: &Path, app_name: &str) {
+    let exe = std::env::current_exe().unwrap();
+    win::write_lnk(path, &exe, &play_args(app_name), &exe, path.parent().unwrap()).unwrap();
 }
 
 #[cfg(test)]
@@ -215,19 +279,42 @@ mod tests {
     }
 
     #[test]
-    fn remove_deletes_only_recorded_lnk_files() {
+    fn only_a_link_to_fishy_playing_this_game_is_ours() {
+        let fishy = Path::new(r"C:\Program Files\Fishy Client\Fishy Client.exe");
+        assert!(link_is_ours(fishy, "--play Tide", fishy, "Tide"));
+        assert!(link_is_ours(Path::new(r"c:\program files\fishy client\fishy client.exe"), "--play Tide", fishy, "Tide"), "Windows ignores case");
+        assert!(link_is_ours(fishy, r#"--play "Sol Cesto""#, fishy, "Sol Cesto"));
+        assert!(!link_is_ours(fishy, "--play Kelp", fishy, "Tide"), "another game's");
+        assert!(!link_is_ours(fishy, "--play Tide --other", fishy, "Tide"));
+        assert!(!link_is_ours(fishy, "", fishy, "Tide"));
+        assert!(!link_is_ours(Path::new(r"C:\Windows\System32\cmd.exe"), "--play Tide", fishy, "Tide"), "not Fishy");
+    }
+
+    /// Writes real shortcuts with Windows' API.
+    #[cfg(windows)]
+    #[test]
+    fn remove_deletes_only_recorded_links_to_fishy_for_this_game() {
         let dir = tempfile::tempdir().unwrap();
-        let lnk = dir.path().join("Tide.lnk");
+        let fishy = std::env::current_exe().unwrap();
+        let elsewhere = dir.path().join("other.exe");
+        std::fs::write(&elsewhere, b"x").unwrap();
+        let ours = dir.path().join("Tide.lnk");
+        let other_game = dir.path().join("Kelp.lnk");
+        let other_target = dir.path().join("Elsewhere.lnk");
+        win::write_lnk(&ours, &fishy, "--play Tide", &fishy, dir.path()).unwrap();
+        win::write_lnk(&other_game, &fishy, "--play Kelp", &fishy, dir.path()).unwrap();
+        win::write_lnk(&other_target, &elsewhere, "--play Tide", &fishy, dir.path()).unwrap();
+        let not_a_link = dir.path().join("Fake.lnk");
         let txt = dir.path().join("Tide.txt");
         let folder = dir.path().join("Folder.lnk");
-        let other = dir.path().join("Other.lnk");
-        std::fs::write(&lnk, b"x").unwrap();
+        std::fs::write(&not_a_link, b"x").unwrap();
         std::fs::write(&txt, b"x").unwrap();
         std::fs::create_dir(&folder).unwrap();
-        std::fs::write(&other, b"x").unwrap();
         let gone = dir.path().join("Gone.lnk");
-        assert_eq!(remove_recorded(&[lnk.clone(), txt.clone(), folder.clone(), gone]), 1);
-        assert!(!lnk.exists() && txt.exists() && folder.exists() && other.exists());
+        let recorded = [ours.clone(), other_game.clone(), other_target.clone(), not_a_link.clone(), txt.clone(), folder.clone(), gone];
+        assert_eq!(remove_links(&recorded, &fishy, "Tide"), 1);
+        assert!(!ours.exists());
+        assert!(other_game.exists() && other_target.exists() && not_a_link.exists() && txt.exists() && folder.exists());
     }
 
     #[test]

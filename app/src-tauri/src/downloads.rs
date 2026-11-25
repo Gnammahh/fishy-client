@@ -66,6 +66,14 @@ impl Job {
     }
 }
 
+/// A job just marked as downloading: what its task needs.
+pub struct Started {
+    pub info: JobInfo,
+    pub manifest: Arc<Manifest>,
+    pub old: Option<Arc<Manifest>>,
+    pub stop: CancellationToken,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DownloadItem {
     pub app_name: String,
@@ -266,6 +274,46 @@ impl Inner {
         self.jobs.iter().position(|j| j.info.app_name == app)
     }
 
+    /// Marks this waiting game's job as downloading and hands back what its task needs. By name,
+    /// under the caller's one lock, so a list changed in between can't start the wrong job.
+    pub fn begin(&mut self, app: &str) -> Option<Started> {
+        let i = self.find(app).filter(|&i| self.jobs[i].state == JobState::Queued)?;
+        let job = &mut self.jobs[i];
+        let stop = CancellationToken::new();
+        job.state = JobState::Downloading;
+        job.stop = Some(stop.clone());
+        job.cancel_requested = false;
+        job.requeue = false;
+        Some(Started { info: job.info.clone(), manifest: job.manifest.clone(), old: job.old.clone(), stop })
+    }
+
+    /// Starts the first waiting job, if nothing is running.
+    pub fn begin_next(&mut self) -> Option<Started> {
+        let name = self.jobs[self.next_to_start()?].info.app_name.clone();
+        self.begin(&name)
+    }
+
+    /// Start now, and start whatever should start now, in one go.
+    pub fn start_now_begin(&mut self, app: &str, mode: StartNow) -> Result<Option<Started>, &'static str> {
+        Ok(match self.start_now(app, mode)? {
+            Some(_) => self.begin(app),
+            None => self.begin_next(),
+        })
+    }
+
+    /// Why this game can't be uninstalled because of its download, if it can't. A paused or
+    /// failed update goes with the game (`take_stopped_update`).
+    pub fn uninstall_refusal(&self, app: &str) -> Option<&'static str> {
+        let job = &self.jobs[self.find(app)?];
+        if job.info.update_from.is_none() {
+            Some("Finish or cancel its download first, then uninstall.")
+        } else if matches!(job.state, JobState::Paused | JobState::Error) {
+            None
+        } else {
+            Some("Pause the update first, then uninstall.")
+        }
+    }
+
     /// Cancel, step 1. A running job is asked to stop (its task deletes the files); any other
     /// job is marked Removing and returned so the caller deletes its files.
     pub fn begin_removal(&mut self, app: &str) -> Option<JobInfo> {
@@ -330,7 +378,12 @@ pub struct Downloads {
     /// The speed limit every download shares (spec §6f.1); `settings_set` changes it live.
     pub limiter: Arc<SpeedLimiter>,
     inner: Arc<Mutex<Inner>>,
+    /// Told the game's name when its download, update or repair finishes (Verify forgets its
+    /// old result then).
+    on_finished: Arc<Mutex<Vec<FinishedHook>>>,
 }
+
+type FinishedHook = Box<dyn Fn(&str) + Send + Sync>;
 
 impl Downloads {
     /// Downloads left from last time come back as Paused.
@@ -359,7 +412,7 @@ impl Downloads {
                 Some(job)
             })
             .collect();
-        Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs, wiping: false })) }
+        Self { store: Arc::new(store), client, limiter: Arc::new(SpeedLimiter::new()), inner: Arc::new(Mutex::new(Inner { jobs, wiping: false })), on_finished: Arc::default() }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
@@ -422,13 +475,28 @@ impl Downloads {
 
     /// Start now on a waiting game (spec §6t).
     pub fn start_now(&self, app: &AppHandle, app_name: &str, mode: StartNow) -> Result<DownloadsView, String> {
-        let now = self.lock().start_now(app_name, mode).map_err(str::to_string)?;
+        let started = self.lock().start_now_begin(app_name, mode).map_err(str::to_string)?;
         tracing::info!("start now: {}", if mode == StartNow::Pause { "pause" } else { "both" });
-        match now {
-            Some(i) => self.start_at(app, Some(i)),
-            None => self.pump(app),
-        }
+        self.launch(app, started);
         Ok(self.view())
+    }
+
+    /// Calls `f` with the game's name whenever a download, update or repair finishes.
+    pub fn when_finished(&self, f: impl Fn(&str) + Send + Sync + 'static) {
+        self.on_finished.lock().unwrap_or_else(|p| p.into_inner()).push(Box::new(f));
+    }
+
+    /// The game's files are now complete: its job leaves the list and the hooks are told.
+    fn finished_ok(&self, app_name: &str) {
+        {
+            let mut inner = self.lock();
+            if let Some(i) = inner.find(app_name) {
+                inner.jobs.remove(i);
+            }
+        }
+        for f in self.on_finished.lock().unwrap_or_else(|p| p.into_inner()).iter() {
+            f(app_name);
+        }
     }
 
     pub fn pause(&self, app: &AppHandle, app_name: &str) {
@@ -484,6 +552,11 @@ impl Downloads {
         self.lock().take_stopped_update(app_name)
     }
 
+    /// Why this game can't be uninstalled because of its download, if it can't.
+    pub fn uninstall_refusal(&self, app_name: &str) -> Option<&'static str> {
+        self.lock().uninstall_refusal(app_name)
+    }
+
     pub fn active_names(&self) -> Vec<String> {
         self.lock().active_names()
     }
@@ -535,28 +608,16 @@ impl Downloads {
         self.lock().wiping = false;
     }
 
-    /// Starts the next queued job if nothing is running.
+    /// Starts the next queued job if nothing is running (chosen and started under one lock).
     fn pump(&self, app: &AppHandle) {
-        let next = self.lock().next_to_start();
-        self.start_at(app, next);
+        let started = self.lock().begin_next();
+        self.launch(app, started);
     }
 
-    /// Starts waiting job `i` (if any) and reports the change.
-    fn start_at(&self, app: &AppHandle, i: Option<usize>) {
-        let started = {
-            let mut inner = self.lock();
-            i.filter(|&i| i < inner.jobs.len() && inner.jobs[i].state == JobState::Queued).map(|i| {
-                let job = &mut inner.jobs[i];
-                let stop = CancellationToken::new();
-                job.state = JobState::Downloading;
-                job.stop = Some(stop.clone());
-                job.cancel_requested = false;
-                job.requeue = false;
-                (job.info.clone(), job.manifest.clone(), job.old.clone(), stop)
-            })
-        };
+    /// Runs the task of a job just started (if any) and reports the change.
+    fn launch(&self, app: &AppHandle, started: Option<Started>) {
         self.emit(app);
-        if let Some((info, manifest, old, stop)) = started {
+        if let Some(Started { info, manifest, old, stop }) = started {
             let this = self.clone();
             let app = app.clone();
             tauri::async_runtime::spawn(async move { this.run(app, info, manifest, old, stop).await });
@@ -627,12 +688,15 @@ impl Downloads {
             Err(e) => Err(e),
         };
         let mut inner = self.lock();
-        let Some(i) = inner.find(&info.app_name) else { return };
+        if inner.find(&info.app_name).is_none() {
+            return;
+        }
         match outcome {
             Ok(()) => {
                 tracing::info!("finished {} ({} bytes downloaded)", info.app_name, info.download_size);
-                inner.jobs.remove(i);
                 drop(inner);
+                self.finished_ok(&info.app_name);
+                let _ = app.emit("download-finished", &info.app_name);
                 let _ = app.emit("installed-changed", ());
             }
             Err(InstallError::Stopped) => {
@@ -1016,6 +1080,64 @@ mod tests {
         let inner = d.lock();
         assert!(inner.jobs[0].old.is_some());
         assert!(inner.view().items[0].update);
+    }
+
+    #[test]
+    fn begin_starts_the_named_job_under_the_same_lock() {
+        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("q1", JobState::Queued), job("q2", JobState::Queued)], wiping: false };
+        let started = inner.begin("q2").expect("q2 waits, so it starts");
+        assert_eq!(started.info.app_name, "q2");
+        assert_eq!(inner.jobs[2].state, JobState::Downloading);
+        assert!(inner.jobs[2].stop.as_ref().is_some_and(|s| !s.is_cancelled()));
+        assert!(inner.begin("q2").is_none(), "already downloading");
+        assert!(inner.begin("p").is_none(), "paused jobs don't start");
+        assert!(inner.begin("gone").is_none());
+    }
+
+    #[test]
+    fn begin_next_starts_the_first_waiting_job_only_when_nothing_runs() {
+        let mut inner = Inner { jobs: vec![job("p", JobState::Paused), job("q1", JobState::Queued), job("q2", JobState::Queued)], wiping: false };
+        assert_eq!(inner.begin_next().map(|s| s.info.app_name), Some("q1".to_string()));
+        assert!(inner.begin_next().is_none(), "one at a time");
+    }
+
+    #[test]
+    fn start_now_both_starts_the_chosen_game_by_name() {
+        let mut inner = Inner { jobs: vec![job("run", JobState::Downloading), job("w", JobState::Queued)], wiping: false };
+        let started = inner.start_now_begin("w", StartNow::Both).unwrap();
+        assert_eq!(started.map(|s| s.info.app_name), Some("w".to_string()));
+        assert_eq!(inner.jobs[1].state, JobState::Downloading);
+    }
+
+    #[test]
+    fn start_now_with_nothing_running_starts_it_at_once() {
+        let mut inner = Inner { jobs: vec![job("a", JobState::Queued), job("w", JobState::Queued)], wiping: false };
+        let started = inner.start_now_begin("w", StartNow::Pause).unwrap();
+        assert_eq!(started.map(|s| s.info.app_name), Some("w".to_string()));
+        assert_eq!(inner.jobs[0].info.app_name, "w");
+    }
+
+    #[test]
+    fn uninstall_refusal_names_what_is_in_the_way() {
+        let mut repair = job("r", JobState::Queued);
+        repair.info.imported = true;
+        let inner = Inner { jobs: vec![update("run", JobState::Downloading), update("q", JobState::Queued), update("p", JobState::Paused), repair], wiping: false };
+        assert_eq!(inner.uninstall_refusal("run"), Some("Pause the update first, then uninstall."));
+        assert_eq!(inner.uninstall_refusal("q"), Some("Pause the update first, then uninstall."));
+        assert_eq!(inner.uninstall_refusal("p"), None, "a paused update goes with the game");
+        assert_eq!(inner.uninstall_refusal("r"), Some("Finish or cancel its download first, then uninstall."));
+        assert_eq!(inner.uninstall_refusal("none"), None);
+    }
+
+    #[test]
+    fn a_finished_download_tells_who_asked() {
+        let (_dir, d) = downloads_with(vec![job("a", JobState::Downloading)]);
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let s = seen.clone();
+        d.when_finished(move |name| s.lock().unwrap().push(name.to_string()));
+        d.finished_ok("a");
+        assert!(d.lock().find("a").is_none(), "the job leaves the list");
+        assert_eq!(*seen.lock().unwrap(), vec!["a".to_string()]);
     }
 
     #[test]

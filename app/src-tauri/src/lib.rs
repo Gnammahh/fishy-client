@@ -548,6 +548,17 @@ fn open_game_folder(app_name: String, install: tauri::State<'_, AppInstall>) -> 
     Ok(())
 }
 
+/// Uninstalls the game's pieces, then the game. Its shortcuts go only once that worked, read
+/// from its record first (spec §6t).
+fn uninstall_all(store: &InstallStore, names: &[String], app_name: &str) -> Result<(), InstallError> {
+    let links = store.installed().into_iter().find(|g| g.app_name == app_name).map(|g| g.options.shortcuts).unwrap_or_default();
+    names.iter().try_for_each(|n| uninstall(store, n))?;
+    if shortcuts::remove_recorded(&links, app_name) > 0 {
+        info!("shortcut removed");
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn uninstall_game(
     app: tauri::AppHandle,
@@ -564,15 +575,18 @@ async fn uninstall_game(
     // The game's add-on pieces go with it, first (spec §6n).
     let mut names: Vec<String> = install.downloads.store.installed().into_iter().filter(|g| g.parent.as_deref() == Some(app_name.as_str())).map(|g| g.app_name).collect();
     names.push(app_name.clone());
-    // A paused update goes with the game (spec §6e); a running one must be paused first.
-    if !names.iter().all(|n| install.downloads.take_stopped_update(n)) {
-        return Err("Pause the update first, then uninstall.".to_string());
+    // A paused update goes with the game (spec §6e); a running one must be paused first, and a
+    // repair or other download finished or cancelled.
+    if let Some(refusal) = names.iter().find_map(|n| install.downloads.uninstall_refusal(n)) {
+        return Err(refusal.to_string());
     }
+    names.iter().for_each(|n| {
+        install.downloads.take_stopped_update(n);
+    });
     let _ = app.emit("downloads-changed", install.downloads.view());
-    // Its shortcuts go first, while the record still lists them (spec §6t).
-    shortcuts::remove_for(&install, &app_name);
     let store = install.downloads.store.clone();
-    tauri::async_runtime::spawn_blocking(move || names.iter().try_for_each(|n| uninstall(&store, n)))
+    let game = app_name.clone();
+    tauri::async_runtime::spawn_blocking(move || uninstall_all(&store, &names, &game))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| {
@@ -618,7 +632,11 @@ pub fn run() {
             });
             app.manage(play::AppLaunch::new());
             app.manage(running::AppRunning::default());
-            app.manage(Arc::new(verify::AppVerify::default()));
+            let verify = Arc::new(verify::AppVerify::default());
+            // An update or repair that finished makes the game's last Verify result old.
+            let forget = verify.clone();
+            app.state::<AppInstall>().downloads.when_finished(move |name| forget.forget(name));
+            app.manage(verify);
             app.manage(store_window::AppStore::new());
             let settings = updates::AppSettings { store: fishy_core::settings::SettingsStore::default_location() };
             // The saved speed limit applies from the first download, not only after a change.
@@ -699,6 +717,41 @@ fn chrono_now() -> fishy_core::chrono::DateTime<fishy_core::chrono::Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Uninstall that fails part-way keeps the shortcuts; one that works deletes them (spec §6t).
+    #[cfg(windows)]
+    #[test]
+    fn shortcuts_go_only_after_the_uninstall_worked() {
+        use fishy_core::install::manifest::testbuild::{build_binary, sample};
+        let dir = tempfile::tempdir().unwrap();
+        let store = InstallStore::at(dir.path().join("data"));
+        let info = JobInfo {
+            app_name: "Tide".into(),
+            title: "Tide".into(),
+            namespace: "ns".into(),
+            catalog_item_id: "c".into(),
+            install_path: dir.path().join("game"),
+            download_size: 1,
+            install_size: 1,
+            base_urls: vec![],
+            update_from: None,
+            imported: false,
+            parts: None,
+            parent: None,
+        };
+        store.save_job(&info, &build_binary(&sample(), true)).unwrap();
+        store.finish_install(&info, &sample()).unwrap();
+        let link = dir.path().join("Tide.lnk");
+        shortcuts::make_test_link(&link, "Tide");
+        store.set_shortcuts("Tide", vec![link.clone()]).unwrap();
+
+        let names = vec!["NotInstalledPiece".to_string(), "Tide".to_string()];
+        assert!(uninstall_all(&store, &names, "Tide").is_err());
+        assert!(link.exists(), "the uninstall failed, so the shortcut stays");
+
+        uninstall_all(&store, &["Tide".to_string()], "Tide").unwrap();
+        assert!(!link.exists());
+    }
 
     #[test]
     fn explorer_gets_the_folder_in_quotes() {

@@ -178,6 +178,18 @@ describe("LibraryPage", () => {
     expect(calls.filter((c) => c === "library_refresh")).toHaveLength(2);
   });
 
+  it("a_reply_epic_changed_says_so_and_keeps_the_games", async () => {
+    mockCommands({
+      library_cached: () => ({ updated_at: "x", games: [game("Still Here")] }),
+      library_refresh: () => {
+        throw "Epic changed something. Update Fishy Client, or check back later.";
+      },
+    });
+    render(LibraryPage, { name: "FishFan" });
+    expect(await screen.findByText("Epic changed something. Update Fishy Client, or check back later.")).toBeTruthy();
+    expect(screen.getByText("Still Here")).toBeTruthy();
+  });
+
   it("error_with_cache_keeps_the_games_and_shows_a_banner", async () => {
     mockCommands({
       library_cached: () => ({ updated_at: "x", games: [game("Still Here")] }),

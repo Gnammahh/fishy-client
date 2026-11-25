@@ -1,4 +1,4 @@
-//! Masks secret-shaped text in a log line before it's written (spec §6f.1).
+//! Masks secret-shaped text and the Windows user name in a log line before it's written (spec §6f.1).
 use regex::{Captures, Regex};
 use std::borrow::Cow;
 use std::sync::LazyLock;
@@ -18,7 +18,7 @@ static KEY_JSON: LazyLock<Regex> =
 static EG1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"eg1~[A-Za-z0-9._\-+/=]+").unwrap());
 static LONG_RUN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[A-Za-z0-9\-_+/=]{32,}").unwrap());
 
-/// The line with anything secret-shaped replaced by `[redacted]`.
+/// The line with anything secret-shaped replaced by `[redacted]` and the user's folder by `%USERPROFILE%`.
 pub fn scrub(line: &str) -> Cow<'_, str> {
     let mut out = Cow::Borrowed(line);
     let mut apply = |re: &Regex, f: &dyn Fn(&Captures) -> String| {
@@ -36,8 +36,55 @@ pub fn scrub(line: &str) -> Cow<'_, str> {
     });
     apply(&KEY_EQ, &|c| format!("{}{MASK}", &c[1]));
     apply(&KEY_JSON, &|c| format!("{}{MASK}\"", &c[1]));
+    out = hide_user_names(out);
     out = mask_long_runs(out);
     out
+}
+
+/// `%USERPROFILE%` stands in for the user's own folder, so paths stay readable without their name.
+const PROFILE_MASK: &str = "%USERPROFILE%";
+const SEP: &str = r"(?:\\|/)+";
+// `C:\Users\<name>`: a name with spaces when a folder follows it, else up to the first space.
+static USERS_DIR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r#"(?i)\b[a-z]:{SEP}Users{SEP}(?:([^\\/"'<>|:*?\r\n]+?)([\\/])|([^\\/\s"'<>|:*?]+))"#)).unwrap()
+});
+static PROFILE: LazyLock<Option<Regex>> = LazyLock::new(|| profile_regex(&std::env::var("USERPROFILE").ok()?));
+
+/// The profile folder spelled with any separators, ending where its name ends.
+fn profile_regex(profile: &str) -> Option<Regex> {
+    let parts: Vec<String> = profile.split(['\\', '/']).filter(|p| !p.is_empty()).map(regex::escape).collect();
+    (parts.len() >= 2).then(|| Regex::new(&format!(r#"(?i){}([\\/\s"']|$)"#, parts.join(SEP))).ok()).flatten()
+}
+
+#[cfg(test)]
+fn hide_profile<'a>(text: Cow<'a, str>, profile: Option<&str>) -> Cow<'a, str> {
+    let Some(re) = profile.and_then(profile_regex) else { return text };
+    hide_with(text, &re)
+}
+
+fn hide_with<'a>(text: Cow<'a, str>, re: &Regex) -> Cow<'a, str> {
+    match re.replace_all(&text, |c: &Captures| format!("{PROFILE_MASK}{}", &c[1])) {
+        Cow::Owned(s) => Cow::Owned(s),
+        Cow::Borrowed(_) => text,
+    }
+}
+
+fn hide_user_names(text: Cow<'_, str>) -> Cow<'_, str> {
+    let text = match PROFILE.as_ref() {
+        Some(re) => hide_with(text, re),
+        None => text,
+    };
+    let replaced = USERS_DIR.replace_all(&text, |c: &Captures| {
+        let name = c.get(1).or(c.get(3)).map_or("", |m| m.as_str());
+        if ["public", "default", "all users", "default user"].contains(&name.to_ascii_lowercase().as_str()) {
+            return c[0].to_string();
+        }
+        format!("{PROFILE_MASK}{}", c.get(2).map_or("", |m| m.as_str()))
+    });
+    match replaced {
+        Cow::Owned(s) => Cow::Owned(s),
+        Cow::Borrowed(_) => text,
+    }
 }
 
 /// A drive like `C:\` (a letter before `:\`), not JSON's `":\"`.
@@ -122,10 +169,42 @@ mod tests {
     }
 
     #[test]
+    fn hides_the_user_name_in_profile_paths() {
+        assert_eq!(
+            scrub(r"install queued for Bad Cheese into C:\Users\FishTester\Games\Bad Cheese"),
+            r"install queued for Bad Cheese into %USERPROFILE%\Games\Bad Cheese"
+        );
+        assert_eq!(scrub(r"c:/users/FishTester/AppData"), r"%USERPROFILE%/AppData");
+        // Debug-printed paths double their backslashes.
+        assert_eq!(scrub(r#"path: "C:\\Users\\FishTester\\Games""#), r#"path: "%USERPROFILE%\\Games""#);
+        // A name with a space is hidden whole when a folder follows it.
+        assert_eq!(scrub(r"C:\Users\Fish Tester\Games"), r"%USERPROFILE%\Games");
+        assert_eq!(scrub(r"wiped C:\Users\FishTester"), r"wiped %USERPROFILE%");
+        assert_eq!(scrub(r"C:\Users\FishTester moved"), r"%USERPROFILE% moved");
+        // Shared folders name nobody.
+        assert_eq!(scrub(r"C:\Users\Public\Desktop"), r"C:\Users\Public\Desktop");
+    }
+
+    #[test]
+    fn hides_the_real_profile_folder_wherever_it_is() {
+        assert_eq!(
+            hide_profile(r"wrote D:\Profiles\Fish Tester\Games\x".into(), Some(r"D:\Profiles\Fish Tester")),
+            r"wrote %USERPROFILE%\Games\x"
+        );
+        assert_eq!(hide_profile(r"d:\profiles\fish tester\x".into(), Some(r"D:\Profiles\Fish Tester")), r"%USERPROFILE%\x");
+        assert_eq!(hide_profile("nothing here".into(), Some(r"D:\Profiles\Fish Tester")), "nothing here");
+        assert_eq!(hide_profile("nothing here".into(), None), "nothing here");
+    }
+
+    #[test]
     fn keeps_normal_lines_and_paths() {
+        assert_eq!(
+            scrub(r"C:\Users\you\Games\SomeVeryLongGameFolderNameWithoutSpaces1234\game.exe"),
+            r"%USERPROFILE%\Games\SomeVeryLongGameFolderNameWithoutSpaces1234\game.exe"
+        );
         for line in [
             "installed Bad Cheese (1.2 GB) in 34 s",
-            r"C:\Users\you\Games\SomeVeryLongGameFolderNameWithoutSpaces1234\game.exe",
+            r"C:\Games\SomeVeryLongGameFolderNameWithoutSpaces1234\game.exe",
             r"writing D:\Games\AnotherQuiteLongFolderNameWithNoSpacesAtAll99",
             "library refresh took 5.8 s (164 lookups)",
             "basic settings saved",

@@ -1,0 +1,19 @@
+{
+  "responseMetadata": {
+    "nextCursor": "cursor-page-2",
+    "stateToken": "state-1"
+  },
+  "records": [
+    {
+      "namespace": "ns-tide",
+      "catalogItemId": "cat-tide",
+      "appName": "TidepoolApp",
+      "productId": "prod-tide",
+      "sandboxName": "Live",
+      "sandboxType": "PUBLIC",
+      "recordType": "APPLICATION",
+      "acquisitionDate": "2025-06-01T12:00:00.000Z",
+      "dependencies": []
+    }
+  ]
+}

@@ -72,14 +72,19 @@ impl LibraryClient {
         })
         .await?;
         let assets = json.as_array().ok_or_else(|| AuthError::Unexpected("asset list is not a list".into()))?;
-        Ok(assets
+        let found: HashMap<String, String> = assets
             .iter()
             .filter_map(|a| {
                 let name = a.get("appName")?.as_str()?.to_string();
                 let version = a.get("buildVersion").and_then(|v| v.as_str()).unwrap_or_default().to_string();
                 Some((name, version))
             })
-            .collect())
+            .collect();
+        // Entries with no name we can read would make every game look uninstallable.
+        if found.is_empty() && !assets.is_empty() {
+            return Err(AuthError::Unexpected("asset list entries have no appName".into()));
+        }
+        Ok(found)
     }
 
     /// Every library record, following `nextCursor` page by page.
@@ -99,8 +104,9 @@ impl LibraryClient {
                 read_json(req.send().await.map_err(network)?).await
             })
             .await?;
-            let records: Vec<LibraryItem> = serde_json::from_value(json.get("records").cloned().unwrap_or(Value::Array(vec![])))
-                .map_err(|e| AuthError::Unexpected(e.to_string()))?;
+            // No `records` at all is a changed reply, not an empty library.
+            let records = json.get("records").cloned().ok_or_else(|| AuthError::Unexpected("library reply has no records".into()))?;
+            let records: Vec<LibraryItem> = serde_json::from_value(records).map_err(|e| AuthError::Unexpected(e.to_string()))?;
             all.extend(records);
             cursor = json
                 .pointer("/responseMetadata/nextCursor")
@@ -133,7 +139,11 @@ impl LibraryClient {
             read_json(res).await
         })
         .await?;
-        Ok(json.get(id).cloned().and_then(|v| serde_json::from_value(v).ok()))
+        match json.get(id).filter(|v| !v.is_null()) {
+            None => Ok(None),
+            // Details Epic sent but we can't read: say so, so a changed reply isn't untitled games.
+            Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| AuthError::Unexpected(e.to_string())),
+        }
     }
 
     /// The whole Library: items, then game info (8 at a time). A failed lookup keeps the game,
@@ -154,13 +164,19 @@ impl LibraryClient {
             .map(|(namespace, id)| {
                 let (client, token) = (self.clone(), token.clone());
                 async move {
-                    let info = client.catalog_item(&token, &namespace, &id).await.ok().flatten();
+                    let info = client.catalog_item(&token, &namespace, &id).await;
                     (id, info)
                 }
             })
             .collect();
-        let results: Vec<(String, Option<CatalogItem>)> = stream::iter(lookups).buffer_unordered(PARALLEL_LOOKUPS).collect().await;
-        let catalog: HashMap<String, CatalogItem> = results.into_iter().filter_map(|(id, info)| info.map(|i| (id, i))).collect();
+        let results: Vec<(String, Result<Option<CatalogItem>, AuthError>)> =
+            stream::iter(lookups).buffer_unordered(PARALLEL_LOOKUPS).collect().await;
+        // One unreadable game keeps its place without details; all of them means Epic changed.
+        if !results.is_empty() && results.iter().all(|(_, r)| matches!(r, Err(AuthError::Unexpected(_)))) {
+            return Err(AuthError::Unexpected("no game details could be read".into()));
+        }
+        let catalog: HashMap<String, CatalogItem> =
+            results.into_iter().filter_map(|(id, info)| info.ok().flatten().map(|i| (id, i))).collect();
         let games = build_library(&items, &catalog, windows_apps.as_ref());
         let latest_versions = assets.unwrap_or_default().into_iter().filter(|(_, v)| !v.is_empty()).collect();
         Ok(LibraryData { games, latest_versions })

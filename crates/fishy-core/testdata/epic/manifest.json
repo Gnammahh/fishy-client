@@ -1,0 +1,57 @@
+{
+  "ManifestFileVersion": "018000000000",
+  "bIsFileData": false,
+  "AppID": "000000000000",
+  "AppNameString": "TidepoolApp",
+  "BuildVersionString": "1.4.2-CL-2026",
+  "LaunchExeString": "Binaries/Win64/Tidepool.exe",
+  "LaunchCommand": "-fromlauncher",
+  "PrereqIds": [],
+  "PrereqName": "",
+  "PrereqPath": "",
+  "PrereqArgs": "",
+  "FileManifestList": [
+    {
+      "Filename": "Binaries/Win64/Tidepool.exe",
+      "FileHash": "001002003004005006007008009010011012013014015016017018019020",
+      "bIsExecutable": true,
+      "FileChunkParts": [
+        {
+          "Guid": "0000000100000002000000030000000A",
+          "Offset": "000000000000",
+          "Size": "232003000000"
+        }
+      ]
+    },
+    {
+      "Filename": "Content/Paks/tide.pak",
+      "FileHash": "001002003004005006007008009010011012013014015016017018019020",
+      "InstallTags": [
+        "",
+        ""
+      ],
+      "FileChunkParts": [
+        {
+          "Guid": "0000000100000002000000030000000A",
+          "Offset": "232003000000",
+          "Size": "024000000000"
+        }
+      ]
+    }
+  ],
+  "ChunkHashList": {
+    "0000000100000002000000030000000A": "060043026000000000000000"
+  },
+  "ChunkShaList": {
+    "0000000100000002000000030000000A": "0102030405060708090a0b0c0d0e0f1011121314"
+  },
+  "DataGroupList": {
+    "0000000100000002000000030000000A": "007"
+  },
+  "ChunkFilesizeList": {
+    "0000000100000002000000030000000A": "132003000000000000000000"
+  },
+  "CustomFields": {
+    "CloudDir": "fixture"
+  }
+}

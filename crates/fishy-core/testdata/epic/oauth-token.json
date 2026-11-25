@@ -1,0 +1,21 @@
+{
+  "access_token": "eg1~FIXTURE-ACCESS-TOKEN",
+  "expires_in": 7200,
+  "expires_at": "2026-11-25T18:00:00.000Z",
+  "token_type": "bearer",
+  "refresh_token": "eg1~FIXTURE-REFRESH-TOKEN",
+  "refresh_expires": 1987200,
+  "refresh_expires_at": "2026-12-18T16:00:00.000Z",
+  "account_id": "f15h0000000000000000000000000001",
+  "client_id": "34a02cf8f4414e29b15921876da36f9a",
+  "internal_client": true,
+  "client_service": "launcher",
+  "scope": [],
+  "displayName": "FixtureFish",
+  "app": "launcher",
+  "in_app_id": "f15h0000000000000000000000000001",
+  "product_id": "prod-fn",
+  "application_id": "fghi4567FNFBKFz3E4TROb0bmPS8h1GW",
+  "acr": "urn:epic:loa:aal1",
+  "auth_time": "2026-11-25T16:00:00.000Z"
+}

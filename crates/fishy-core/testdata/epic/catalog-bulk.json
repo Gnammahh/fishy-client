@@ -1,0 +1,101 @@
+{
+  "cat-tide": {
+    "id": "cat-tide",
+    "title": "Tidepool Odyssey",
+    "description": "Tidepool Odyssey",
+    "longDescription": "",
+    "keyImages": [
+      {
+        "type": "DieselGameBox",
+        "url": "https://cdn1.epicgames.com/ns-tide/wide.jpg",
+        "md5": "0123456789abcdef0123456789abcdef",
+        "width": 1200,
+        "height": 1600,
+        "size": 123456,
+        "uploadedDate": "2025-05-01T00:00:00.000Z"
+      },
+      {
+        "type": "DieselGameBoxTall",
+        "url": "https://cdn1.epicgames.com/ns-tide/tall.jpg",
+        "md5": "0123456789abcdef0123456789abcdef",
+        "width": 1200,
+        "height": 1600,
+        "size": 123456,
+        "uploadedDate": "2025-05-01T00:00:00.000Z"
+      },
+      {
+        "type": "Thumbnail",
+        "url": "https://cdn1.epicgames.com/ns-tide/thumb.jpg",
+        "md5": "0123456789abcdef0123456789abcdef",
+        "width": 1200,
+        "height": 1600,
+        "size": 123456,
+        "uploadedDate": "2025-05-01T00:00:00.000Z"
+      }
+    ],
+    "categories": [
+      {
+        "path": "games"
+      },
+      {
+        "path": "applications"
+      }
+    ],
+    "namespace": "ns-tide",
+    "status": "ACTIVE",
+    "creationDate": "2025-01-01T00:00:00.000Z",
+    "lastModifiedDate": "2026-10-01T00:00:00.000Z",
+    "customAttributes": {
+      "CanRunOffline": {
+        "type": "STRING",
+        "value": "true"
+      },
+      "FolderName": {
+        "type": "STRING",
+        "value": "TidepoolOdyssey"
+      },
+      "PresenceId": {
+        "type": "STRING",
+        "value": "tidepool"
+      },
+      "CanSkipKoreanIdVerification": {
+        "type": "STRING",
+        "value": "true"
+      },
+      "MonitorPresence": {
+        "type": "STRING",
+        "value": "false"
+      },
+      "UseAccessControl": {
+        "type": "STRING",
+        "value": "false"
+      },
+      "AdditionalCommandLine": {
+        "type": "STRING",
+        "value": "-nosplash"
+      }
+    },
+    "entitlementName": "cat-tide",
+    "entitlementType": "EXECUTABLE",
+    "itemType": "DURABLE",
+    "releaseInfo": [
+      {
+        "id": "rel-1",
+        "appId": "TidepoolApp",
+        "platform": [
+          "Windows"
+        ],
+        "dateAdded": "2025-01-01T00:00:00.000Z"
+      }
+    ],
+    "developer": "Reef Studio",
+    "developerId": "dev-reef",
+    "eulaIds": [],
+    "endOfSupport": false,
+    "mainGameItemList": [],
+    "ageGatings": {},
+    "applicationId": "app-tide",
+    "requiresSecureAccount": false,
+    "unsearchable": false
+  }
+}

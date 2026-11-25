@@ -101,14 +101,17 @@ impl InstallClient {
             },
             other => other.into(),
         })?;
-        let elements = json.get("elements").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        // Missing fields mean Epic changed this reply; an empty list is a real answer.
+        let changed = |why: &str| InstallError::EpicChanged(why.into());
+        let elements = json.get("elements").and_then(Value::as_array).ok_or_else(|| changed("no elements"))?.as_slice();
         let [element] = elements else {
             return Err(InstallError::BadManifest(format!("{} elements", elements.len())));
         };
         let text = |k: &str| element.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
         let mut urls = Vec::new();
         let mut base_urls: Vec<String> = Vec::new();
-        for m in element.get("manifests").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default() {
+        let manifests = element.get("manifests").and_then(Value::as_array).ok_or_else(|| changed("no manifests"))?;
+        for m in manifests {
             let Some(uri) = m.get("uri").and_then(Value::as_str) else { continue };
             let base = uri.rsplit_once('/').map_or(uri, |(b, _)| b).to_string();
             if !base_urls.contains(&base) {
@@ -123,6 +126,9 @@ impl InstallClient {
                 .filter_map(|p| Some(format!("{}={}", p.get("name")?.as_str()?, p.get("value")?.as_str()?)))
                 .collect();
             urls.push(if params.is_empty() { uri.to_string() } else { format!("{uri}?{}", params.join("&")) });
+        }
+        if urls.is_empty() && !manifests.is_empty() {
+            return Err(changed("manifests without uri"));
         }
         if urls.is_empty() {
             return Err(InstallError::BadManifest("no manifest urls".into()));

@@ -146,6 +146,10 @@ Every push and pull request is checked on GitHub Actions (`.github/workflows/ci.
 
 The full design and progress log is in [docs/superpowers/specs/2026-11-20-fishy-client-design.md](docs/superpowers/specs/2026-11-20-fishy-client-design.md).
 
+## Plans
+
+- **A Linux version is planned** (no date yet). First signing in, the Library and downloads; then starting games through Proton or Wine, which you install yourself. Help testing on Linux or a Steam Deck is welcome: open an issue.
+
 ## License
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

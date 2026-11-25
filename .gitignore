@@ -1,2 +1,8 @@
 target/
 node_modules/
+
+# Secrets: signing keys and local settings must never be committed.
+*.key
+*.pem
+.env
+.env.*

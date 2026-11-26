@@ -20,7 +20,7 @@ tokio-util = "0.7"
 flate2 = "1"
 sha1 = "0.10"
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 fs4 = { version = "0.13", features = ["sync"] }
 regex = "1"
 tracing = "0.1"

@@ -44,4 +44,4 @@ tempfile = "3"
 # Update-signature tests: a throwaway key pair and the updater plugin in a mock app.
 tauri = { version = "2.12", features = ["test"] }
 minisign = "0.7"
-base64 = "0.22"
+base64 = "0.23"

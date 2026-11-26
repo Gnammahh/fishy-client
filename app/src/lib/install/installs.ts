@@ -318,6 +318,16 @@ export const createShortcut = (appName: string) => withRecord("shortcut_create",
 export const addStartMenu = (appName: string) => withRecord("shortcut_add_start_menu", { appName });
 export const removeShortcut = (appName: string) => withRecord("shortcut_remove", { appName });
 
+/** The game's pieces Epic's launcher still lists (spec §6u): those are removed there, not here. */
+export async function piecesInEpic(appName: string): Promise<string[]> {
+  try {
+    const list = await invoke<string[]>("pieces_in_epic", { appName });
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Extra content → Remove (spec §6u): deletes an add-on piece. Returns an error message, or null. */
 export async function removePiece(appName: string): Promise<string | null> {
   try {

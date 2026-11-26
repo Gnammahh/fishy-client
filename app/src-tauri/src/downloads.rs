@@ -5,7 +5,7 @@ use fishy_core::install::manifest::{parse_manifest, Manifest};
 use fishy_core::install::parts::{keep_siblings_files, only_parts, sibling_files};
 use fishy_core::install::speed::SpeedMeter;
 use fishy_core::install::store::{InstallStore, JobInfo};
-use fishy_core::install::pieces::{remove_piece, Removed};
+use fishy_core::install::pieces::{forget_piece, remove_piece, Removed};
 use fishy_core::install::uninstall::discard_download;
 use fishy_core::install::client::InstallClient;
 use fishy_core::install::limit::SpeedLimiter;
@@ -511,13 +511,22 @@ impl Downloads {
     /// Removes an add-on piece (spec §6u), under the queue's lock so nothing of its game starts
     /// meanwhile: its waiting update leaves the list and the game's is reloaded, narrowed.
     pub fn remove_piece(&self, app_name: &str) -> Result<Removed, String> {
+        self.drop_piece(app_name, remove_piece)
+    }
+
+    /// Forgets a piece Epic's launcher removed: like [`Self::remove_piece`], files untouched.
+    pub fn forget_piece(&self, app_name: &str) -> Result<Removed, String> {
+        self.drop_piece(app_name, forget_piece)
+    }
+
+    fn drop_piece(&self, app_name: &str, drop: fn(&InstallStore, &str) -> Result<Removed, InstallError>) -> Result<Removed, String> {
         let mut inner = self.lock();
         let game = self.store.installed().into_iter().find(|g| g.app_name == app_name).and_then(|g| g.parent).ok_or_else(|| InstallError::NotInstalled.user_message())?;
         let of_game = |j: &Job| j.info.app_name == game || j.info.app_name == app_name || j.info.parent.as_deref() == Some(game.as_str());
         if inner.wiping || inner.jobs.iter().any(|j| of_game(j) && matches!(j.state, JobState::Downloading | JobState::Removing)) {
             return Err(PIECE_BUSY.to_string());
         }
-        let removed = remove_piece(&self.store, app_name).map_err(|e| e.user_message())?;
+        let removed = drop(&self.store, app_name).map_err(|e| e.user_message())?;
         inner.jobs.retain(|j| j.info.app_name != app_name);
         if let Some(i) = inner.find(&game) {
             let saved = self.store.pending_jobs().into_iter().find(|j| j.app_name == game);
@@ -1296,6 +1305,17 @@ mod tests {
         assert_eq!(inner.jobs[0].info.parts, Some(vec!["BR".to_string()]));
         assert_eq!(inner.jobs[0].manifest.files.len(), 2, "juno.pak isn't fetched any more");
         assert_eq!(inner.jobs[0].state, JobState::Paused);
+    }
+
+    #[test]
+    fn forgetting_a_piece_epic_removed_keeps_its_files_and_narrows_the_games_update() {
+        let (dir, d) = fortnite_with_lego();
+        d.forget_piece("Lego").unwrap();
+        assert!(dir.path().join("Fortnite").join("juno.pak").exists(), "Epic's launcher deletes files, not Fishy");
+        let inner = d.lock();
+        assert_eq!(inner.jobs.iter().map(|j| j.info.app_name.as_str()).collect::<Vec<_>>(), vec!["Fortnite"]);
+        assert_eq!(inner.jobs[0].info.parts, Some(vec!["BR".to_string()]));
+        assert_eq!(inner.jobs[0].manifest.files.len(), 2, "juno.pak isn't fetched any more");
     }
 
     #[test]

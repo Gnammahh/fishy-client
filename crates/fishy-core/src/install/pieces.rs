@@ -59,6 +59,16 @@ fn saved_manifest(store: &InstallStore, app: &str, parts: Option<&[String]>) -> 
 /// game's chosen parts and waiting update lose its part names. Nothing is forgotten if a file
 /// can't be deleted. The caller makes sure nothing of the game is downloading or running.
 pub fn remove_piece(store: &InstallStore, app: &str) -> Result<Removed, InstallError> {
+    drop_piece(store, app, true)
+}
+
+/// Forgets a piece Epic's launcher removed (spec §6u): the same records change as
+/// [`remove_piece`], but no game file is touched (Epic already deleted them).
+pub fn forget_piece(store: &InstallStore, app: &str) -> Result<Removed, InstallError> {
+    drop_piece(store, app, false)
+}
+
+fn drop_piece(store: &InstallStore, app: &str, delete_files: bool) -> Result<Removed, InstallError> {
     let all = store.installed();
     let piece = all.iter().find(|g| g.app_name == app && g.parent.is_some()).ok_or(InstallError::NotInstalled)?;
     let game_name = piece.parent.clone().unwrap_or_default();
@@ -74,7 +84,8 @@ pub fn remove_piece(store: &InstallStore, app: &str) -> Result<Removed, InstallE
     let plan = piece_removal(&game_m, game.parts.as_deref(), &piece_m, piece.parts.as_deref(), &others);
     let part_names: Vec<String> = game.parts.iter().flatten().filter(|t| !plan.game_parts.iter().flatten().any(|n| n == *t)).cloned().collect();
     let root = &piece.install_path;
-    if !delete_aside(root, app) || !delete_named_files(root, plan.delete.iter().map(String::as_str), false) {
+    // The piece's half-built update is Fishy's own; it goes either way.
+    if !delete_aside(root, app) || (delete_files && !delete_named_files(root, plan.delete.iter().map(String::as_str), false)) {
         return Err(InstallError::InUse);
     }
     let io = |e: std::io::Error| InstallError::Io { folder: root.display().to_string(), detail: e.to_string() };
@@ -88,8 +99,13 @@ pub fn remove_piece(store: &InstallStore, app: &str) -> Result<Removed, InstallE
             let bytes = store.job_manifest(&game_name).map_err(io)?;
             store.save_job(&job, &bytes).map_err(io)?;
         }
-    tracing::info!("piece removed ({} files deleted)", plan.delete.len());
-    Ok(Removed { game: game_name, files: plan.delete.len(), part_names })
+    let files = if delete_files { plan.delete.len() } else { 0 };
+    if delete_files {
+        tracing::info!("piece removed ({files} files deleted)");
+    } else {
+        tracing::info!("piece removed in Epic's launcher: record forgotten");
+    }
+    Ok(Removed { game: game_name, files, part_names })
 }
 
 #[cfg(test)]
@@ -247,6 +263,23 @@ mod tests {
         assert_eq!(jobs.iter().map(|j| j.app_name.as_str()).collect::<Vec<_>>(), vec!["Fortnite"]);
         assert_eq!(jobs[0].parts, Some(parts(&["FortniteBR", "GFP_SaveTheWorldRoot", "Langde", "NewPart"])));
         assert!(!e.root.join(".fishy-update").exists());
+    }
+
+    #[test]
+    fn forgetting_a_piece_epic_removed_keeps_every_file_and_narrows_the_game() {
+        // Epic's launcher already deleted the piece; Fishy Client only drops its own record so
+        // its next update doesn't fetch the piece again.
+        let e = fortnite();
+        let forgot = forget_piece(&e.store, "Lego").unwrap();
+        assert_eq!((forgot.game.as_str(), forgot.files), ("Fortnite", 0));
+        assert_eq!(forgot.part_names, parts(&["GFP_JunoRoot"]));
+        for f in &game().files {
+            assert!(file_path(&e.root, &f.filename).unwrap().is_file(), "{} untouched", f.filename);
+        }
+        let all = e.store.installed();
+        assert!(all.iter().all(|g| g.app_name != "Lego"));
+        let fortnite = all.iter().find(|g| g.app_name == "Fortnite").unwrap();
+        assert_eq!(fortnite.parts, Some(parts(&["FortniteBR", "GFP_SaveTheWorldRoot", "Langde"])));
     }
 
     #[test]

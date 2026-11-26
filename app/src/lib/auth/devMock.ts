@@ -79,6 +79,9 @@ function devDownloads() {
         }
         case "installed_list":
           return installed;
+        // As if Epic's launcher also lists the pack (the usual case: pieces come from Epic).
+        case "pieces_in_epic":
+          return installed.filter((g) => g.parent === (args as { appName: string }).appName).map((g) => g.app_name);
         case "piece_remove": {
           const name = (args as { appName: string }).appName;
           installed.splice(installed.findIndex((g) => g.app_name === name), 1);

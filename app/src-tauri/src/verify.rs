@@ -133,15 +133,32 @@ pub fn game_options_set(
     Ok(saved)
 }
 
+/// Removing a piece Epic's launcher still lists breaks the game (spec §6u).
+pub const PIECE_IN_EPIC: &str = "Epic's launcher also has this installed, so the game would still look for its files. Remove it in Epic's launcher instead: Library, then the game's ⋯, Manage, Optional content.";
+
+/// Whether Epic's launcher lists this app (see [`PIECE_IN_EPIC`]).
+fn in_epic(app_name: &str) -> bool {
+    fishy_core::epic_import::epic_manifests_dir().is_some_and(|d| fishy_core::epic_import::epic_has(&d, app_name))
+}
+
 /// Why a piece can't be removed now, if it can't (spec §6u). Downloads refuse on their own.
-pub fn piece_refusal(running: bool, checking: bool) -> Option<&'static str> {
-    if running {
+pub fn piece_refusal(running: bool, checking: bool, in_epic: bool) -> Option<&'static str> {
+    if in_epic {
+        Some(PIECE_IN_EPIC)
+    } else if running {
         Some("Close the game first.")
     } else if checking {
         Some("Wait for the file check to finish.")
     } else {
         None
     }
+}
+
+/// The game's installed pieces that Epic's launcher still lists: the Manage box points to Epic's
+/// launcher for those instead of offering Remove (spec §6u).
+#[tauri::command]
+pub fn pieces_in_epic(app_name: String, install: tauri::State<'_, AppInstall>) -> Vec<String> {
+    install.downloads.store.installed().into_iter().filter(|g| g.parent.as_deref() == Some(app_name.as_str())).map(|g| g.app_name).filter(|a| in_epic(a)).collect()
 }
 
 /// Extra content → Remove (spec §6u): deletes an add-on piece such as LEGO Fortnite. Returns
@@ -157,7 +174,7 @@ pub async fn piece_remove(
     let rec = installed_record(&install, &app_name)?;
     let game = rec.parent.clone().ok_or_else(|| InstallError::NotInstalled.user_message())?;
     let checked = verify.lock_current().as_ref().is_some_and(|(a, _)| *a == game || *a == app_name);
-    let refusal = piece_refusal(running.contains(&game) || running.contains(&app_name), checked || install.checking.is_busy(&game));
+    let refusal = piece_refusal(running.contains(&game) || running.contains(&app_name), checked || install.checking.is_busy(&game), in_epic(&app_name));
     if let Some(r) = refusal {
         return Err(r.into());
     }
@@ -367,9 +384,20 @@ mod tests {
 
     #[test]
     fn a_piece_isnt_removed_while_the_game_runs_or_is_checked() {
-        assert_eq!(piece_refusal(true, true), Some("Close the game first."));
-        assert_eq!(piece_refusal(false, true), Some("Wait for the file check to finish."));
-        assert_eq!(piece_refusal(false, false), None);
+        assert_eq!(piece_refusal(true, true, false), Some("Close the game first."));
+        assert_eq!(piece_refusal(false, true, false), Some("Wait for the file check to finish."));
+        assert_eq!(piece_refusal(false, false, false), None);
+    }
+
+    #[test]
+    fn a_piece_epics_launcher_still_has_is_never_removed() {
+        // Found with Fortnite: Epic still listed LEGO and Save the World, so the game looked
+        // for their deleted files and stopped with "Pak not found".
+        assert_eq!(piece_refusal(false, false, true), Some(PIECE_IN_EPIC));
+        assert_eq!(
+            PIECE_IN_EPIC,
+            "Epic's launcher also has this installed, so the game would still look for its files. Remove it in Epic's launcher instead: Library, then the game's ⋯, Manage, Optional content."
+        );
     }
 
     #[test]

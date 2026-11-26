@@ -1,5 +1,14 @@
 [
   {
+    "version": "2.0.2",
+    "date": "2026-11-26",
+    "items": [
+      "Fixed: removing Save the World or LEGO Fortnite in Fishy Client could make Fortnite refuse to start (\"Pak not found\"), because Epic's launcher still listed them.",
+      "Extra content now sends you to Epic's launcher (Manage, Optional content) for pieces Epic also has. Fishy Client then forgets them and stops updating them.",
+      "Hit the error? Open Fortnite in Epic's launcher, choose Manage, and untick Save the World and LEGO Fortnite under Optional content (or press Verify)."
+    ]
+  },
+  {
     "version": "2.0.1",
     "date": "2026-11-25",
     "items": [

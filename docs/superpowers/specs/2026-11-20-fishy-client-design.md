@@ -1564,7 +1564,7 @@ Most of Fishy Client's memory is Microsoft's WebView2, which draws the window. "
 - **Rust 2024:** `fishy-core` moved from the 2021 to the 2024 edition (asked on r/rust). `cargo fix --edition` needed no edits, and its drop-order warnings were checked by hand (request futures only, no locks). Clippy's let-chain suggestions were applied, so clippy is clean for the first time.
 - **Tests now:** Rust 526, UI 291.
 
-**Version 2.0.2 (2026-11-26):** Fortnite refused to start ("Pak not found") after Save the World and LEGO were removed with Fishy Client's Remove, because Epic's launcher still listed them (§6u, "Changed in 2.0.2"). Remove is now refused for pieces Epic lists, the Manage box points to Epic's launcher, and pieces removed there are forgotten (no files touched). Found and fixed test-first. **Tests now:** Rust 531, UI 292.
+**Version 2.0.2 (released 2026-11-26, PR #9):** Fortnite refused to start ("Pak not found") after Save the World and LEGO were removed with Fishy Client's Remove, because Epic's launcher still listed them (§6u, "Changed in 2.0.2"). Remove is now refused for pieces Epic lists, the Manage box points to Epic's launcher, and pieces removed there are forgotten (no files touched). Found and fixed test-first. **Tests now:** Rust 531, UI 292.
 
 ### Still to check by hand (pre-Reddit hardening)
 - [x] Checked 2026-11-25 in `tauri dev` (same permission rules as the built app): the title bar's minimize, maximize/restore (button and double-click), close and dragging still work, and the restore icon changes when the window is maximized or snapped. A missing permission shows as a button that does nothing.

@@ -43,5 +43,5 @@ fishy-core = { path = "../../crates/fishy-core", features = ["test-support"] }
 tempfile = "3"
 # Update-signature tests: a throwaway key pair and the updater plugin in a mock app.
 tauri = { version = "2.12", features = ["test"] }
-minisign = "0.7"
+minisign = "0.10"
 base64 = "0.22"

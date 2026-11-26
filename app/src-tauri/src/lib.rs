@@ -529,7 +529,21 @@ async fn download_cancel(app: tauri::AppHandle, app_name: String, install: tauri
 
 #[tauri::command]
 fn installed_list(install: tauri::State<'_, AppInstall>) -> Vec<InstalledGame> {
+    forget_pieces_epic_removed(&install);
     install.downloads.store.installed()
+}
+
+/// Pieces removed in Epic's launcher (spec §6u) are forgotten here too, so the game's next update
+/// doesn't download them again. Busy (the game downloading)? Next time.
+fn forget_pieces_epic_removed(install: &AppInstall) {
+    let Some(dir) = fishy_core::epic_import::epic_manifests_dir() else { return };
+    let all = install.downloads.store.installed();
+    let pairs = all.iter().filter_map(|g| Some((g.app_name.as_str(), g.parent.as_deref()?)));
+    for app in fishy_core::epic_import::pieces_gone_from_epic(&dir, pairs) {
+        if let Err(m) = install.downloads.forget_piece(&app) {
+            warn!("couldn't forget a piece removed in Epic's launcher: {m}");
+        }
+    }
 }
 
 /// The installed game's folder, only from its record, and only if it's still there (spec §6p).
@@ -694,6 +708,7 @@ pub fn run() {
             verify::game_options_set,
             verify::verify_start,
             verify::piece_remove,
+            verify::pieces_in_epic,
             verify::verify_stop,
             verify::verify_repair,
             shortcuts::shortcut_create,

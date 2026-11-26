@@ -251,6 +251,18 @@ describe("Extra content (spec §6u)", () => {
     expect(screen.getByText("Fortnite Save the World Content")).toBeTruthy();
   });
 
+  it("a_piece_epics_launcher_still_has_points_there_instead_of_removing", async () => {
+    // Removing it here breaks the game while Epic's launcher still lists it (Fortnite: "Pak not found").
+    const calls = mock({ pieces_in_epic: () => ["Lego"] });
+    const rec = fortnite();
+    installed.set([rec, lego, stw]);
+    render(ManageDialog, { game, installed: rec, running: false, hasDownload: false, sharedWithEpic: true, onclose: vi.fn(), onuninstall: vi.fn() });
+    expect(await screen.findByText("Remove it in Epic's launcher: Library, then the game's ⋯, Manage, Optional content.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove LEGO® Fortnite Content" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove Fortnite Save the World Content" })).toBeTruthy();
+    expect(calls).toContainEqual(["pieces_in_epic", { appName: "SolCesto" }]);
+  });
+
   it("a_refused_removal_shows_why", async () => {
     mock({
       piece_remove: () => {

@@ -10,6 +10,7 @@
     formatPlaytime,
     installed as installedStore,
     openGameFolder,
+    piecesInEpic,
     removePiece,
     removeShortcut,
     setGameOptions,
@@ -119,6 +120,14 @@
   // Extra content (spec §6u): the game's add-on pieces, such as Fortnite's LEGO content.
   const pieces = $derived($installedStore.filter((g) => g.parent === game.app_name));
   let askRemove = $state<InstalledGame | null>(null);
+  // Pieces Epic's launcher still lists: removing them here would break the game, so the box
+  // points to Epic's launcher instead (found with Fortnite: "Pak not found").
+  let inEpic = $state<string[]>([]);
+  $effect(() => {
+    if (pieces.length === 0) return;
+    const app = game.app_name;
+    untrack(() => void piecesInEpic(app).then((list) => (inEpic = list)));
+  });
   let pieceBusy = $state(false);
   let pieceError = $state<string | null>(null);
   async function confirmRemovePiece() {
@@ -293,17 +302,22 @@
             <span class="text">
               <span>{piece.title}</span>
               <span class="hint">{formatBytes(piece.install_size)}</span>
+              {#if inEpic.includes(piece.app_name)}
+                <span class="hint">Remove it in Epic's launcher: Library, then the game's ⋯, Manage, Optional content.</span>
+              {/if}
             </span>
-            <PixelButton
-              variant="ghost"
-              label="Remove {piece.title}"
-              disabled={running || pieceBusy}
-              title={running ? "Close the game first." : undefined}
-              onclick={() => {
-                pieceError = null;
-                askRemove = piece;
-              }}>Remove</PixelButton
-            >
+            {#if !inEpic.includes(piece.app_name)}
+              <PixelButton
+                variant="ghost"
+                label="Remove {piece.title}"
+                disabled={running || pieceBusy}
+                title={running ? "Close the game first." : undefined}
+                onclick={() => {
+                  pieceError = null;
+                  askRemove = piece;
+                }}>Remove</PixelButton
+              >
+            {/if}
           </div>
           {#if askRemove?.app_name === piece.app_name}
             <div class="ask">

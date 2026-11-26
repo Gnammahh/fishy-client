@@ -52,6 +52,24 @@ pub fn epic_manifests_dir() -> Option<PathBuf> {
     Some(crate::epic::LAUNCHER_MANIFESTS_DIR.iter().fold(PathBuf::from(base), |p, part| p.join(part)))
 }
 
+/// True when Epic's launcher lists `app` at all, finished or not (spec §6u). A piece it lists
+/// must not be removed by Fishy Client: the game reads Epic's list and looks for the piece's
+/// files ("Pak not found" in Fortnite).
+pub fn epic_has(dir: &Path, app: &str) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    entries.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("item"))).any(|p| {
+        let Ok(bytes) = std::fs::read(&p) else { return false };
+        let bytes = bytes.strip_prefix("\u{FEFF}".as_bytes()).unwrap_or(&bytes);
+        serde_json::from_slice::<RawItem>(bytes).is_ok_and(|raw| raw.app_name == app)
+    })
+}
+
+/// Of `(piece, game)` pairs Fishy Client has recorded, the pieces Epic's launcher removed: it
+/// still lists the game but not the piece. Without Epic's launcher (no game listed), none.
+pub fn pieces_gone_from_epic<'a>(dir: &Path, pieces: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
+    pieces.into_iter().filter(|(piece, game)| epic_has(dir, game) && !epic_has(dir, piece)).map(|(piece, _)| piece.to_string()).collect()
+}
+
 fn read_item(path: &Path) -> Option<EpicItem> {
     let bytes = std::fs::read(path).ok()?;
     let bytes = bytes.strip_prefix("\u{FEFF}".as_bytes()).unwrap_or(&bytes);
@@ -202,6 +220,38 @@ mod tests {
     fn write_item(dir: &Path, guid: &str, json: &serde_json::Value) {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join(format!("{guid}.item")), serde_json::to_vec(json).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn says_which_pieces_epics_launcher_still_has() {
+        // Removing a piece Epic still lists breaks the game: Fortnite looks for its files.
+        let env = tempfile::tempdir().unwrap();
+        let dir = env.path().join("Manifests");
+        let folder = env.path().join("Fortnite");
+        write_item(&dir, "G1", &item_json("Fortnite", "Fortnite", &folder, "G1"));
+        let mut lego = item_json("Lego", "LEGO Fortnite", &folder, "G2");
+        lego["MainGameAppName"] = "Fortnite".into();
+        write_item(&dir, "G2", &lego);
+        assert!(epic_has(&dir, "Lego"));
+        assert!(epic_has(&dir, "Fortnite"));
+        assert!(!epic_has(&dir, "Stw"));
+        assert!(!epic_has(&env.path().join("missing"), "Lego"), "no Epic launcher: nothing listed");
+    }
+
+    #[test]
+    fn finds_pieces_epics_launcher_removed_from_a_game_it_still_has() {
+        let env = tempfile::tempdir().unwrap();
+        let dir = env.path().join("Manifests");
+        let folder = env.path().join("Fortnite");
+        write_item(&dir, "G1", &item_json("Fortnite", "Fortnite", &folder, "G1"));
+        let mut stw = item_json("Stw", "Save the World", &folder, "G3");
+        stw["MainGameAppName"] = "Fortnite".into();
+        write_item(&dir, "G3", &stw);
+        // Fishy has LEGO and Save the World; Epic's launcher only still has Save the World.
+        assert_eq!(pieces_gone_from_epic(&dir, [("Lego", "Fortnite"), ("Stw", "Fortnite")]), vec!["Lego".to_string()]);
+        // Epic doesn't have the game itself: nothing is assumed gone (no Epic launcher, say).
+        assert!(pieces_gone_from_epic(&dir, [("Reef", "Other")]).is_empty());
+        assert!(pieces_gone_from_epic(&env.path().join("missing"), [("Lego", "Fortnite")]).is_empty());
     }
 
     struct Env {
